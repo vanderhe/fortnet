@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<fnetout>
+ <mode> "predict"
+ </mode>
+ <output>
+  <ndatapoints>11
+  </ndatapoints>
+  <atomic>No
+  </atomic>
+  <ntargets>1
+  </ntargets>
+  <datapoint1> 1.1810641186710340
+  </datapoint1>
+  <datapoint2> 1.1753891903740326
+  </datapoint2>
+  <datapoint3> 1.1549617580265266
+  </datapoint3>
+  <datapoint4> 1.1152426439423935
+  </datapoint4>
+  <datapoint5> 1.0700525697698597
+  </datapoint5>
+  <datapoint6> 1.0361790341914143
+  </datapoint6>
+  <datapoint7> 1.0156546809241154
+  </datapoint7>
+  <datapoint8> 1.0036777647679476
+  </datapoint8>
+  <datapoint9> 0.99639874478293977
+  </datapoint9>
+  <datapoint10> 0.99170658212507223
+  </datapoint10>
+  <datapoint11> 0.98851401993587806
+  </datapoint11>
+ </output>
+</fnetout>

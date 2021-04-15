@@ -1,0 +1,19 @@
+Data {
+
+  Dataset = 'training_data'
+  Standardization = No
+
+  NetstatFiles = Type2FileNames {
+    Prefix = "./"
+    Suffix = ".net"
+    LowerCaseTypeName = No
+  }
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = 'predict'
+
+}

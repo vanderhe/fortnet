@@ -1,0 +1,79 @@
+<?xml version="1.0" ?>
+<fnetout>
+ <mode> "predict"
+ </mode>
+ <output>
+  <ndatapoints>33
+  </ndatapoints>
+  <atomic>No
+  </atomic>
+  <ntargets>1
+  </ntargets>
+  <datapoint1> 1.1810645979483501
+  </datapoint1>
+  <datapoint2> 1.1753896655589327
+  </datapoint2>
+  <datapoint3> 1.1549622165880695
+  </datapoint3>
+  <datapoint4> 1.1152430669172904
+  </datapoint4>
+  <datapoint5> 1.0700529500132778
+  </datapoint5>
+  <datapoint6> 1.0361793820671485
+  </datapoint6>
+  <datapoint7> 1.0156550094945529
+  </datapoint7>
+  <datapoint8> 1.0036780823586244
+  </datapoint8>
+  <datapoint9> 0.99639905588329591
+  </datapoint9>
+  <datapoint10> 0.99170688915197824
+  </datapoint10>
+  <datapoint11> 0.98851432425759278
+  </datapoint11>
+  <datapoint12> 1.0310223673077861
+  </datapoint12>
+  <datapoint13> 1.0243109316539893
+  </datapoint13>
+  <datapoint14> 1.0108350102605632
+  </datapoint14>
+  <datapoint15> 0.99290463757157854
+  </datapoint15>
+  <datapoint16> 0.97364767099980420
+  </datapoint16>
+  <datapoint17> 0.95454582527784193
+  </datapoint17>
+  <datapoint18> 0.93663712591253179
+  </datapoint18>
+  <datapoint19> 0.92150921919617923
+  </datapoint19>
+  <datapoint20> 0.91046260978919558
+  </datapoint20>
+  <datapoint21> 0.90341416833647059
+  </datapoint21>
+  <datapoint22> 0.89924903225886132
+  </datapoint22>
+  <datapoint23> 1.1060434826280681
+  </datapoint23>
+  <datapoint24> 1.0998502986064609
+  </datapoint24>
+  <datapoint25> 1.0828986134243164
+  </datapoint25>
+  <datapoint26> 1.0540738522444344
+  </datapoint26>
+  <datapoint27> 1.0218503105065411
+  </datapoint27>
+  <datapoint28> 0.99536260367249518
+  </datapoint28>
+  <datapoint29> 0.97614606770354229
+  </datapoint29>
+  <datapoint30> 0.96259365077740178
+  </datapoint30>
+  <datapoint31> 0.95343083283624575
+  </datapoint31>
+  <datapoint32> 0.94756052874422436
+  </datapoint32>
+  <datapoint33> 0.94388167825822711
+  </datapoint33>
+ </output>
+</fnetout>

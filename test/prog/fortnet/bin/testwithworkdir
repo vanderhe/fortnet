@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+#------------------------------------------------------------------------------#
+#  FORTNET: A Behler-Parrinello-Neural-Network Implementation                  #
+#  Copyright (C) 2020 - 2021  T. W. van der Heide                              #
+#                                                                              #
+#  See the LICENSE file for terms of usage and distribution.                   #
+#------------------------------------------------------------------------------#
+
+
+'''
+Basic Fortnet Regression Test Script
+
+Initialized with the path to a working directory this script figures out the
+rudimentary specifications of the Fortnet run and compares the existing
+reference files with the output of the current version of the program.
+'''
+
+
+import os
+import subprocess
+import argparse
+from distutils.dir_util import copy_tree
+from argparse import RawTextHelpFormatter
+import testwithworkdir as twd
+from testwithworkdir import TestWithWorkDirError
+
+
+USAGE = '''
+Basic Fortnet Regression Test Script\n\n
+
+Initialized with the path to a working directory this script figures out the
+rudimentary specifications of the Fortnet run and compares the existing
+reference files with the output of the current version of the program.
+'''
+
+
+def main(cmdlineargs=None):
+    '''Main driver routine.
+
+    Args:
+        cmdlineargs: list of command line arguments. When None, arguments in
+                     sys.argv are parsed (Default: None)
+
+    '''
+
+    args = parse_cmdline_args(cmdlineargs)
+
+    copy_tree(os.path.join(args.templateroot, args.test),
+              os.path.join(args.workdir, args.test))
+
+    cmd = args.prerun + ' ' + args.program
+    cwd = os.path.join(args.workdir, args.test)
+
+    subprocess.call(cmd, cwd=cwd, shell=True)
+
+    test = twd.TestWithWorkDir(os.path.join(args.workdir, args.test))
+    passed = test.test()
+
+    if not passed:
+        msg = "Regression test '" + str(args.test) + "' did not pass."
+        raise TestWithWorkDirError(msg)
+
+
+def parse_cmdline_args(cmdlineargs=None):
+    '''Parses command line arguments.
+
+    Args:
+        cmdlineargs: List of command line arguments. When None, arguments in
+            sys.argv are parsed (Default: None).
+
+    '''
+
+    parser = argparse.ArgumentParser(
+        description=USAGE, formatter_class=RawTextHelpFormatter)
+
+    msg = 'test specification'
+    parser.add_argument('test', action='store', type=str, help=msg)
+
+    msg = 'working directory to run the tests in'
+    parser.add_argument('workdir', action='store', type=str, help=msg)
+
+    msg = 'path to root of test template directories'
+    parser.add_argument('-r', '--templateroot', action='store',
+                        dest='templateroot', default=os.getcwd(), type=str,
+                        help=msg)
+
+    msg = 'prefix command to use before binary'
+    parser.add_argument('-P', '--prerun', action='store', dest='prerun',
+                        default='', type=str, help=msg)
+
+    msg = 'application program generating output'
+    parser.add_argument('-p', '--program', action='store', dest='program',
+                        default='', type=str, help=msg)
+
+    args = parser.parse_args(cmdlineargs)
+
+    return args
+
+
+main()

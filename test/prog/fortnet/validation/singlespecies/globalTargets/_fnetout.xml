@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<fnetout>
+ <mode> "validate"
+ </mode>
+ <output>
+  <ndatapoints>11
+  </ndatapoints>
+  <atomic>No
+  </atomic>
+  <ntargets>1
+  </ntargets>
+  <datapoint1> 63.331428255956453 63.331428397329283
+  </datapoint1>
+  <datapoint2> 63.100769498495922 63.100768379724421
+  </datapoint2>
+  <datapoint3> 62.903554435160309 62.903559750369070
+  </datapoint3>
+  <datapoint4> 62.731406448950423 62.731389843936626
+  </datapoint4>
+  <datapoint5> 62.577066950883051 62.577101920255657
+  </datapoint5>
+  <datapoint6> 62.435457048073125 62.435408358509243
+  </datapoint6>
+  <datapoint7> 62.301805043404251 62.301847404343739
+  </datapoint7>
+  <datapoint8> 62.172290824220980 62.172271402884860
+  </datapoint8>
+  <datapoint9> 62.044750500623934 62.044751429706714
+  </datapoint9>
+  <datapoint10> 61.918072992782946 61.918076186548348
+  </datapoint10>
+  <datapoint11> 61.791562920239876 61.791561893148902
+  </datapoint11>
+ </output>
+</fnetout>

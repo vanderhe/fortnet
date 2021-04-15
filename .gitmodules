@@ -1,0 +1,4 @@
+[submodule "external/mpifx/origin"]
+        path = external/mpifx/origin
+        url = https://github.com/dftbplus/mpifx.git
+        branch = release

@@ -1,0 +1,54 @@
+#! This file will be preprocessed using the same preprocessor options as used
+#! for the compilation and additionally setting MPI_PROCS equal to the make variable
+#! $(TEST_MPI_PROCS).
+
+#:include 'common.fypp'
+
+loss/mae
+loss/mse
+loss/rms
+
+optimizer/singlespecies/conjgrads
+optimizer/singlespecies/fire
+optimizer/singlespecies/lbfgs
+optimizer/singlespecies/steepestdesc
+
+optimizer/multispecies/conjgrads
+optimizer/multispecies/fire
+optimizer/multispecies/lbfgs
+optimizer/multispecies/steepestdesc
+
+training/singlespecies/globalTargets
+training/singlespecies/atomicTargets
+training/multispecies/globalTargets
+training/multispecies/atomicTargets
+
+validation/singlespecies/globalTargets
+validation/singlespecies/atomicTargets
+validation/multispecies/globalTargets
+validation/multispecies/atomicTargets
+
+prediction/singlespecies/globalTargets
+prediction/singlespecies/atomicTargets
+prediction/multispecies/globalTargets
+prediction/multispecies/atomicTargets
+
+restart/singlespecies/globalTargets/conjgrads
+restart/singlespecies/globalTargets/fire
+restart/singlespecies/globalTargets/lbfgs
+restart/singlespecies/globalTargets/steepestdesc
+
+restart/singlespecies/atomicTargets/conjgrads
+restart/singlespecies/atomicTargets/fire
+restart/singlespecies/atomicTargets/lbfgs
+restart/singlespecies/atomicTargets/steepestdesc
+
+restart/multispecies/globalTargets/conjgrads
+restart/multispecies/globalTargets/fire
+restart/multispecies/globalTargets/lbfgs
+restart/multispecies/globalTargets/steepestdesc
+
+restart/multispecies/atomicTargets/conjgrads
+restart/multispecies/atomicTargets/fire
+restart/multispecies/atomicTargets/lbfgs
+restart/multispecies/atomicTargets/steepestdesc
