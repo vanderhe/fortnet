@@ -1,0 +1,12 @@
+*~
+*.bak
+*.pyc
+_gitmsg.saved.txt
+build
+_build
+_downloads
+custom.cmake
+__pycache__
+.idea
+RELEASE
+.nfs*
