@@ -64,7 +64,7 @@ Documentation
 Consult following resources for documentation:
 
 * `Step-by-step instructions with selected examples (Fortnet Recipes)
-  <http://fortnet-recipes.readthedocs.io/>`_
+  <https://fortnet.readthedocs.io/>`_
 
 
 Contributing

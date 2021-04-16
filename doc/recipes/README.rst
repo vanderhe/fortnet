@@ -3,8 +3,8 @@ Fortnet Recipes
 ***************
 
 The `docs/` folder contains the source of the Fortnet Recipes book. The content
-is currently rendered on `fortnet-recipes.readthedocs.io
-<http://fortnet-recipes.readthedocs.io>`_. You can also render it locally by
+is currently rendered on `fortnet.readthedocs.io
+<https://fortnet.readthedocs.io>`_. You can also render it locally by
 using the Sphinx documentation system.
 
 This material is licensed under the CC-BY-SA license (see `LICENSE <LICENSE>`_).
