@@ -365,13 +365,11 @@ contains
     ! read options
     call getChild(root, 'Options', tmp)
     call readOptions(this, tmp)
-    call destroyNode(tmp)
 
     ! read data informations
     call getChild(root, 'Data', tmp)
     call readPrec(this, tmp)
     call readData(this, tmp)
-    call destroyNode(tmp)
 
     select case(this%option%mode)
 
@@ -388,13 +386,11 @@ contains
         call getChildValue(root, 'Network', tmp)
         call getNodeName(tmp, strBuffer)
         call readNetwork(this, tmp, trim(char(strBuffer)))
-        call destroyNode(tmp)
 
         ! read mapping informations
         call getChildValue(root, 'Mapping', tmp)
         call getNodeName(tmp, strBuffer)
         call readMapping(this, tmp, trim(char(strBuffer)))
-        call destroyNode(tmp)
 
       end if
 
@@ -402,7 +398,6 @@ contains
       call getChildValue(root, 'Training', tmp)
       call getNodeName(tmp, strBuffer)
       call readTraining(this, tmp, trim(char(strBuffer)))
-      call destroyNode(tmp)
 
     case ('validate', 'predict')
 
@@ -426,6 +421,7 @@ contains
     write(stdout, '(A,/)') "Processed input written as HSD to '" // hsdParsedInput //"'"
     write(stdout, '(A,/)') repeat('-', 80)
 
+    call destroyNode(tmp)
     call destroyNode(hsdTree)
 
   end subroutine TProgramVariables_init
@@ -519,13 +515,16 @@ contains
     !> string buffer instance
     type(string) :: strBuffer
 
+    !> pointer to nodes, containing the information
+    type(fnode), pointer :: child
+
     select case (tolower(case))
 
     case ('bpnn')
 
       this%arch%type = 'bpnn'
 
-      call getChildValue(node, 'Hidden', strBuffer, multiple=.true.)
+      call getChildValue(node, 'Hidden', strBuffer, child=child, multiple=.true.)
       call convRangeToInt(char(strBuffer), node, this%arch%hidden, huge(this%arch%nHiddenLayer))
       this%arch%nHiddenLayer = size(this%arch%hidden)
 
@@ -537,9 +536,6 @@ contains
       call detailedError(node, 'Invalid network type')
 
     end select
-
-    ! issue warning about unprocessed nodes
-    call warnUnprocessedNodes(node, .true.)
 
   end subroutine readNetwork
 
@@ -603,9 +599,6 @@ contains
       this%mapping%speciesIds(:) = 1.0_dp
     end if
 
-    ! issue warning about unprocessed nodes
-    call warnUnprocessedNodes(node, .true.)
-
   end subroutine readMapping
 
 
@@ -664,9 +657,6 @@ contains
     call getChildValue(node, 'Loss', strBuffer, 'rms')
     call this%train%setLossFunc(tolower(trim(unquote(char(strBuffer)))))
 
-    ! issue warning about unprocessed nodes
-    call warnUnprocessedNodes(node, .true.)
-
   end subroutine readTraining
 
 
@@ -712,9 +702,6 @@ contains
     end if
 
     call init(this%rndGen, luxlev=3, initSeed=this%option%seed)
-
-    ! issue warning about unprocessed nodes
-    call warnUnprocessedNodes(node, .true.)
 
   end subroutine readOptions
 
@@ -795,11 +782,14 @@ contains
     !> container of program variables
     type(TProgramVariables), intent(inout) :: this
 
-    !> nodes containig the information
-    type(fnode), pointer :: node, child1, child2, value1, xml, rootNode
+    !> node containig the information
+    type(fnode), pointer :: node
 
     !> string buffer instances
     type(string) :: strBuffer, buffer1, buffer2
+
+    !> nodes containig the information
+    type(fnode), pointer :: child1, child2, value1, xml, rootNode
 
     !> list of strings
     type(TListString) :: lStr
@@ -972,9 +962,6 @@ contains
         end do
 
       end select
-
-    ! issue warning about unprocessed nodes
-    call warnUnprocessedNodes(node, .true.)
 
   end subroutine readData
 
