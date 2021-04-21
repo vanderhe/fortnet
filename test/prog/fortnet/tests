@@ -4,6 +4,9 @@
 
 #:include 'common.fypp'
 
+input/contiguous/atomicTargets
+input/contiguous/globalTargets
+
 loss/mae
 loss/mse
 loss/rms
