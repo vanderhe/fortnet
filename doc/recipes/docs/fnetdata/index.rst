@@ -64,6 +64,8 @@ For the bash shell you should include the following line in the .bashrc::
   export PATH=$PATH:/home/user/.local/bin
 
 
+.. _sec-fnetdata_globalTargets:
+
 *****************
 Global Properties
 *****************
@@ -211,3 +213,39 @@ per atom. Finally, a ``Fortformat`` object gets instantiated using the gathered
 informations, as well as providing keyword arguments to determine if atomic
 properties are present (default: False) and whether the coordinates should be
 saved in fractional or absolute format (default: False).
+
+
+***********************
+Contiguous Dataset File
+***********************
+
+[Input: `recipes/fnetdata/contiguous/`]
+
+If the dataset contains several hundred thousand or even millions of data
+points, individual files, each containing one data point, become impractical.
+To resolve this fact, both ``Fortformat`` and ``Fortnet`` support a contiguous
+format. If, instead of a list of output paths, only a single path is specified
+as a string, there is an automatic change to the contiguous format and an
+appropriate file gets written to the specified location. The modified line of
+code of the former :ref:`section <sec-fnetdata_globalTargets>` regarding global
+targets would look like this:
+
+.. code-block:: python
+
+      fnetdata = Fortformat(strucs, 'fnetdata.xml', targets=energies,
+			    atomic=False, frac=True)
+      fnetdata.dump()
+
+For Fortnet to correctly recognize the related format, the path or file
+containing the primary dataset (``Dataset``) must end with `fnetdata.xml` and
+that of the secondary dataset (``Validset``) would have to end with
+`fnetvdata.xml`. A correct specification in the `fortnet_in.hsd` input file
+could therefore be similar to this::
+
+  Data {
+       .
+       .
+       .
+    Dataset = '/home/user/training/fnetdata.xml'
+    Validset = '/home/user/validation/fnetvdata.xml'
+  }
