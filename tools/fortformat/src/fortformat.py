@@ -25,20 +25,25 @@ import numpy as np
 BOHR__AA = 0.529177249
 AA__BOHR = 1.0 / BOHR__AA
 
+NL = '\n'
+FLOATFMT = '{:24.16e}'
+
 
 class Fortformat:
     '''Basic Fortnet Input Format Class.'''
 
 
-    def __init__(self, atoms, paths, targets=None, atomic=False, frac=False):
+    def __init__(self, atoms, paths, targets=None, atomic=False,
+                 frac=False):
         '''Initializes a Fortformat object.
 
         Args:
 
             atoms (list): list of ASE atoms objects, containing the geometries
                 of the training dataset to be used
-            paths (list) : list of strings, containing the paths of the output
-                fnetdata.xml files, which will contain all relevant informations
+            paths (list) : string or list of strings, containing a single path
+                to a contiguous dataset file or multiple paths to single
+                fnetdata.xml files, which will contain all relevant information
             targets (list or 2darray): list of numpy arrays (atomic) or 2darray,
                 containing the targets of the training dataset
             atomic (bool): true, if targets are atomic properties (e.g. forces)
@@ -53,7 +58,19 @@ class Fortformat:
         else:
             self._withtargets = False
 
+        if isinstance(paths, list):
+            self._contiguous = False
+        elif isinstance(paths, str):
+            self._contiguous = True
+        else:
+            msg = \
+                'Invalid format of paths provided. Choose either a single ' +\
+                'path for a contiguous dataset file or a list of paths for ' +\
+                'single fnetdata.xml files.'
+            raise FortformatError(msg)
+
         self._paths = paths
+
         self._atomic = atomic
         self._frac = frac
 
@@ -68,11 +85,26 @@ class Fortformat:
             self._targets = None
             self._ntargets = None
 
+        self.process_paths()
 
-    def dump(self):
-        '''Based on the stored data, fnetdata.xml files get dumped to disk.'''
 
-        data = {}
+    def process_paths(self):
+        '''In case of non-contiguous files, appends suffix if not present.'''
+
+        if not self._contiguous:
+            for isys in range(self._nsystems):
+                if not self._paths[isys].endswith('.xml'):
+                    self._paths[isys] = os.path.join(
+                        self._paths[isys], 'fnetdata.xml')
+
+
+    def process_data(self):
+        '''Based on the stored data, a list of dictionaries,
+           containing the processed input, will be created.
+        '''
+
+        data = []
+        tmp = {}
 
         for isys in range(self._nsystems):
 
@@ -86,101 +118,85 @@ class Fortformat:
                 msg = 'Currently, only uniform pbc are supported.'
                 raise FortformatError(msg)
 
-            data['periodic'] = periodic
+            tmp['periodic'] = periodic
 
             if self._frac and periodic:
-                data['coords'] = self._atoms[isys].get_scaled_positions()
+                tmp['coords'] = self._atoms[isys].get_scaled_positions()
             else:
                 # fnetdata.xml expects coordinates in Bohr
-                data['coords'] = self._atoms[isys].get_positions() * AA__BOHR
+                tmp['coords'] = self._atoms[isys].get_positions() * AA__BOHR
 
             if periodic:
                 # fnetdata.xml expects lattice vectors in Bohr
-                data['basis'] = self._atoms[isys].get_cell()[:, :] * AA__BOHR
+                tmp['basis'] = self._atoms[isys].get_cell()[:, :] * AA__BOHR
             else:
-                data['basis'] = None
+                tmp['basis'] = None
 
-            data['natoms'] = len(self._atoms[isys])
+            tmp['natoms'] = len(self._atoms[isys])
 
             if self._atomic and self._withtargets:
-                data['targets'] = self._targets[isys]
+                tmp['targets'] = self._targets[isys]
             elif not self._atomic and self._withtargets:
-                data['targets'] = self._targets[isys, :]
+                tmp['targets'] = self._targets[isys, :]
 
-            data['typenames'] = list(self._atoms[isys].symbols)
+            tmp['typenames'] = list(self._atoms[isys].symbols)
 
             # create a dictionary with unique species and id's
             atomtospecies = dict()
-            for species in data['typenames']:
+            for species in tmp['typenames']:
                 if not species in atomtospecies:
                     atomtospecies[species] = len(atomtospecies) + 1
             uniquespecies = list(['null'] * len(atomtospecies.keys()))
             for species in atomtospecies:
                 uniquespecies[atomtospecies[species] - 1] = species
-            data['atomtospecies'] = atomtospecies
-            data['uniquespecies'] = uniquespecies
-            data['uniquespecies'] = ['"' + entry + '"' for entry in
-                                     data['uniquespecies']]
+            tmp['atomtospecies'] = atomtospecies
+            tmp['uniquespecies'] = uniquespecies
+            tmp['uniquespecies'] = ['"' + entry + '"' for entry in
+                                     tmp['uniquespecies']]
 
-            if not self._paths[isys].endswith('.xml'):
-                filename = os.path.join(self._paths[isys], 'fnetdata.xml')
-            else:
-                filename = self._paths[isys]
+            data.append(tmp.copy())
 
-            self.dump_as_xml(data, filename)
+        return data
 
 
-    def dump_as_xml(self, data, filename):
-        '''Dumps a single fnetdata.xml file to disk.
+    def create_single_xml(self, data):
+        '''Creates a single fnetdata.xml file, as ET xml-tree instance.
 
         Args:
-            data (dict): dictionary, containing all the necessary informations
-            filename (str): path where to write output file to
+
+            data (dict): dictionary, containing all the necessary information
+
+        Returns:
+
+            root (ET instance): xml-tree, representing a single dataset file
 
         '''
 
-        nl = '\n'
-        floatfmt = '{:24.16e}'
-
         root = ET.Element('fnetdata')
 
-        geotag = ET.SubElement(root, 'geometry')
+        root = xml_append_geometry(root, data, self._frac)
 
-        tmptag = ET.SubElement(geotag, 'typenames')
-        tmptag.text = ' '.join(data['uniquespecies'])
+        if self._withtargets:
+            root = xml_append_targets(root, data, self._ntargets,
+                                      self._atomic, contiguous=False)
 
-        tmptag = ET.SubElement(geotag, 'fractional')
-        if self._frac:
-            tmptag.text = 'Yes'
-        else:
-            tmptag.text = 'No'
+        return root
 
-        tmptag = ET.SubElement(geotag, 'typesandcoordinates')
 
-        tmp = []
-        for iatom in range(data['natoms']):
-            ispecies = data['atomtospecies'][data['typenames'][iatom]]
-            coordentry = data['coords'][iatom, :]
-            tmp.append('  {} '.format(ispecies) + \
-                       (3 * floatfmt).format(*coordentry))
-        tmptag.text = nl + '\n'.join(tmp) + nl
+    def create_contiguous_xml(self, data):
+        '''Creates a contiguous fnetdata.xml file, as ET xml-tree instance.
 
-        tmptag = ET.SubElement(geotag, 'periodic')
-        if data['periodic']:
-            tmptag.text = 'Yes'
-        else:
-            tmptag.text = 'No'
+        Args:
 
-        tmptag = ET.SubElement(geotag, 'latticevectors')
+            data (list): dictionaries, containing the necessary information
 
-        tmp = []
-        for ilatt in range(3):
-            tmp.append((3 * floatfmt).format((*data['basis'][ilatt, :])))
-        tmptag.text = nl + '\n'.join(tmp) + nl
+        Returns:
 
-        tmptag = ET.SubElement(geotag, 'coordinateorigin')
-        tmptag.text = nl + \
-            (3 * floatfmt).format(*np.array((0.0, 0.0, 0.0))) + nl
+            root (ET instance): xml-tree, representing a contiguous dataset file
+
+        '''
+
+        root = ET.Element('fnetdata')
 
         if self._withtargets:
 
@@ -195,19 +211,34 @@ class Fortformat:
             tmptag = ET.SubElement(traintag, 'ntargets')
             tmptag.text = '{}'.format(self._ntargets)
 
-            tmptag = ET.SubElement(traintag, 'targets')
-            tmp = []
-            if self._atomic:
-                for iatom in range(data['natoms']):
-                    tmp.append((self._ntargets * \
-                                   floatfmt).format(*data['targets'][iatom, :]))
-                tmptag.text = nl + '\n'.join(tmp) + nl
-            else:
-                tmptag.text = nl + (self._ntargets * \
-                    floatfmt).format(*data['targets']) + nl
+        for isys in range(self._nsystems):
 
-        fnetdata = ET.ElementTree(_beautify(root))
-        fnetdata.write(filename, xml_declaration=True, encoding='utf-8')
+            subroot = ET.SubElement(root, 'datapoint{}'.format(isys + 1))
+
+            subroot = xml_append_geometry(subroot, data[isys], self._frac)
+
+            if self._withtargets:
+                subroot = xml_append_targets(
+                    subroot, data[isys], self._ntargets,
+                    self._atomic, contiguous=True)
+
+        return root
+
+
+    def dump(self):
+        '''Based on the stored data, either a contiguous fnetdata
+           or various single fnetdata files get dumped to disk.
+        '''
+
+        data = self.process_data()
+
+        if self._contiguous:
+            xml = self.create_contiguous_xml(data)
+            dump_as_xml(xml, self._paths)
+        else:
+            for isys in range(self._nsystems):
+                xml = self.create_single_xml(data[isys])
+                dump_as_xml(xml, self._paths[isys])
 
 
     def checktargetconsistency(self, targets):
@@ -265,7 +296,7 @@ class Fortformat:
             msg = 'Empty list of features provided.'
             raise FortformatError(msg)
 
-        if len(self._paths) != len(atoms):
+        if not self._contiguous and len(self._paths) != len(atoms):
             msg = 'Number of features and paths does not match.'
             raise FortformatError(msg)
 
@@ -293,6 +324,130 @@ class Fortformat:
         '''
 
         return self._ntargets
+
+
+def dump_as_xml(root, fname):
+    '''Dumps a given xml-tree to disk.
+
+    Args:
+
+        root (ET instance): xml-tree to write to disk
+        fname (str): path to write the file to
+
+    '''
+
+    fname = os.path.abspath(fname)
+    os.makedirs(os.path.dirname(fname), exist_ok=True)
+
+    fnetdata = ET.ElementTree(_beautify(root))
+    fnetdata.write(fname, xml_declaration=True, encoding='utf-8')
+
+
+def xml_append_geometry(root, data, frac):
+    '''Appends geometry information to a given xml-tree root.
+
+    Args:
+
+        root (ET instance): xml-tree
+        data (dict): dictionary, containing the necessary information
+        frac (bool): true, if coordinates should be stored in units of the
+            lattice vectors (presupposes a periodic structure)
+
+    Returns:
+
+        root (ET instance): xml-tree with a geometry appended to it
+
+    '''
+
+    geotag = ET.SubElement(root, 'geometry')
+
+    tmptag = ET.SubElement(geotag, 'typenames')
+    tmptag.text = ' '.join(data['uniquespecies'])
+
+    tmptag = ET.SubElement(geotag, 'fractional')
+    if frac:
+        tmptag.text = 'Yes'
+    else:
+        tmptag.text = 'No'
+
+    tmptag = ET.SubElement(geotag, 'typesandcoordinates')
+
+    tmp = []
+    for iatom in range(data['natoms']):
+        ispecies = data['atomtospecies'][
+            data['typenames'][iatom]]
+        coordentry = data['coords'][iatom, :]
+        tmp.append('  {} '.format(ispecies) + \
+                   (3 * FLOATFMT).format(*coordentry))
+    tmptag.text = NL + '\n'.join(tmp) + NL
+
+    tmptag = ET.SubElement(geotag, 'periodic')
+    if data['periodic']:
+        tmptag.text = 'Yes'
+    else:
+        tmptag.text = 'No'
+
+    tmptag = ET.SubElement(geotag, 'latticevectors')
+
+    tmp = []
+    for ilatt in range(3):
+        tmp.append((3 * FLOATFMT).format((*data['basis'][ilatt, :])))
+    tmptag.text = NL + '\n'.join(tmp) + NL
+
+    tmptag = ET.SubElement(geotag, 'coordinateorigin')
+    tmptag.text = NL + \
+        (3 * FLOATFMT).format(*np.array((0.0, 0.0, 0.0))) + NL
+
+    return root
+
+
+def xml_append_targets(root, data, ntargets, atomic, contiguous=False):
+    '''Appends target information to a given xml-tree root.
+
+    Args:
+
+        root (ET instance): xml-tree
+        data (dict): dictionary, containing the necessary information
+        ntargets (int): number of atomic targets if atomic is true,
+            otherwise number of global system targets
+        atomic (bool): true, if targets are atomic properties (e.g. forces)
+            and false, if targets are system properties (e.g. total energy)
+        contiguous (bool): decides whether reduced target information
+            (contiguous format) or complete entries (single format) should get
+            appended (default: False)
+
+    Returns:
+
+        root (ET instance): xml-tree with targets appended to it
+
+    '''
+
+    tmp = []
+
+    traintag = ET.SubElement(root, 'training')
+
+    if not contiguous:
+        tmptag = ET.SubElement(traintag, 'atomic')
+        if atomic:
+            tmptag.text = 'Yes'
+        else:
+            tmptag.text = 'No'
+
+        tmptag = ET.SubElement(traintag, 'ntargets')
+        tmptag.text = '{}'.format(ntargets)
+
+    tmptag = ET.SubElement(traintag, 'targets')
+
+    if atomic:
+        for iatom in range(data['natoms']):
+            tmp.append((ntargets * FLOATFMT)
+                       .format(*data['targets'][iatom, :]))
+        tmptag.text = NL + '\n'.join(tmp) + NL
+    else:
+        tmptag.text = NL + (ntargets * \
+            FLOATFMT).format(*data['targets']) + NL
+
+    return root
 
 
 def _beautify(root, level=0, nindent=0):

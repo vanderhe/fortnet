@@ -27,7 +27,6 @@ def main():
     energies = []
 
     for ii, inpath in enumerate(inpaths):
-        os.makedirs(outpaths[ii], exist_ok=True)
         struc = read_vasp(os.path.join(inpath, 'POSCAR'))
         strucs.append(struc)
         props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))

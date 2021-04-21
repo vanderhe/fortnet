@@ -27,9 +27,7 @@ def main():
     energies = np.empty((len(inpaths), 1))
 
     for ii, inpath in enumerate(inpaths):
-        os.makedirs(outpaths[ii], exist_ok=True)
-        struc = read_vasp(os.path.join(inpath, 'POSCAR'))
-        strucs.append(struc)
+        strucs.append(read_vasp(os.path.join(inpath, 'POSCAR')))
         props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))
         energies[ii, 0] = props.get_total_energy()
 

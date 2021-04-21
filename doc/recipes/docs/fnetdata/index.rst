@@ -111,9 +111,7 @@ energy of the respective system, based on this raw data.
       energies = np.empty((len(inpaths), 1))
 
       for ii, inpath in enumerate(inpaths):
-	  os.makedirs(outpaths[ii], exist_ok=True)
-	  struc = read_vasp(os.path.join(inpath, 'POSCAR'))
-	  strucs.append(struc)
+	  strucs.append(read_vasp(os.path.join(inpath, 'POSCAR')))
 	  props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))
 	  energies[ii, 0] = props.get_total_energy()
 
@@ -127,15 +125,14 @@ energy of the respective system, based on this raw data.
 Following the necessary imports, the main method first generates the
 corresponding next neighbor distances as already mentioned above. Two simple
 list comprehensions further establish lists with the in- and output paths. While
-iterating over all input paths, each corresponding output folder gets created
-and the ASE `Atoms` object appended to an empty list of structures. The
-individual total energies of the datapoints are stored in an empty Numpy array,
-where the number of rows being determined by the number of datapoints and the
-columns by the number of global targets per datapoint. Finally, a ``Fortformat``
-object gets instantiated using the gathered informations, as well as providing
-keyword arguments to determine if atomic properties are present (default: False)
-and whether the coordinates should be saved in fractional or absolute format
-(default: False).
+iterating over all input paths, an ASE `Atoms` object gets appended to an empty
+list of structures. The individual total energies of the datapoints are stored
+in an empty Numpy array, where the number of rows being determined by the number
+of datapoints and the columns by the number of global targets per datapoint.
+Finally, a ``Fortformat`` object gets instantiated using the gathered
+information, as well as providing keyword arguments to determine if atomic
+properties are present (default: False) and whether the coordinates should be
+saved in fractional or absolute format (default: False).
 
 
 *****************
@@ -188,9 +185,8 @@ as targets.
       energies = []
 
       for ii, inpath in enumerate(inpaths):
-	  os.makedirs(outpaths[ii], exist_ok=True)
-	  struc = read_vasp(os.path.join(inpath, 'POSCAR'))
-	  strucs.append(struc)
+          struc = read_vasp(os.path.join(inpath, 'POSCAR'))
+          strucs.append(struc)
 	  props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))
 	  tmp = np.empty((len(struc), 1))
 	  tmp[:, 0] = props.get_total_energy() / 2.0
@@ -207,12 +203,11 @@ The procedure is nearly analogous to the global target example above: Following
 the necessary imports, the main method first generates the corresponding next
 neighbor distances as already mentioned above. Two simple list comprehensions
 further establish lists with the in- and output paths. While iterating over all
-input paths, each corresponding output folder gets created and the ASE `Atoms`
-object appended to an empty list of structures. Since each of those structures
-will in general have a different number of atoms, the target values are stored
-in a list of Numpy arrays, where the number of rows being determined by the
-number of atoms and the columns by the number of targets per atom. Finally, a
-``Fortformat`` object gets instantiated using the gathered informations, as well
-as providing keyword arguments to determine if atomic properties are present
-(default: False) and whether the coordinates should be saved in fractional or
-absolute format (default: False).
+input paths, an ASE `Atoms` object gets appended to an empty list of structures.
+Since each of those structures will in general have a different number of atoms,
+the target values are stored in a list of Numpy arrays, where the number of rows
+being determined by the number of atoms and the columns by the number of targets
+per atom. Finally, a ``Fortformat`` object gets instantiated using the gathered
+informations, as well as providing keyword arguments to determine if atomic
+properties are present (default: False) and whether the coordinates should be
+saved in fractional or absolute format (default: False).
