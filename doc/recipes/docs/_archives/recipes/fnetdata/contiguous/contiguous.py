@@ -19,8 +19,8 @@ def main():
 
     nndists = np.arange(2.00, 3.50 + 0.05, 0.05)
 
-    inpaths = [os.path.join(os.getcwd(), 'vaspdata', entry)
-               for entry in sorted(os.listdir('vaspdata'))]
+    inpaths = [os.path.join(os.getcwd(), '../globalTargets/vaspdata', entry)
+               for entry in sorted(os.listdir('../globalTargets/vaspdata'))]
     outpaths = [os.path.join(os.getcwd(), 'dataset', 'nndist_{:.3f}'
                              .format(nndist)) for nndist in nndists]
 
