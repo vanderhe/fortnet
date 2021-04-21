@@ -22,20 +22,23 @@ module fnet_fnetdata
   use dftbp_simplealgebra, only : invert33, determinant33
   use dftbp_charmanip, only : tolower, i2c
 
+  use fnet_nestedtypes, only : TRealArray2D
+
   implicit none
 
   private
 
-  public :: readFnetdataGeometry, readFnetdataTargets
+  public :: readFnetdataGeometry, readContiguousFnetdataGeometries
+  public :: readFnetdataTargets, readContiguousFnetdataTargets
 
 
 contains
 
   !> interpret the geometry information stored in fnetdata.xml files
-  subroutine readFnetdataGeometry(fnetdata, geo)
+  subroutine readFnetdataGeometry(root, geo)
 
     !> pointer to the node, containing the data
-    type(fnode), pointer :: fnetdata
+    type(fnode), pointer :: root
 
     !> contains the geometry information on exit
     type(TGeometry), intent(out) :: geo
@@ -60,7 +63,7 @@ contains
     integer, allocatable :: tmpInt(:,:)
 
     ! read geometry information
-    call getChild(fnetdata, 'geometry', geonode)
+    call getChild(root, 'geometry', geonode)
     call getChildValue(geonode, 'periodic', geo%tPeriodic, default=.false.)
 
     ! no support for helical boundary conditions
@@ -143,8 +146,84 @@ contains
   end subroutine readFnetdataGeometry
 
 
+  !> interpret the geometry information stored in a contiguous fnetdata.xml file
+  subroutine readContiguousFnetdataGeometries(root, geo)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> contains the geometry information on exit
+    type(TGeometry), intent(out), allocatable :: geo(:)
+
+    !> node to get dataset size from
+    type(fnode), pointer :: datasetnode
+
+    !> temporary pointer to node, containing information
+    type(fnode), pointer :: tmp
+
+    !> number of datapoints contained in the dataset file
+    integer :: nDatapoints
+
+    !> auxiliary variable
+    integer :: iGeo
+
+    ! read dataset size
+    call getChild(root, 'dataset', datasetnode)
+    call getChildValue(datasetnode, 'ndatapoints', nDatapoints)
+
+    allocate(geo(nDatapoints))
+
+    do iGeo = 1, nDatapoints
+      call getChild(root, 'datapoint' // i2c(iGeo), tmp)
+      call readFnetdataGeometry(tmp, geo(iGeo))
+    end do
+
+  end subroutine readContiguousFnetdataGeometries
+
+
+  !> interpret the target information of a training xml-tree
+  subroutine readTargets(root, nTargets, nAtom, tAtomicTargets, targets)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> number of targets per atom or system
+    integer, intent(in) :: nTargets
+
+    !> number of atoms of the corresponding geometry
+    integer, intent(in) :: nAtom
+
+    !> true, if targets for every atom provided
+    logical, intent(in) :: tAtomicTargets
+
+    !> contains the target information on exit
+    real(dp), intent(out), allocatable :: targets(:,:)
+
+    !> node containing target informations
+    type(fnode), pointer :: child
+
+    !> temporary target storage container
+    real(dp), allocatable :: tmpTargets(:)
+
+    if (tAtomicTargets) then
+      allocate(tmpTargets(nTargets * nAtom))
+    else
+      allocate(tmpTargets(nTargets))
+    end if
+
+    call getChildValue(root, 'targets', tmpTargets, child=child)
+
+    if (tAtomicTargets) then
+      targets = reshape(tmpTargets, [nTargets, nAtom])
+    else
+      targets = reshape(tmpTargets, [nTargets, 1])
+    end if
+
+  end subroutine readTargets
+
+
   !> interpret the target information stored in fnetdata.xml files
-  subroutine readFnetdataTargets(fnetdata, nAtom, tAtomicTargets, targets)
+  subroutine readFnetdataTargets(fnetdata, nAtom, targets, tAtomicTargets)
 
     !> pointer to the node, containing the data
     type(fnode), pointer :: fnetdata
@@ -152,11 +231,11 @@ contains
     !> number of atoms of current geometry
     integer, intent(in) :: nAtom
 
-    !> true, if targets for every atom provided
-    logical, intent(out) :: tAtomicTargets
-
     !> contains the target information on exit
     real(dp), intent(out), allocatable :: targets(:,:)
+
+    !> true, if targets for every atom provided
+    logical, intent(out) :: tAtomicTargets
 
     !> node to get targets from
     type(fnode), pointer :: trainnode
@@ -178,20 +257,52 @@ contains
     call getChildValue(trainnode, 'atomic', tAtomicTargets)
     call getChildValue(trainnode, 'ntargets', nTargets)
 
-    if (tAtomicTargets) then
-      allocate(tmpTargets(nTargets * nAtom))
-    else
-      allocate(tmpTargets(nTargets))
-    end if
-
-    call getChildValue(trainnode, 'targets', tmpTargets, modifier=modifier, child=child)
-
-    if (tAtomicTargets) then
-      targets = reshape(tmpTargets, [nTargets, nAtom])
-    else
-      targets = reshape(tmpTargets, [nTargets, 1])
-    end if
+    call readTargets(trainnode, nTargets, nAtom, tAtomicTargets, targets)
 
   end subroutine readFnetdataTargets
+
+
+  !> interpret the geometry information stored in a contiguous fnetdata.xml file
+  subroutine readContiguousFnetdataTargets(root, geo, targets, nTargets, tAtomicTargets)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> contains corresponding geometry information
+    type(TGeometry), intent(in) :: geo(:)
+
+    !> target values for training
+    type(TRealArray2D), intent(out), allocatable :: targets(:)
+
+    !> number of target values per atom (if tAtomicTargets = .true.) or system
+    integer, intent(out) :: nTargets
+
+    !> true, if targets for every atom provided
+    logical, intent(out) :: tAtomicTargets
+
+    !> node to get target properties from
+    type(fnode), pointer :: trainnode
+
+    !> temporary pointer to node, containing information
+    type(fnode), pointer :: tmp
+
+    !> auxiliary variable
+    integer :: iTarget
+
+    ! read target information
+    call getChild(root, 'training', trainnode)
+    call getChildValue(trainnode, 'atomic', tAtomicTargets)
+    call getChildValue(trainnode, 'ntargets', nTargets)
+
+    allocate(targets(size(geo)))
+
+    do iTarget = 1, size(geo)
+      call getChild(root, 'datapoint' // i2c(iTarget), tmp)
+      call getChild(tmp, 'training', trainnode)
+      call readTargets(trainnode, nTargets, geo(iTarget)%nAtom, tAtomicTargets,&
+          & targets(iTarget)%array)
+    end do
+
+  end subroutine readContiguousFnetdataTargets
 
 end module fnet_fnetdata

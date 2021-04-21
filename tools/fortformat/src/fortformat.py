@@ -198,6 +198,10 @@ class Fortformat:
 
         root = ET.Element('fnetdata')
 
+        datasettag = ET.SubElement(root, 'dataset')
+        tmptag = ET.SubElement(datasettag, 'ndatapoints')
+        tmptag.text = '{}'.format(self._nsystems)
+
         if self._withtargets:
 
             traintag = ET.SubElement(root, 'training')

@@ -30,7 +30,8 @@ module fnet_initprogram
 
   use fnet_precond, only : readPreconditioning, writePreconditioning
   use fnet_optimizers, only : TOptimizer, optimizerTypes, init, reset
-  use fnet_fnetdata, only : readFnetdataGeometry, readFnetdataTargets
+  use fnet_fnetdata, only : readFnetdataGeometry, readContiguousFnetdataGeometries
+  use fnet_fnetdata, only : readFnetdataTargets, readContiguousFnetdataTargets
   use fnet_acsf, only : TAcsf
   use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TEnv
   use fnet_nestedtypes, only : TWrapSteepDesc, TWrapConjGrad, TWrapLbfgs, TWrapFire
@@ -199,6 +200,12 @@ module fnet_initprogram
     !> true, if targets are atomic properties
     logical :: tAtomicTargets
 
+    !> true, if a contiguous dataset file is provided
+    logical :: tContiguous
+
+    !> true, if a contiguous validation dataset file is provided
+    logical :: tValidContiguous
+
     !> true, if validation monitoring is desired
     logical :: tMonitorValid
 
@@ -320,6 +327,9 @@ module fnet_initprogram
   !> file name of generic Fortnet datapoint
   character(len=*), parameter :: fnetdataFile = 'fnetdata.xml'
 
+  !> file name of generic Fortnet datapoint
+  character(len=*), parameter :: fnetvdataFile = 'fnetvdata.xml'
+
   !> file name for preconditioning informations
   character(len=*), parameter :: precFile = 'precond.out'
 
@@ -328,7 +338,6 @@ module fnet_initprogram
 
 
 contains
-
 
   !> initialise program variables
   subroutine TProgramVariables_init(this)
@@ -495,7 +504,7 @@ contains
 
     end do
 
-    call getNumberOfParameters(this%arch%allDims, this%arch%nSubNnParams)
+    this%arch%nSubNnParams = getNumberOfParameters(this%arch%allDims)
 
   end subroutine readFromNetstats
 
@@ -580,7 +589,7 @@ contains
     this%arch%allDims = [this%mapping%nRadial + this%mapping%nAngular, this%arch%hidden,&
         & this%data%nTargets]
 
-    call getNumberOfParameters(this%arch%allDims, this%arch%nSubNnParams)
+    this%arch%nSubNnParams = getNumberOfParameters(this%arch%allDims)
 
     ! read species identifier
     allocate(this%mapping%speciesIds(this%data%nSpecies))
@@ -813,7 +822,16 @@ contains
     call getChildValue(node, 'Dataset', strBuffer)
     this%data%datapath = trim(unquote(char(strBuffer)))
 
-    call readDatapathsFromFile(this%data%datapath, node, this%data%nDatapoints, this%data%datapaths)
+    if (this%data%datapath(len(this%data%datapath)-len(fnetdataFile)+1:len(this%data%datapath))&
+        & == fnetdataFile) then
+      this%data%tContiguous = .true.
+      allocate(this%data%datapaths(1))
+      this%data%datapaths(1) = this%data%datapath
+    else
+      this%data%tContiguous = .false.
+      call readDatapathsFromFile(this%data%datapath, node, this%data%nDatapoints,&
+          & this%data%datapaths)
+    end if
 
     call getChildValue(node, 'Validset', strBuffer, default='')
 
@@ -825,54 +843,86 @@ contains
     case default
       this%data%tMonitorValid = .true.
       this%data%validpath = trim(unquote(char(strBuffer)))
-      call readDatapathsFromFile(this%data%validpath, node, this%data%nValidDatapoints,&
-          & this%data%validpaths)
-    end select
-
-    this%data%nTotalAtoms = 0
-    allocate(this%data%geos(this%data%nDatapoints))
-    if (this%data%tMonitorValid) then
-      allocate(this%data%validGeos(this%data%nValidDatapoints))
-    end if
-    select case (this%option%mode)
-    case('train', 'validate')
-      allocate(this%data%targets(this%data%nDatapoints))
-      if (this%data%tMonitorValid) then
-        allocate(this%data%validTargets(this%data%nValidDatapoints))
+      if (this%data%validpath(len(this%data%validpath)-len(fnetvdataFile)+1&
+          & :len(this%data%validpath)) == fnetvdataFile) then
+        this%data%tValidContiguous = .true.
+        allocate(this%data%validpaths(1))
+        this%data%validpaths(1) = this%data%validpath
+      else
+        this%data%tValidContiguous = .false.
+        call readDatapathsFromFile(this%data%validpath, node, this%data%nValidDatapoints,&
+            & this%data%validpaths)
       end if
     end select
 
-    ! read geometries from generic fnetdata.xml files
-    do iSys = 1, this%data%nDatapoints
-      filename = trim(this%data%datapaths(iSys)) // '/fnetdata.xml'
-      call readHSDAsXML(filename, xml)
+    ! read geometries from generic fnetdata.xml file(s)
+    if (this%data%tContiguous) then
+      call readHSDAsXML(this%data%datapaths(1), xml)
       call getChild(xml, 'fnetdata', rootNode)
-      call readFnetdataGeometry(rootNode, this%data%geos(iSys))
-      this%data%nTotalAtoms = this%data%nTotalAtoms + this%data%geos(iSys)%nAtom
+      call readContiguousFnetdataGeometries(rootNode, this%data%geos)
+      this%data%nDatapoints = size(this%data%geos)
       select case (this%option%mode)
       case('train', 'validate')
-        call readFnetdataTargets(rootNode, this%data%geos(iSys)%nAtom, this%data%tAtomicTargets,&
-            & this%data%targets(iSys)%array)
-        this%data%nTargets = size(this%data%targets(iSys)%array, dim=1)
+        call readContiguousFnetdataTargets(rootNode, this%data%geos, this%data%targets,&
+            & this%data%nTargets, this%data%tAtomicTargets)
       end select
       call destroyNode(xml)
-    end do
-
-    ! if present, read validation geometries from generic fnetdata.xml or detailed.xml files
-    if (this%data%tMonitorValid) then
-      do iSys = 1, this%data%nValidDatapoints
-        filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
+    else
+      allocate(this%data%geos(this%data%nDatapoints))
+      select case (this%option%mode)
+      case('train', 'validate')
+        allocate(this%data%targets(this%data%nDatapoints))
+      end select
+      do iSys = 1, this%data%nDatapoints
+        filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
         call readHSDAsXML(filename, xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call readFnetdataGeometry(rootNode, this%data%validGeos(iSys))
+        call readFnetdataGeometry(rootNode, this%data%geos(iSys))
         select case (this%option%mode)
         case('train', 'validate')
-          call readFnetdataTargets(rootNode, this%data%validGeos(iSys)%nAtom,&
-              & this%data%tAtomicTargets, this%data%validTargets(iSys)%array)
-          this%data%nValidTargets = size(this%data%validTargets(iSys)%array, dim=1)
+          call readFnetdataTargets(rootNode, this%data%geos(iSys)%nAtom,&
+              & this%data%targets(iSys)%array, this%data%tAtomicTargets)
+          this%data%nTargets = size(this%data%targets(iSys)%array, dim=1)
         end select
         call destroyNode(xml)
       end do
+    end if
+
+    this%data%nTotalAtoms = getTotalNumberOfAtoms(this%data%geos)
+
+    ! if present, read validation geometries from generic fnetdata.xml file(s)
+    if (this%data%tMonitorValid) then
+      if (this%data%tValidContiguous) then
+        call readHSDAsXML(this%data%validpaths(1), xml)
+        call getChild(xml, 'fnetdata', rootNode)
+        call readContiguousFnetdataGeometries(rootNode, this%data%validGeos)
+        this%data%nValidDatapoints = size(this%data%validGeos)
+        select case (this%option%mode)
+        case('train', 'validate')
+          call readContiguousFnetdataTargets(rootNode, this%data%validGeos, this%data%validTargets,&
+              & this%data%nValidTargets, this%data%tAtomicTargets)
+        end select
+        call destroyNode(xml)
+      else
+        allocate(this%data%validGeos(this%data%nValidDatapoints))
+        select case (this%option%mode)
+        case('train', 'validate')
+          allocate(this%data%validTargets(this%data%nValidDatapoints))
+        end select
+        do iSys = 1, this%data%nValidDatapoints
+          filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
+          call readHSDAsXML(filename, xml)
+          call getChild(xml, 'fnetdata', rootNode)
+          call readFnetdataGeometry(rootNode, this%data%validGeos(iSys))
+          select case (this%option%mode)
+          case('train', 'validate')
+            call readFnetdataTargets(rootNode, this%data%validGeos(iSys)%nAtom,&
+                & this%data%validTargets(iSys)%array, this%data%tAtomicTargets)
+            this%data%nValidTargets = size(this%data%validTargets(iSys)%array, dim=1)
+          end select
+          call destroyNode(xml)
+        end do
+      end if
     end if
 
     ! apply z-score standardization, if desired
@@ -1154,13 +1204,13 @@ contains
 
 
   !> calculates the total number of network fitting parameters per sub-nn
-  subroutine getNumberOfParameters(allDims, nSubNnParams)
+  pure function getNumberOfParameters(allDims) result(nSubNnParams)
 
     !> number of nodes per layer, including in- and output, expected shape: [nHiddenLayer + 2]
     integer, intent(in) :: allDims(:)
 
     !> number of paramaters (weights + biases) per sub-nn
-    integer, intent(out) :: nSubNnParams
+    integer :: nSubNnParams
 
     !> auxiliary variable
     integer :: iLayer
@@ -1171,7 +1221,28 @@ contains
       nSubNnParams = nSubNnParams + allDims(iLayer) * allDims(iLayer + 1)
     end do
 
-  end subroutine getNumberOfParameters
+  end function getNumberOfParameters
+
+
+  !> calculates the total number of atoms in a list of geometries
+  pure function getTotalNumberOfAtoms(geos) result(nTotalAtoms)
+
+    !> contains the geometry information
+    type(TGeometry), intent(in) :: geos(:)
+
+    !> total number of atoms in the geometry list
+    integer :: nTotalAtoms
+
+    !> auxiliary variable
+    integer :: iGeo
+
+    nTotalAtoms = 0
+
+    do iGeo = 1, size(geos)
+      nTotalAtoms = nTotalAtoms + geos(iGeo)%nAtom
+    end do
+
+  end function getTotalNumberOfAtoms
 
 
   !> calculates the number of targets per sub-network parameters
