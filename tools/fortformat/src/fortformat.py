@@ -33,7 +33,7 @@ class Fortformat:
     '''Basic Fortnet Input Format Class.'''
 
 
-    def __init__(self, atoms, paths, targets=None, atomic=False,
+    def __init__(self, atoms, paths, features=None, targets=None, atomic=False,
                  frac=False):
         '''Initializes a Fortformat object.
 
@@ -44,6 +44,8 @@ class Fortformat:
             paths (list) : string or list of strings, containing a single path
                 to a contiguous dataset file or multiple paths to single
                 fnetdata.xml files, which will contain all relevant information
+            features (list): list of numpy arrays containing external atomic
+                features, used as an additional, optional input
             targets (list or 2darray): list of numpy arrays (atomic) or 2darray,
                 containing the targets of the training dataset
             atomic (bool): true, if targets are atomic properties (e.g. forces)
@@ -53,10 +55,16 @@ class Fortformat:
 
         '''
 
-        if targets is not None:
-            self._withtargets = True
+        if features is None:
+            self._withfeatures = False
         else:
+            self._withfeatures = True
+
+        if targets is None:
             self._withtargets = False
+            self._ntargets = None
+        else:
+            self._withtargets = True
 
         if isinstance(paths, list):
             self._contiguous = False
@@ -74,16 +82,14 @@ class Fortformat:
         self._atomic = atomic
         self._frac = frac
 
-        self.checkfeatureconsistency(atoms)
+        self.checkfeatureconsistency(atoms, features=features)
         self._atoms = atoms
-        self._nsystems = len(self._atoms)
+        self._features = features
 
         if self._withtargets:
             self.checktargetconsistency(targets)
-            self._targets = targets
-        else:
-            self._targets = None
-            self._ntargets = None
+
+        self._targets = targets
 
         self.process_paths()
 
@@ -159,12 +165,14 @@ class Fortformat:
         return data
 
 
-    def create_single_xml(self, data):
+    def create_single_xml(self, data, features):
         '''Creates a single fnetdata.xml file, as ET xml-tree instance.
 
         Args:
 
             data (dict): dictionary, containing all the necessary information
+            features (2darray): numpy array containing external atomic
+                features, used as an additional, optional input
 
         Returns:
 
@@ -176,9 +184,13 @@ class Fortformat:
 
         root = xml_append_geometry(root, data, self._frac)
 
+        if self._withfeatures:
+            root = xml_append_external_features(
+                root, features, self._nfeatures, contiguous=False)
+
         if self._withtargets:
-            root = xml_append_targets(root, data, self._ntargets,
-                                      self._atomic, contiguous=False)
+            root = xml_append_targets(
+                root, data, self._ntargets, self._atomic, contiguous=False)
 
         return root
 
@@ -201,6 +213,13 @@ class Fortformat:
         datasettag = ET.SubElement(root, 'dataset')
         tmptag = ET.SubElement(datasettag, 'ndatapoints')
         tmptag.text = '{}'.format(self._nsystems)
+
+        if self._withfeatures:
+
+            featurestag = ET.SubElement(root, 'features')
+
+            tmptag = ET.SubElement(featurestag, 'nextfeatures')
+            tmptag.text = '{}'.format(self._nfeatures)
 
         if self._withtargets:
 
@@ -226,6 +245,11 @@ class Fortformat:
                     subroot, data[isys], self._ntargets,
                     self._atomic, contiguous=True)
 
+            if self._withfeatures:
+                subroot = xml_append_external_features(
+                    subroot, self._features[isys],
+                    self._nfeatures, contiguous=True)
+
         return root
 
 
@@ -241,7 +265,7 @@ class Fortformat:
             dump_as_xml(xml, self._paths)
         else:
             for isys in range(self._nsystems):
-                xml = self.create_single_xml(data[isys])
+                xml = self.create_single_xml(data[isys], self._features[isys])
                 dump_as_xml(xml, self._paths[isys])
 
 
@@ -282,27 +306,53 @@ class Fortformat:
             self._ntargets = targets.shape[1]
 
 
-    def checkfeatureconsistency(self, atoms):
+    def checkfeatureconsistency(self, atoms, features=None):
         '''Performs basic consistency checks on the atomic features.
 
         Args:
 
             atoms (list): list of ASE atoms objects, containing the geometries
                 of the training dataset to be used
+            features (list): list of numpy arrays containing external atomic
+                features, used as an additional, optional input
 
         '''
 
+        if features is not None and not isinstance(features, list):
+            msg = 'Expected external features as list.'
+            raise FortformatError(msg)
+
         if not isinstance(atoms, list):
-            msg = 'Expected input features as list.'
+            msg = 'Expected geometry features as list.'
+            raise FortformatError(msg)
+
+        if features is not None and len(features) == 0:
+            msg = 'Empty list of external features provided.'
             raise FortformatError(msg)
 
         if len(atoms) == 0:
-            msg = 'Empty list of features provided.'
+            msg = 'Empty list of geometry features provided.'
+            raise FortformatError(msg)
+
+        if not self._contiguous and features is not None \
+           and len(self._paths) != len(features):
+            msg = 'Number of external features and paths does not match.'
             raise FortformatError(msg)
 
         if not self._contiguous and len(self._paths) != len(atoms):
-            msg = 'Number of features and paths does not match.'
+            msg = 'Number of geometry features and paths does not match.'
             raise FortformatError(msg)
+
+        self._nsystems = len(atoms)
+
+        if features is not None:
+            msg = 'Mismatch in number of external features and ' +\
+                'number of atoms of the corresponding geometry.'
+            for isys in range(self._nsystems):
+                if not len(atoms[isys]) == features[isys].shape[0]:
+                    raise FortformatError(msg)
+
+            self._nfeatures = features[0].shape[1]
 
 
     def get_nr_structures(self):
@@ -383,7 +433,7 @@ def xml_append_geometry(root, data, frac):
         coordentry = data['coords'][iatom, :]
         tmp.append('  {} '.format(ispecies) + \
                    (3 * FLOATFMT).format(*coordentry))
-    tmptag.text = NL + '\n'.join(tmp) + NL
+    tmptag.text = NL + NL.join(tmp) + NL
 
     tmptag = ET.SubElement(geotag, 'periodic')
     if data['periodic']:
@@ -396,11 +446,48 @@ def xml_append_geometry(root, data, frac):
     tmp = []
     for ilatt in range(3):
         tmp.append((3 * FLOATFMT).format((*data['basis'][ilatt, :])))
-    tmptag.text = NL + '\n'.join(tmp) + NL
+    tmptag.text = NL + NL.join(tmp) + NL
 
     tmptag = ET.SubElement(geotag, 'coordinateorigin')
-    tmptag.text = NL + \
-        (3 * FLOATFMT).format(*np.array((0.0, 0.0, 0.0))) + NL
+    tmptag.text = NL + (3 * FLOATFMT).format(*np.array((0.0, 0.0, 0.0))) + NL
+
+    return root
+
+
+def xml_append_external_features(root, features, nfeatures, contiguous=False):
+    '''Appends external atomic features to a given xml-tree root.
+
+    Args:
+
+        root (ET instance): xml-tree
+        features (2darray): numpy array containing external atomic
+            features, used as an additional, optional input
+        nfeatures (int): specifies the number of external features per atom
+        contiguous (bool): decides whether reduced feature information
+            (contiguous format) or complete entries (single format) should get
+            appended (default: False)
+
+    Returns:
+
+        root (ET instance): xml-tree with external features appended to it
+
+    '''
+
+    tmp = []
+
+    featurestag = ET.SubElement(root, 'features')
+
+    if not contiguous:
+        tmptag = ET.SubElement(featurestag, 'nextfeatures')
+        tmptag.text = '{}'.format(nfeatures)
+
+    tmptag = ET.SubElement(featurestag, 'extfeatures')
+
+    for ifeature in range(features.shape[0]):
+        tmp.append((nfeatures * FLOATFMT)
+                   .format(*features[ifeature, :]))
+
+    tmptag.text = NL + NL.join(tmp) + NL
 
     return root
 
@@ -446,7 +533,7 @@ def xml_append_targets(root, data, ntargets, atomic, contiguous=False):
         for iatom in range(data['natoms']):
             tmp.append((ntargets * FLOATFMT)
                        .format(*data['targets'][iatom, :]))
-        tmptag.text = NL + '\n'.join(tmp) + NL
+        tmptag.text = NL + NL.join(tmp) + NL
     else:
         tmptag.text = NL + (ntargets * \
             FLOATFMT).format(*data['targets']) + NL
