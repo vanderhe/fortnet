@@ -7,6 +7,17 @@
 input/contiguous/atomicTargets
 input/contiguous/globalTargets
 
+input/contiguousmix
+
+input/extfeatures/contiguous
+input/extfeatures/empty
+input/extfeatures/fullrange
+input/extfeatures/noncontiguous
+input/extfeatures/predict
+input/extfeatures/rangeselected
+input/extfeatures/selected
+input/extfeatures/validate
+
 loss/mae
 loss/mse
 loss/rms
