@@ -165,7 +165,7 @@ class Fortformat:
         return data
 
 
-    def create_single_xml(self, data, features):
+    def create_single_xml(self, data, features=None):
         '''Creates a single fnetdata.xml file, as ET xml-tree instance.
 
         Args:
@@ -265,7 +265,12 @@ class Fortformat:
             dump_as_xml(xml, self._paths)
         else:
             for isys in range(self._nsystems):
-                xml = self.create_single_xml(data[isys], self._features[isys])
+                if self._withfeatures:
+                    xml = self.create_single_xml(
+                        data[isys], features=self._features[isys])
+                else:
+                    xml = self.create_single_xml(
+                        data[isys], features=None)
                 dump_as_xml(xml, self._paths[isys])
 
 

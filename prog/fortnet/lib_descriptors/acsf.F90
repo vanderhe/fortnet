@@ -17,7 +17,7 @@ module fnet_acsf
   use dftbp_dynneighlist, only : TDynNeighList, TDynNeighList_init
   use dftbp_dynneighlist, only : TNeighIterator, TNeighIterator_init
 
-  use fnet_nestedtypes, only : TIntArray1D, TRealArray1D, TEnv
+  use fnet_nestedtypes, only : TIntArray1D, TRealArray1D, TRealArray2D, TEnv
   use fnet_workarounds, only : myFindloc
 
 #:if WITH_MPI
@@ -79,18 +79,18 @@ module fnet_acsf
   end type TAcsfParams
 
 
-  type :: TAcsfVals
+  ! type :: TAcsfVals
 
-    !> contains symmetry function values of atoms
-    real(dp), allocatable :: atoms(:,:)
+  !   !> contains symmetry function values of atoms
+  !   real(dp), allocatable :: atoms(:,:)
 
-  end type TAcsfVals
+  ! end type TAcsfVals
 
 
   type :: TMultiAcsfVals
 
     !> array of ACSF value instances
-    type(TAcsfVals), allocatable :: vals(:)
+    type(TRealArray2D), allocatable :: vals(:)
 
   end type TMultiAcsfVals
 
@@ -387,8 +387,8 @@ contains
     allocate(this%vals(size(geos)))
 
     do iGeo = 1, size(geos)
-      allocate(this%vals(iGeo)%atoms(nAcsfVals, geos(iGeo)%nAtom))
-      this%vals(iGeo)%atoms(:,:) = 0.0_dp
+      allocate(this%vals(iGeo)%array(nAcsfVals, geos(iGeo)%nAtom))
+      this%vals(iGeo)%array(:,:) = 0.0_dp
     end do
 
   end subroutine TMultiAcsfVals_init
@@ -413,9 +413,9 @@ contains
 
     ! calculate means of the different inputs
     do iGeo = 1, size(this%vals%vals)
-      do iAtom = 1, size(this%vals%vals(iGeo)%atoms, dim=2)
+      do iAtom = 1, size(this%vals%vals(iGeo)%array, dim=2)
         nTotAtoms = nTotAtoms + 1
-        this%zPrec(:, 1) = this%zPrec(:, 1) + this%vals%vals(iGeo)%atoms(:, iAtom)
+        this%zPrec(:, 1) = this%zPrec(:, 1) + this%vals%vals(iGeo)%array(:, iAtom)
       end do
     end do
 
@@ -423,8 +423,8 @@ contains
 
     ! calculate variances of the different inputs
     do iGeo = 1, size(this%vals%vals)
-      do iAtom = 1, size(this%vals%vals(iGeo)%atoms, dim=2)
-        this%zPrec(:, 2) = this%zPrec(:, 2) + (this%vals%vals(iGeo)%atoms(:, iAtom) -&
+      do iAtom = 1, size(this%vals%vals(iGeo)%array, dim=2)
+        this%zPrec(:, 2) = this%zPrec(:, 2) + (this%vals%vals(iGeo)%array(:, iAtom) -&
             & this%zPrec(:, 1))**2
       end do
     end do
@@ -448,12 +448,12 @@ contains
 
     ! apply z-score standardization to ACSF mappings
     do iGeo = 1, size(this%vals%vals)
-      do iAtom = 1, size(this%vals%vals(iGeo)%atoms, dim=2)
-        do iAcsf = 1, size(this%vals%vals(iGeo)%atoms, dim=1)
+      do iAtom = 1, size(this%vals%vals(iGeo)%array, dim=2)
+        do iAcsf = 1, size(this%vals%vals(iGeo)%array, dim=1)
           if (this%zPrec(iAcsf, 2) < 1e-08_dp) then
             cycle
           end if
-          this%vals%vals(iGeo)%atoms(iAcsf, iAtom) = (this%vals%vals(iGeo)%atoms(iAcsf, iAtom) -&
+          this%vals%vals(iGeo)%array(iAcsf, iAtom) = (this%vals%vals(iGeo)%array(iAcsf, iAtom) -&
               & this%zPrec(iAcsf, 1)) / this%zPrec(iAcsf, 2)
         end do
       end do
@@ -527,7 +527,7 @@ contains
   #:if WITH_MPI
     ! sync ACSF mappings between MPI nodes
     do iGeo = 1, size(geos)
-      call mpifx_allreduce(env%globalMpiComm, tmpVals%vals(iGeo)%atoms, this%vals%vals(iGeo)%atoms,&
+      call mpifx_allreduce(env%globalMpiComm, tmpVals%vals(iGeo)%array, this%vals%vals(iGeo)%array,&
           & MPI_SUM)
     end do
   #:else
@@ -543,7 +543,7 @@ contains
 
   #:if WITH_MPI
     do iGeo = 1, size(this%vals%vals)
-      call mpifx_bcast(env%globalMpiComm, this%vals%vals(iGeo)%atoms)
+      call mpifx_bcast(env%globalMpiComm, this%vals%vals(iGeo)%array)
     end do
   #:endif
 
@@ -553,7 +553,7 @@ contains
   subroutine iAtomAcsf(this, geo, pNeighList, param, nRadial, nAngular, rcut, speciesIds)
 
     !> symmetry function value instance of geometry
-    type(TAcsfVals), intent(inout) :: this
+    type(TRealArray2D), intent(inout) :: this
 
     !> system geometry container
     type(TGeometry), intent(in) :: geo
@@ -625,12 +625,12 @@ contains
       end do
 
       do iAcsf = 1, nRadial
-        this%atoms(iAcsf, iAtom) = g2(allNeighDists, allSpeciesIds, param%g2%eta,&
+        this%array(iAcsf, iAtom) = g2(allNeighDists, allSpeciesIds, param%g2%eta,&
             & param%g2%rs(iAcsf), rcut)
       end do
 
       do iAcsf = 1 + nRadial, nRadial + nAngular
-        this%atoms(iAcsf, iAtom) = g4(geo%coords(:, iAtom), allNeighCoords, allNeighDists,&
+        this%array(iAcsf, iAtom) = g4(geo%coords(:, iAtom), allNeighCoords, allNeighDists,&
             & allSpeciesIds, param%g4%xi(iAcsf - nRadial), param%g4%lambda(iAcsf - nRadial),&
             & param%g4%eta, rcut)
       end do

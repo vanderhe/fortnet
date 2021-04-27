@@ -14,13 +14,12 @@ module fnet_bpnn
   use dftbp_ranlux, only : TRanlux
 
   use fnet_initprogram
-  use fnet_nestedtypes, only : TRealArray1D, TMultiLayerStruc, TMultiLayerStruc_init
+  use fnet_nestedtypes, only : TRealArray1D, TRealArray2D, TMultiLayerStruc, TMultiLayerStruc_init
   use fnet_nestedtypes, only : TBiasDerivs, TWeightDerivs, TDerivs, TDerivs_init
   use fnet_nestedtypes, only : TIntArray1D, TPredicts, TPredicts_init
   use fnet_network, only : TNetwork, TNetwork_init
   use fnet_loss, only : deviation
   use fnet_optimizers, only : TOptimizer, next
-  use fnet_acsf, only : TMultiAcsfVals
 
 #:if WITH_MPI
   use fnet_mpifx
@@ -162,7 +161,7 @@ contains
     lpIter: do iIter = 1, prog%train%nTrainIt
 
       lpSystem: do iSys = iStart, iEnd
-        call this%iTrain(prog%acsf%vals%vals(iSys)%atoms, prog%data%zTargets(iSys)%array,&
+        call this%iTrain(prog%features%features(iSys)%array, prog%data%zTargets(iSys)%array,&
             & prog%data%localAtToGlobalSp(iSys)%array, prog%data%tAtomicTargets, ddTmp, iPredict)
         ! collect outputs and gradients of the systems in range
         predicts%sys(iSys)%array(:,:) = iPredict
@@ -202,8 +201,8 @@ contains
         end if
         loss = prog%train%loss(resPredicts, prog%data%targets)
         if (prog%data%tMonitorValid) then
-          validPredicts = this%predictBatch(prog%validAcsf%vals, prog%data%localValidAtToGlobalSp,&
-              & prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+          validPredicts = this%predictBatch(prog%features%validFeatures,&
+              & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
           validLoss = prog%train%loss(validPredicts, prog%data%validTargets)
         end if
         call this%update(prog%train%pOptimizer, ddRes, loss, prog%data%nDatapoints, totGradNorm,&
@@ -281,7 +280,7 @@ contains
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
 
-    !> auxiliary variable
+    !> auxiliary variables
     integer :: iGlobalSp, iLayer
 
     do iGlobalSp = 1, size(this%nets)
@@ -307,7 +306,7 @@ contains
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
 
-    !> ACSF values for all atoms of the current system/geometry, shape: [nAcsf, nAtoms]
+    !> features of all atoms of the current system/geometry, shape: [nFeatures, nAtoms]
     real(dp), intent(in) :: input(:,:)
 
     !> target data
@@ -571,13 +570,13 @@ contains
   end function TBpnn_iPredict
 
 
-  function TBpnn_predictBatch(this, mappings, localAtToGlobalSp, tAtomic, zPrec) result(predicts)
+  function TBpnn_predictBatch(this, features, localAtToGlobalSp, tAtomic, zPrec) result(predicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this
 
-    !> symmetry mapping values as network input
-    type(TMultiAcsfVals), intent(in) :: mappings
+    !> atomic features as network input
+    type(TRealArray2D), intent(in) :: features(:)
 
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
@@ -594,11 +593,11 @@ contains
     !> auxiliary variable
     integer :: iSys
 
-    allocate(predicts%sys(size(mappings%vals)))
+    allocate(predicts%sys(size(features)))
 
-    do iSys = 1, size(mappings%vals)
-      predicts%sys(iSys)%array = this%iPredict(mappings%vals(iSys)%atoms,&
-          & localAtToGlobalSp(iSys)%array, tAtomic)
+    do iSys = 1, size(features)
+      predicts%sys(iSys)%array = this%iPredict(features(iSys)%array, localAtToGlobalSp(iSys)%array,&
+          & tAtomic)
     end do
 
     if (present(zPrec)) then
