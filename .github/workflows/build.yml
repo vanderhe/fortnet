@@ -1,0 +1,144 @@
+name: CI
+on: [push, pull_request]
+
+env:
+  CI: "ON"
+  HOMEBREW_NO_ANALYTICS: "ON"
+  HOMEBREW_NO_AUTO_UPDATE: "ON"
+  HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: "ON"
+  HOMEBREW_NO_GITHUB_API: "ON"
+  HOMEBREW_NO_INSTALL_CLEANUP: "ON"
+  BUILD_DIR: _build
+  CMAKE_OPTIONS: >-
+    -DCMAKE_BUILD_TYPE=Debug
+    -DFYPP_FLAGS='-DTRAVIS'
+    -DWITH_UNIT_TESTS=true
+
+jobs:
+  gcc-build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-20.04]
+        mpi: [nompi, openmpi]
+        exclude:
+          - mpi: openmpi
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v1
+      with:
+        python-version: '3.x'
+
+    - name: Enable MPI build
+      if: contains(matrix.mpi, 'openmpi') || contains(matrix.mpi, 'mpich')
+      run: echo "WITH_MPI=true" >> $GITHUB_ENV
+
+    - name: Disable MPI build
+      if: contains(matrix.mpi, 'nompi')
+      run: echo "WITH_MPI=false" >> $GITHUB_ENV
+
+    - name: Set Compiler (Linux)
+      if: contains(matrix.os, 'ubuntu')
+      run: |
+        echo "FC=gfortran" >> $GITHUB_ENV
+
+    - name: Install OpenMPI (Linux)
+      if: contains(matrix.os, 'ubuntu') && contains(matrix.mpi, 'openmpi')
+      run: |
+        sudo apt-get update
+        sudo apt-get install libopenmpi-dev
+        echo "CMAKE_OPTIONS=${CMAKE_OPTIONS}" >> $GITHUB_ENV
+
+    - name: Install cmake
+      run: pip3 install cmake ninja fypp numpy
+
+    - name: Configure build
+      run: >-
+        cmake -B _build -G Ninja
+        -DCMAKE_INSTALL_PREFIX=${PWD}/_install
+        ${CMAKE_OPTIONS}
+        -DWITH_MPI=${WITH_MPI}
+
+    - name: Build project
+      run: cmake --build ${BUILD_DIR}
+
+    - name: Run regression tests
+      run: |
+        pushd ${BUILD_DIR}
+        ctest -j 2 --output-on-failure
+        popd
+
+    - name: Install project
+      run: |
+        cmake --install ${BUILD_DIR}
+
+  intel-build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-20.04]
+        fc: [ifort]
+    env:
+      FC: ${{ matrix.fc }}
+      WITH_MPI: false
+      APT_PACKAGES: >-
+        intel-oneapi-compiler-fortran
+        intel-oneapi-mkl
+        intel-oneapi-mkl-devel
+      CMAKE_OPTIONS: >-
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        -DFYPP_FLAGS='-DTRAVIS'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Setup Python
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.x
+
+    - name: Add Intel repository
+      if: contains(matrix.os, 'ubuntu')
+      run: |
+        wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+        sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+        rm GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+        echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+        sudo apt-get update
+
+    - name: Install Intel oneAPI compiler
+      if: contains(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get update
+        sudo apt-get install ${APT_PACKAGES}
+        source /opt/intel/oneapi/setvars.sh
+        printenv >> $GITHUB_ENV
+
+    - name: Install cmake
+      run: pip3 install cmake ninja fypp numpy
+
+    - name: Configure build
+      run: >-
+        cmake -B _build -G Ninja
+        -DCMAKE_INSTALL_PREFIX=${PWD}/_install
+        ${CMAKE_OPTIONS}
+        -DWITH_MPI=${WITH_MPI}
+
+    - name: Build project
+      run: cmake --build ${BUILD_DIR}
+
+    - name: Run regression tests
+      run: |
+        pushd ${BUILD_DIR}
+        ctest -j 2 --output-on-failure
+        popd
+
+    - name: Install project
+      run: |
+        cmake --install ${BUILD_DIR}
