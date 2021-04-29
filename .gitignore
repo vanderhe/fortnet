@@ -5,6 +5,7 @@ _gitmsg.saved.txt
 build
 _build
 _downloads
+doc/fortnet/ford/doc
 custom.cmake
 __pycache__
 .idea
