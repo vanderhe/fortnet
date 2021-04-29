@@ -232,9 +232,9 @@ targets would look like this:
 
 .. code-block:: python
 
-      fnetdata = Fortformat(strucs, 'fnetdata.xml', targets=energies,
-			    atomic=False, frac=True)
-      fnetdata.dump()
+  fnetdata = Fortformat(strucs, 'fnetdata.xml', targets=energies,
+			atomic=False, frac=True)
+  fnetdata.dump()
 
 For Fortnet to correctly recognize the related format, the path or file
 containing the primary dataset (``Dataset``) must end with `fnetdata.xml` and
@@ -249,3 +249,69 @@ could therefore be similar to this::
     Dataset = '/home/user/training/fnetdata.xml'
     Validset = '/home/user/validation/fnetvdata.xml'
   }
+
+
+.. _sec-fnetdata_extFeatures:
+
+************************
+External Atomic Features
+************************
+
+[Input: `recipes/fnetdata/extfeatures/`]
+
+Since currently only the Atom-Centered Symmetry Functions are available as a
+mapping of the geometries to suitable network inputs, ``Fortformat``, as well
+as ``Fortnet``, offers the possibility of processing user-specified external
+atomic features. Thus every kind of imaginable input features can be used in the
+training and prediction process, which significantly expands the versatility of
+Fortnet. Of course, the user is responsible for checking the suitability of the
+features handed over. Charge specifications like the Mulliken populations of the
+individual atoms are conceivable.
+
+The transfer of the selected features to the Fortformat class is
+straightforward. The keyword argument ``features`` expects a list of Numpy
+arrays, where the first dimension corresponds to the number of atoms of the
+associated geometry and the second to the number of features per atom. The
+example below shows how such a specification could look like. Random numbers are
+used as features, which therefore only serve a demonstrative purpose.
+
+.. code-block:: python
+
+  #!/usr/bin/env python3
+
+  '''
+  Application example of the Fortformat class, based on a dataset
+  that provides global system properties as target values to fit.
+  The dataset is extended by user specified external atomic features.
+  '''
+
+  import os
+  import numpy as np
+  from fortformat import Fortformat
+  from ase.io.vasp import read_vasp, read_vasp_out
+
+  def main():
+      '''Main driver routine.'''
+
+      np.random.seed(42)
+
+      inpaths = [os.path.join(os.getcwd(), '../globalTargets/vaspdata', entry)
+		 for entry in sorted(os.listdir('../globalTargets/vaspdata'))]
+
+      strucs = []
+      features = []
+      energies = np.empty((len(inpaths), 1))
+
+      for ii, inpath in enumerate(inpaths):
+	  struc = read_vasp(os.path.join(inpath, 'POSCAR'))
+	  strucs.append(struc)
+	  props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))
+	  energies[ii, 0] = props.get_total_energy()
+	  features.append(np.random.random_sample((len(struc), 3)))
+
+      fnetdata = Fortformat(strucs, 'fnetdata.xml', targets=energies,
+			    features=features, atomic=False, frac=True)
+      fnetdata.dump()
+
+  if __name__ == '__main__':
+      main()

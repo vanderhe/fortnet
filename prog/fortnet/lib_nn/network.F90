@@ -15,7 +15,7 @@ module fnet_network
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
 
-  use fnet_initprogram
+  use fnet_initprogram, only : TProgramvariables
   use fnet_nestedtypes, only : TRealArray1D, TRealArray2D
   use fnet_nestedtypes, only : TBiasDerivs, TBiasDerivs_init
   use fnet_nestedtypes, only : TWeightDerivs, TWeightDerivs_init
@@ -374,36 +374,6 @@ contains
     end do
 
   end subroutine TNetwork_resetActivations
-
-
-  ! subroutine TNetwork_update(this, dw, db, eta)
-
-  !   !> representation of a neural network
-  !   class(TNetwork), intent(inout) :: this
-
-  !   !> weight gradients
-  !   type(TRealArray2D), intent(in) :: dw(:)
-
-  !   !> bias gradients
-  !   type(TRealArray1D), intent(in) :: db(:)
-
-  !   !> learning rate
-  !   real(dp), intent(in) :: eta
-
-  !   !> auxiliary variables
-  !   integer :: ii, jj
-
-  !   ! update biases
-  !   do ii = 2, size(this%dims)
-  !     this%layers(ii)%bb = this%layers(ii)%bb - eta * db(ii)%array
-  !   end do
-
-  !   ! update weights
-  !   do jj = 1, size(this%dims) - 1
-  !     this%layers(jj)%ww = this%layers(jj)%ww - eta * dw(jj)%array
-  !   end do
-
-  !   end subroutine TNetwork_update
 
 
   subroutine TNetwork_toFile(this, prog, iSpecies)

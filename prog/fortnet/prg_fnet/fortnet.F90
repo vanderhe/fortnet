@@ -11,16 +11,19 @@ program fortnet
 
 #:if WITH_MPI
   use fnet_mpifx
+  use fnet_initprogram, only : syncFeatures
 #:endif
 
-  use dftbp_globalenv, only : initGlobalEnv, destructGlobalEnv, stdOut
   use dftbp_accuracy, only : dp
+  use dftbp_message, only : error
   use dftbp_constants, only : Bohr__AA
   use dftbp_typegeometry, only : TGeometry
   use dftbp_charmanip, only : toupper
+  use dftbp_globalenv, only : initGlobalEnv, destructGlobalEnv, stdOut
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TArch, TData, TEnv
   use fnet_initprogram, only : initOptimizer, readAcsfFromFile
+  use fnet_initprogram, only : TFeatures, TFeatures_init, TFeatures_collect
   use fnet_nestedtypes, only : TEnv_init, TPredicts
   use fnet_acsf, only : TAcsf, TAcsf_init, TAcsfParams_init
   use fnet_bpnn, only : TBpnn, TBpnn_init
@@ -65,6 +68,7 @@ program fortnet
 
   call printSubnnDetails(prog%arch)
   call printMappingDetails(prog%acsf, prog%data%globalSpNames)
+  call printExternalFeatureDetails(prog%data)
   call printDatasetDetails(prog%data, prog%arch%nSubNnParams)
 
   call calculateMappings(prog%acsf, prog%validAcsf, prog%data, prog%env)
@@ -73,7 +77,8 @@ program fortnet
     call prog%acsf%toFile(acsfFile, prog%data%globalSpNames)
   end if
 
-  call runCore(prog%option%mode, prog%data, bpnn, prog%train%lossType, predicts)
+  call runCore(prog%option%mode, prog%data, bpnn, prog%features, prog%acsf, prog%validAcsf,&
+      & prog%train%lossType, prog%env, predicts)
 
   if (tLead .and. (prog%option%mode == 'validate' .or. prog%option%mode == 'predict')) then
     call writeFnetout(fnetoutFile, prog%option%mode, prog%data%targets, predicts,&
@@ -145,11 +150,13 @@ contains
     integer :: ii
 
     write(stdout, '(A,/)') 'Sub-NN Details'
+    write(stdout, '(A,I0)') 'inputs: ', arch%allDims(1)
     write(stdout, '(A)', advance='no') 'hidden layers:'
     do ii = 1, size(arch%hidden)
       write(stdout, '(A)', advance='no') ' '
       write(stdout, '(I0)', advance='no') arch%hidden(ii)
     end do
+    write(stdout, '(/,A,I0)') 'outputs: ', arch%allDims(size(arch%allDims))
     write(stdout, '(/,2A,/)') 'activation: ', arch%activation
     write(stdout, '(A,/)') repeat('-', 80)
 
@@ -180,6 +187,31 @@ contains
     write(stdout, '(A,/)') repeat('-', 80)
 
   end subroutine printMappingDetails
+
+
+  subroutine printExternalFeatureDetails(data)
+
+    !> representation of dataset informations
+    type(TData), intent(in) :: data
+
+    !> auxiliary variable
+    integer :: ii
+
+    if (data%tExtFeatures) then
+
+      write(stdout, '(A,/)') 'External Features'
+      write(stdout, '(A,I0)') 'nr. of external features: ', data%nExtFeatures
+      write(stdout, '(A)', advance='no') 'dataset indices:'
+      do ii = 1, size(data%extFeaturesInd)
+        write(stdout, '(A)', advance='no') ' '
+        write(stdout, '(I0)', advance='no') data%extFeaturesInd(ii)
+      end do
+      write(stdout, '(A,/)') ''
+      write(stdout, '(A,/)') repeat('-', 80)
+
+    end if
+
+  end subroutine printExternalFeatureDetails
 
 
   subroutine printDatasetDetails(data, nSubNnParams)
@@ -218,26 +250,15 @@ contains
     !> if compiled with mpi enabled, contains mpi communicator
     type(TEnv), intent(in) :: env
 
-    !> true, if current process is the lead
-    logical :: tLead
-
-  #:if WITH_MPI
-    tLead = prog%env%globalMpiComm%lead
-  #:else
-    tLead = .true.
-  #:endif
-
     write(stdOut, '(A)', advance='no') 'Calculating ACSF...'
     if (data%tMonitorValid) then
       validAcsf = acsf
     end if
     call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp)
-    deallocate(data%geos)
 
     if (data%tMonitorValid) then
       call validAcsf%calculate(data%validGeos, env, prog%data%localValidAtToGlobalSp,&
           & zPrec=acsf%zPrec)
-      deallocate(data%validGeos)
     end if
 
     write(stdout, '(A)') 'done'
@@ -245,7 +266,7 @@ contains
   end subroutine calculateMappings
 
 
-  subroutine runCore(mode, data, bpnn, lossType, predicts)
+  subroutine runCore(mode, data, bpnn, features, acsf, validAcsf, lossType, env, predicts)
 
     !> mode of current run (train, validate, run)
     character(len=*), intent(in) :: mode
@@ -256,8 +277,20 @@ contains
     !> Behler-Parrinello-Neural-Network instance
     type(TBpnn), intent(inout) :: bpnn
 
+    !> collected features of data and mapping block
+    type(TFeatures), intent(inout) :: features
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(inout) :: acsf
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(inout) :: validAcsf
+
     !> type of loss function to use
     character(len=*), intent(in) :: lossType
+
+    !> if compiled with mpi enabled, contains mpi communicator
+    type(TEnv), intent(in) :: env
 
     !> obtained network predictions
     type(TPredicts), intent(out) :: predicts
@@ -265,11 +298,51 @@ contains
     !> true, if gradient got below the specified tolerance
     logical :: tConverged
 
+    !> true, if current process is the lead
+    logical :: tLead
+
+    !> total number of input features
+    integer :: nFeatures
+
     !> summed loss of predictions, in comparison to targets
     real(dp) :: mse, rms, mae
 
     !> min. and max. deviation of predictions, in comparison to targets
     real(dp) :: min, max
+
+  #:if WITH_MPI
+    tLead = prog%env%globalMpiComm%lead
+  #:else
+    tLead = .true.
+  #:endif
+
+    call TFeatures_init(features, nFeatures, data, acsf, validAcsf)
+
+    if (tLead) then
+      call TFeatures_collect(features, data, acsf, validAcsf)
+      if (bpnn%dims(1) /= nFeatures) then
+        call error('Mismatch in number of features and BPNN input nodes.')
+      end if
+    end if
+
+  #:if WITH_MPI
+    call syncFeatures(features, env%globalMpiComm)
+  #:endif
+
+    deallocate(data%geos)
+    deallocate(acsf%vals%vals)
+
+    if (data%tExtFeatures) then
+      deallocate(data%extFeatures)
+    end if
+
+    if (data%tMonitorValid) then
+      deallocate(data%validGeos)
+      deallocate(validAcsf%vals%vals)
+      if (data%tExtFeatures) then
+        deallocate(data%extValidFeatures)
+      end if
+    end if
 
     select case(mode)
     case ('train')
@@ -290,7 +363,7 @@ contains
       end if
     case ('validate')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      predicts = bpnn%predictBatch(prog%acsf%vals, prog%data%localAtToGlobalSp,&
+      predicts = bpnn%predictBatch(prog%features%features, prog%data%localAtToGlobalSp,&
           & prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
       write(stdOut, '(A,/)') 'done'
       write(stdout, '(A,/)') repeat('-', 80)
@@ -308,7 +381,7 @@ contains
       write(stdout, '(A,/)') repeat('-', 80)
     case ('predict')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      predicts = bpnn%predictBatch(prog%acsf%vals, prog%data%localAtToGlobalSp,&
+      predicts = bpnn%predictBatch(prog%features%features, prog%data%localAtToGlobalSp,&
           & prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
       write(stdOut, '(A,/)') 'done'
       write(stdout, '(A,/)') repeat('-', 80)

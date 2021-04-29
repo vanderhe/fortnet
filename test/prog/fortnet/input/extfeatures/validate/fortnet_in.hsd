@@ -1,0 +1,21 @@
+Data {
+
+  Dataset = 'fnetdata.xml'
+  ExtFeatures = 1 3
+
+  Standardization = No
+
+  NetstatFiles = Type2FileNames {
+    Prefix = "./"
+    Suffix = ".net"
+    LowerCaseTypeName = No
+  }
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = 'validate'
+
+}

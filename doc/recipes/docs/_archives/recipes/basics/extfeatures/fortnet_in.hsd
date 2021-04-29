@@ -1,0 +1,38 @@
+Network = BPNN {
+  Hidden = 2 2
+  Activation = 'tanh'
+}
+
+Mapping = ACSF {
+  NRadial = 5
+  NAngular = 4
+  RCut = 4.0
+  Standardization = Yes
+}
+
+Training = SD {
+  Threshold = 1e-08
+  NIterations = 10
+  NPrintout = 5
+  NSaveNet = 10
+  MinDisplacement = 1e-10
+  MaxDisplacement = 5e-02
+  Loss = 'rms'
+}
+
+Data {
+  Dataset = 'fnetdata.xml'
+  ExtFeatures = 1 2 3
+  Standardization = No
+  NetstatFiles = Type2FileNames {
+    Prefix = "./"
+    Suffix = ".net"
+    LowerCaseTypeName = No
+  }
+}
+
+Options {
+  Mode = 'train'
+  ReadNetStats = No
+  RandomSeed = 123456
+}

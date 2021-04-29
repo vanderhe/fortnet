@@ -13,7 +13,8 @@ module fnet_initprogram
   use dftbp_xmlf90
   use dftbp_linkedlist
   use dftbp_assert
-  use dftbp_hsdutils, only : getChild, getChildValue, convRangeToInt, detailedError
+  use dftbp_hsdutils, only : getChild, setChild, getChildValue, setChildValue
+  use dftbp_hsdutils, only : convRangeToInt, detailedError
   use dftbp_hsdutils2, only : readHSDAsXML, setUnprocessed, warnUnprocessedNodes
   use dftbp_charmanip, only : unquote, tolower, i2c
   use dftbp_accuracy, only: dp, lc
@@ -32,6 +33,8 @@ module fnet_initprogram
   use fnet_optimizers, only : TOptimizer, optimizerTypes, init, reset
   use fnet_fnetdata, only : readFnetdataGeometry, readContiguousFnetdataGeometries
   use fnet_fnetdata, only : readFnetdataTargets, readContiguousFnetdataTargets
+  use fnet_fnetdata, only : inquireFeatures
+  use fnet_fnetdata, only : readFnetdataFeatures, readContiguousFnetdataFeatures
   use fnet_acsf, only : TAcsf
   use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TEnv
   use fnet_nestedtypes, only : TWrapSteepDesc, TWrapConjGrad, TWrapLbfgs, TWrapFire
@@ -47,7 +50,12 @@ module fnet_initprogram
   private
   save
 
+#:if WITH_MPI
+  public :: syncFeatures
+#:endif
+
   public :: TProgramVariables, TProgramVariables_init
+  public :: TFeatures, TFeatures_init, TFeatures_collect
   public :: TArch, TData, TEnv
   public :: initOptimizer, readAcsfFromFile
 
@@ -100,10 +108,22 @@ module fnet_initprogram
   end type TMapping
 
 
+  !> data type containing the collected features
+  type TFeatures
+
+    !> pointer to the different input features for training
+    type(TRealArray2D), allocatable :: features(:)
+
+    !> pointer to the different input features for validation
+    type(TRealArray2D), allocatable :: validFeatures(:)
+
+  end type TFeatures
+
+
   !> data type containing variables of the Training block
   type TTraining
 
-    !> integer ID of specified optimizer
+    !> integer ID of specified optimizertExtFeatures
     integer :: iOptimizer
 
     !> general function optimizer
@@ -209,11 +229,23 @@ module fnet_initprogram
     !> true, if validation monitoring is desired
     logical :: tMonitorValid
 
+    !> true, if external training features are provided and selected
+    logical :: tExtFeatures
+
+    !> true, if external validation features are provided and selected
+    logical :: tExtValidFeatures
+
     !> target values for training
     type(TRealArray2D), allocatable :: targets(:)
 
     !> target values for validation
     type(TRealArray2D), allocatable :: validTargets(:)
+
+    !> additional external, atomic features of training dataset
+    type(TRealArray2D), allocatable :: extFeatures(:)
+
+    !> additional external, atomic features of validation dataset
+    type(TRealArray2D), allocatable :: extValidFeatures(:)
 
     !> standardized target values for training
     type(TRealArray2D), allocatable :: zTargets(:)
@@ -247,6 +279,12 @@ module fnet_initprogram
 
     !> index mapping local validation atom --> global species index
     type(TIntArray1D), allocatable :: localValidAtToGlobalSp(:)
+
+    !> number of external, atomic features
+    integer :: nExtFeatures
+
+    !> indices of external, atomic features to use
+    integer, allocatable :: extFeaturesInd(:)
 
   contains
 
@@ -294,6 +332,9 @@ module fnet_initprogram
 
     !> data of Data block
     type(TData) :: data
+
+    !> collected features of data and mapping block
+    type(TFeatures) :: features
 
     !> data of Option block
     type(TOption) :: option
@@ -521,11 +562,11 @@ contains
     !> type of neural network
     character(len=*), intent(in) :: case
 
-    !> string buffer instance
-    type(string) :: strBuffer
+    !> list of integers to parse hidden layer configuration
+    type(TListInt) :: integerList
 
-    !> pointer to nodes, containing the information
-    type(fnode), pointer :: child
+    !> string buffer instance to parse type of transfer function
+    type(string) :: strBuffer
 
     select case (tolower(case))
 
@@ -533,8 +574,11 @@ contains
 
       this%arch%type = 'bpnn'
 
-      call getChildValue(node, 'Hidden', strBuffer, child=child, multiple=.true.)
-      call convRangeToInt(char(strBuffer), node, this%arch%hidden, huge(this%arch%nHiddenLayer))
+      call init(integerList)
+      call getChildValue(node, 'Hidden', integerList)
+      allocate(this%arch%hidden(len(integerList)))
+      call asArray(integerList, this%arch%hidden)
+      call destruct(integerList)
       this%arch%nHiddenLayer = size(this%arch%hidden)
 
       call getChildValue(node, 'Activation', strBuffer)
@@ -586,8 +630,8 @@ contains
 
     end select
 
-    this%arch%allDims = [this%mapping%nRadial + this%mapping%nAngular, this%arch%hidden,&
-        & this%data%nTargets]
+    this%arch%allDims = [this%mapping%nRadial + this%mapping%nAngular + this%data%nExtFeatures,&
+        & this%arch%hidden, this%data%nTargets]
 
     this%arch%nSubNnParams = getNumberOfParameters(this%arch%allDims)
 
@@ -795,10 +839,13 @@ contains
     type(fnode), pointer :: node
 
     !> string buffer instances
-    type(string) :: strBuffer, buffer1, buffer2
+    type(string) :: strBuffer, buffer, buffer1, buffer2
+
+    !> list of integers to parse external feature selection
+    type(TListInt) :: integerList
 
     !> nodes containig the information
-    type(fnode), pointer :: child1, child2, value1, xml, rootNode
+    type(fnode), pointer :: child, child1, child2, value1, xml, rootNode
 
     !> list of strings
     type(TListString) :: lStr
@@ -810,7 +857,7 @@ contains
     character(len=:), allocatable :: filename
 
     !> auxiliary variables
-    integer :: iSys, iSp, ii
+    integer :: iSys, iSp, ii, nTmpExtFeatures
 
     !> if the name of the types should be converted to lower case
     !> (otherwise they are used in the same way, specified in the geometry input)
@@ -855,6 +902,63 @@ contains
       end if
     end select
 
+    if (this%data%tContiguous) then
+      call readHSDAsXML(this%data%datapaths(1), xml)
+      call getChild(xml, 'fnetdata', rootNode)
+      call inquireFeatures(rootNode, this%data%nExtFeatures)
+      call destroyNode(xml)
+    else
+      this%data%nExtFeatures = 0
+      nTmpExtFeatures = this%data%nExtFeatures
+      do iSys = 1, this%data%nDatapoints
+        filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
+        call readHSDAsXML(filename, xml)
+        call getChild(xml, 'fnetdata', rootNode)
+        call inquireFeatures(rootNode, this%data%nExtFeatures)
+        if ((nTmpExtFeatures /= this%data%nExtFeatures) .and. (iSys /= 1)) then
+          call error('Inconsistency in number of external features of dataset found.')
+        end if
+        nTmpExtFeatures = this%data%nExtFeatures
+        call destroyNode(xml)
+      end do
+    end if
+
+    if (this%data%tMonitorValid) then
+      if (this%data%tValidContiguous) then
+        nTmpExtFeatures = this%data%nExtFeatures
+        call readHSDAsXML(this%data%validpaths(1), xml)
+        call getChild(xml, 'fnetdata', rootNode)
+        call inquireFeatures(rootNode, this%data%nExtFeatures)
+        call destroyNode(xml)
+        if (nTmpExtFeatures /= this%data%nExtFeatures) then
+          call error('Inconsistency in number of external features between datasets found.')
+        end if
+        else
+          nTmpExtFeatures = this%data%nExtFeatures
+          do iSys = 1, this%data%nValidDatapoints
+            filename = trim(this%data%validpaths(iSys)) // '/' // fnetdataFile
+            call readHSDAsXML(filename, xml)
+            call getChild(xml, 'fnetdata', rootNode)
+            call inquireFeatures(rootNode, this%data%nExtFeatures)
+            if (nTmpExtFeatures /= this%data%nExtFeatures) then
+              call error('Inconsistency in number of external features between datasets found.')
+            end if
+            nTmpExtFeatures = this%data%nExtFeatures
+            call destroyNode(xml)
+          end do
+        end if
+    end if
+
+    if (this%data%nExtFeatures > 0) then
+      this%data%tExtFeatures = .true.
+      call getChildValue(node, 'ExtFeatures', buffer, child=child, multiple=.true.)
+      call convRangeToInt(char(buffer), node, this%data%extFeaturesInd, this%data%nExtFeatures)
+      call setChildValue(child, '', this%data%extFeaturesInd, replace=.true.)
+      this%data%nExtFeatures = size(this%data%extFeaturesInd)
+    else
+      this%data%tExtFeatures = .false.
+    end if
+
     ! read geometries from generic fnetdata.xml file(s)
     if (this%data%tContiguous) then
       call readHSDAsXML(this%data%datapaths(1), xml)
@@ -866,6 +970,10 @@ contains
         call readContiguousFnetdataTargets(rootNode, this%data%geos, this%data%targets,&
             & this%data%nTargets, this%data%tAtomicTargets)
       end select
+      if (this%data%tExtFeatures) then
+        call readContiguousFnetdataFeatures(rootNode, this%data%geos, this%data%extFeatures,&
+            & inds=this%data%extFeaturesInd)
+      end if
       call destroyNode(xml)
     else
       allocate(this%data%geos(this%data%nDatapoints))
@@ -873,6 +981,9 @@ contains
       case('train', 'validate')
         allocate(this%data%targets(this%data%nDatapoints))
       end select
+      if (this%data%tExtFeatures) then
+        allocate(this%data%extFeatures(this%data%nDatapoints))
+      end if
       do iSys = 1, this%data%nDatapoints
         filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
         call readHSDAsXML(filename, xml)
@@ -884,6 +995,11 @@ contains
               & this%data%targets(iSys)%array, this%data%tAtomicTargets)
           this%data%nTargets = size(this%data%targets(iSys)%array, dim=1)
         end select
+        if (this%data%tExtFeatures) then
+          call readFnetdataFeatures(rootNode, this%data%geos(iSys)%nAtom,&
+              & this%data%extFeatures(iSys)%array, inds=this%data%extFeaturesInd)
+          this%data%nExtFeatures = size(this%data%extFeatures(iSys)%array, dim=1)
+        end if
         call destroyNode(xml)
       end do
     end if
@@ -902,6 +1018,10 @@ contains
           call readContiguousFnetdataTargets(rootNode, this%data%validGeos, this%data%validTargets,&
               & this%data%nValidTargets, this%data%tAtomicTargets)
         end select
+        if (this%data%tExtFeatures) then
+          call readContiguousFnetdataFeatures(rootNode, this%data%validGeos,&
+              & this%data%extValidFeatures, inds=this%data%extFeaturesInd)
+        end if
         call destroyNode(xml)
       else
         allocate(this%data%validGeos(this%data%nValidDatapoints))
@@ -909,6 +1029,9 @@ contains
         case('train', 'validate')
           allocate(this%data%validTargets(this%data%nValidDatapoints))
         end select
+        if (this%data%tExtFeatures) then
+          allocate(this%data%extValidFeatures(this%data%nValidDatapoints))
+        end if
         do iSys = 1, this%data%nValidDatapoints
           filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
           call readHSDAsXML(filename, xml)
@@ -920,6 +1043,10 @@ contains
                 & this%data%validTargets(iSys)%array, this%data%tAtomicTargets)
             this%data%nValidTargets = size(this%data%validTargets(iSys)%array, dim=1)
           end select
+          if (this%data%tExtFeatures) then
+            call readFnetdataFeatures(rootNode, this%data%validGeos(iSys)%nAtom,&
+                & this%data%extValidFeatures(iSys)%array, inds=this%data%extFeaturesInd)
+          end if
           call destroyNode(xml)
         end do
       end if
@@ -1203,6 +1330,122 @@ contains
   end subroutine initOptimizer
 
 
+  subroutine TFeatures_init(features, nFeatures, data, acsf, validAcsf)
+
+    !> collected features of data and mapping block
+    type(TFeatures), intent(inout) :: features
+
+    !> total number of input features
+    integer, intent(out) :: nFeatures
+
+    !> representation of dataset informations
+    type(TData), intent(in) :: data
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(in) :: acsf
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(in) :: validAcsf
+
+    !> auxiliary variables
+    integer :: iGeo, nAcsf
+
+    nAcsf = acsf%nRadial + acsf%nAngular
+    nFeatures = nAcsf + data%nExtFeatures
+    allocate(features%features(data%nDatapoints))
+
+    do iGeo = 1, data%nDatapoints
+      allocate(features%features(iGeo)%array(nFeatures, data%geos(iGeo)%nAtom))
+      features%features(iGeo)%array(:,:) = 0.0_dp
+    end do
+
+    if (data%tMonitorValid) then
+
+      nAcsf = validAcsf%nRadial + validAcsf%nAngular
+      nFeatures = nAcsf + data%nExtFeatures
+      allocate(features%validFeatures(data%nValidDatapoints))
+
+      do iGeo = 1, size(data%validGeos)
+        allocate(features%validFeatures(iGeo)%array(nFeatures, data%validGeos(iGeo)%nAtom))
+        features%validFeatures(iGeo)%array(:,:) = 0.0_dp
+      end do
+    end if
+
+  end subroutine TFeatures_init
+
+
+  subroutine TFeatures_collect(features, data, acsf, validAcsf)
+
+    !> collected features of data and mapping block
+    type(TFeatures), intent(inout) :: features
+
+    !> representation of dataset informations
+    type(TData), intent(in) :: data
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(in) :: acsf
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(in) :: validAcsf
+
+    !> auxiliary variables
+    integer :: iGeo, nAcsf, nFeatures
+
+    nAcsf = acsf%nRadial + acsf%nAngular
+    nFeatures = nAcsf + data%nExtFeatures
+
+    if (data%tExtFeatures) then
+      do iGeo = 1, data%nDatapoints
+        features%features(iGeo)%array(1:nAcsf, :) = acsf%vals%vals(iGeo)%array
+        features%features(iGeo)%array(nAcsf+1:nFeatures, :) = data%extFeatures(iGeo)%array
+      end do
+    else
+      features%features = acsf%vals%vals(:)
+    end if
+
+    if (data%tMonitorValid) then
+      nAcsf = validAcsf%nRadial + validAcsf%nAngular
+      nFeatures = nAcsf + data%nExtFeatures
+      if (data%tExtFeatures) then
+        do iGeo = 1, size(data%validGeos)
+          features%validFeatures(iGeo)%array(1:nAcsf, :) = validAcsf%vals%vals(iGeo)%array
+          features%validFeatures(iGeo)%array(nAcsf+1:nFeatures, :) =&
+              & data%extValidFeatures(iGeo)%array
+        end do
+      else
+        features%validFeatures = validAcsf%vals%vals(:)
+      end if
+    end if
+
+  end subroutine TFeatures_collect
+
+
+#:if WITH_MPI
+  subroutine syncFeatures(features, comm)
+
+    !> collected features of data and mapping block
+    type(TFeatures), intent(in) :: features
+
+    !> mpi communicator with some additional information
+    type(mpifx_comm), intent(in) :: comm
+
+    !> auxiliary variable
+    integer :: iGeo
+
+    do iGeo = 1, size(features%features)
+      call mpifx_bcast(comm, features%features(iGeo)%array)
+    end do
+
+    if (allocated(features%validFeatures)) then
+      do iGeo = 1, size(features%validFeatures)
+        call mpifx_bcast(comm, features%validFeatures(iGeo)%array)
+      end do
+    end if
+
+  end subroutine syncFeatures
+#:endif
+
+
   !> calculates the total number of network fitting parameters per sub-nn
   pure function getNumberOfParameters(allDims) result(nSubNnParams)
 
@@ -1424,19 +1667,34 @@ contains
     @:ASSERT(this%data%nDatapoints >= 1)
     @:ASSERT(this%data%nSpecies >= 1)
     @:ASSERT(size(this%data%geos) >= 1)
-    @:ASSERT(size(this%data%datapaths) == size(this%data%geos))
     @:ASSERT(size(this%data%netstatNames) == this%data%nSpecies)
     @:ASSERT(size(this%data%globalSpNames) == this%data%nSpecies)
     @:ASSERT(size(this%data%localSpToGlobalSp) == size(this%data%geos))
     @:ASSERT(size(this%data%localAtToGlobalSp) == size(this%data%geos))
 
+    if (this%data%tContiguous) then
+      @:ASSERT(size(this%data%datapaths) == 1)
+    else
+      @:ASSERT(size(this%data%datapaths) == size(this%data%geos))
+    end if
+
+    if (this%data%tExtFeatures) then
+      @:ASSERT(this%data%nExtFeatures >= 0)
+      @:ASSERT(this%data%nExtFeatures == size(this%data%extFeaturesInd))
+      @:ASSERT(minval(this%data%extFeaturesInd) >= 0)
+    end if
+
     if (this%data%tMonitorValid) then
       @:ASSERT(this%data%nTargets == this%data%nValidTargets)
       @:ASSERT(this%data%nValidDatapoints >= 1)
       @:ASSERT(size(this%data%validGeos) >= 1)
-      @:ASSERT(size(this%data%validpaths) == size(this%data%validGeos))
       @:ASSERT(size(this%data%localValidSpToGlobalSp) == size(this%data%validGeos))
       @:ASSERT(size(this%data%localValidAtToGlobalSp) == size(this%data%validGeos))
+      if (this%data%tValidContiguous) then
+        @:ASSERT(size(this%data%validpaths) == 1)
+      else
+        @:ASSERT(size(this%data%validpaths) == size(this%data%validGeos))
+      end if
     end if
 
     @:ASSERT(this%option%seed >= 0)

@@ -14,6 +14,7 @@ module fnet_fnetdata
 
   use dftbp_linkedlist
   use dftbp_accuracy, only: dp
+  use dftbp_message, only : error
   use dftbp_typegeometry, only : TGeometry, normalize
   use dftbp_typegeometryhsd, only : readTGeometryHSD
   use dftbp_unitconversion, only : lengthUnits, unit
@@ -30,6 +31,8 @@ module fnet_fnetdata
 
   public :: readFnetdataGeometry, readContiguousFnetdataGeometries
   public :: readFnetdataTargets, readContiguousFnetdataTargets
+  public :: readFnetdataFeatures, readContiguousFnetdataFeatures
+  public :: inquireFeatures
 
 
 contains
@@ -199,9 +202,6 @@ contains
     !> contains the target information on exit
     real(dp), intent(out), allocatable :: targets(:,:)
 
-    !> node containing target informations
-    type(fnode), pointer :: child
-
     !> temporary target storage container
     real(dp), allocatable :: tmpTargets(:)
 
@@ -211,7 +211,7 @@ contains
       allocate(tmpTargets(nTargets))
     end if
 
-    call getChildValue(root, 'targets', tmpTargets, child=child)
+    call getChildValue(root, 'targets', tmpTargets)
 
     if (tAtomicTargets) then
       targets = reshape(tmpTargets, [nTargets, nAtom])
@@ -239,15 +239,6 @@ contains
 
     !> node to get targets from
     type(fnode), pointer :: trainnode
-
-    !> node containing target informations
-    type(fnode), pointer :: child
-
-    !> temporary string buffer
-    type(string) :: modifier
-
-    !> temporary target storage container
-    real(dp), allocatable :: tmpTargets(:)
 
     !> number of targets per atom or system
     integer :: nTargets
@@ -304,5 +295,172 @@ contains
     end do
 
   end subroutine readContiguousFnetdataTargets
+
+
+  !> interpret the external atomic feature information of a features xml-tree
+  subroutine readFeatures(root, nFeatures, nAtom, features, inds)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> number of external features per atom
+    integer, intent(in) :: nFeatures
+
+    !> number of atoms of the corresponding geometry
+    integer, intent(in) :: nAtom
+
+    !> contains the desired feature subset on exit
+    real(dp), intent(out), allocatable :: features(:,:)
+
+    !> indices of external features to extract
+    integer, intent(in), optional :: inds(:)
+
+    !> temporary feature storage container
+    real(dp), allocatable :: tmpFeatures(:)
+
+    !> contains the full feature information of the dataset
+    real(dp), allocatable :: allFeatures(:,:)
+
+    !> auxiliary variable
+    integer :: iFeature
+
+    allocate(tmpFeatures(nFeatures * nAtom))
+
+    call getChildValue(root, 'extfeatures', tmpFeatures)
+
+    allFeatures = reshape(tmpFeatures, [nFeatures, nAtom])
+
+    if (present(inds)) then
+      ! reduce external features to desired subset
+      allocate(features(size(inds), size(allFeatures, dim=2)))
+      do iFeature = 1, size(inds)
+        features(iFeature, :) = allFeatures(inds(iFeature), :)
+      end do
+    else
+      features = allFeatures
+    end if
+
+  end subroutine readFeatures
+
+
+  !> interpret the external atomic feature information stored in fnetdata.xml files
+  subroutine readFnetdataFeatures(root, nAtom, features, inds)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> number of atoms of current geometry
+    integer, intent(in) :: nAtom
+
+    !> contains the desired feature subset on exit
+    real(dp), intent(out), allocatable :: features(:,:)
+
+    !> indices of external features to extract (default: all)
+    integer, intent(in), optional :: inds(:)
+
+    !> node to get targets from
+    type(fnode), pointer :: featuresnode
+
+    !> number of features per atom
+    integer :: nFeatures
+
+    ! read feature information
+    call getChild(root, 'features', featuresnode)
+    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
+
+    if (present(inds)) then
+      call checkFeatureInds(inds, nFeatures)
+    end if
+
+    call readFeatures(featuresnode, nFeatures, nAtom, features, inds=inds)
+
+  end subroutine readFnetdataFeatures
+
+
+  !> interpret the geometry information stored in a contiguous fnetdata.xml file
+  subroutine readContiguousFnetdataFeatures(root, geo, features, inds)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> contains corresponding geometry information
+    type(TGeometry), intent(in) :: geo(:)
+
+    !> contains external atomic features for training on exit
+    type(TRealArray2D), intent(out), allocatable :: features(:)
+
+    !> indices of external features to extract (default: all)
+    integer, intent(in), optional :: inds(:)
+
+    !> node to get feature properties from
+    type(fnode), pointer :: featuresnode
+
+    !> temporary pointer to node, containing information
+    type(fnode), pointer :: tmp
+
+    !> number of features per atom in dataset
+    integer :: nFeatures
+
+    !> auxiliary variable
+    integer :: iFeatureSet
+
+    ! read feature information
+    call getChild(root, 'features', featuresnode)
+    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
+
+    if (present(inds)) then
+      call checkFeatureInds(inds, nFeatures)
+    end if
+
+    allocate(features(size(geo)))
+
+    do iFeatureSet = 1, size(geo)
+      call getChild(root, 'datapoint' // i2c(iFeatureSet), tmp)
+      call getChild(tmp, 'features', featuresnode)
+      call readFeatures(featuresnode, nFeatures, geo(iFeatureSet)%nAtom,&
+          & features(iFeatureSet)%array, inds=inds)
+    end do
+
+  end subroutine readContiguousFnetdataFeatures
+
+
+  !> inquire the number of external atomic features in fnetdata tree
+  subroutine inquireFeatures(root, nFeatures)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> number of features per atom, provided by the dataset
+    integer, intent(out) :: nFeatures
+
+    !> node to get targets from
+    type(fnode), pointer :: featuresnode
+
+    ! read feature information
+    call getChild(root, 'features', featuresnode, requested=.false.)
+
+    if (associated(featuresnode)) then
+      call getChildValue(featuresnode, 'nextfeatures', nFeatures)
+    else
+      nFeatures = 0
+    end if
+
+  end subroutine inquireFeatures
+
+
+  !> check feature indices for a valid range
+  subroutine checkFeatureInds(inds, nFeatures)
+
+    !> indices of external features to extract
+    integer, intent(in) :: inds(:)
+
+    !> number of features per atom in dataset
+    integer, intent(in) :: nFeatures
+
+    if ((maxval(inds) > nFeatures) .or. (minval(inds) <= 0)) then
+      call error('External feature indices are out of range.')
+    end if
+
+  end subroutine checkFeatureInds
 
 end module fnet_fnetdata
