@@ -179,7 +179,7 @@ Generating developer documentation
 Developer documentation can be generated using the FORD source code
 documentation generator by issuing ::
 
-  cd doc/fortnet/ford && ford fortnet-project-file.md
+  cd doc/fortnet/ford && ford fortnet.md
 
 in the main source directory. The documentation will be created in the
 `doc/fortnet/ford/doc` folder.
