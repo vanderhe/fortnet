@@ -491,7 +491,7 @@ class Fnetout:
         if self.isatomic:
             for ii in range(self.ndatapoints):
                 data = output.find('datapoint' + str(ii + 1))
-                natoms = len(data.getchildren())
+                natoms = len(list(data))
                 if self.mode == 'validate':
                     tmppredicts = np.empty((natoms, 2 * self.ntargets))
                 elif self.mode == 'predict':
