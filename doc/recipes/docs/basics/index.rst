@@ -13,3 +13,4 @@ package.
 
    firsttrain.rst
    firstpredict.rst
+   extfeatures.rst
