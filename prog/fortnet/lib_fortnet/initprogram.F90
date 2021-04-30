@@ -31,6 +31,7 @@ module fnet_initprogram
 
   use fnet_precond, only : readPreconditioning, writePreconditioning
   use fnet_optimizers, only : TOptimizer, optimizerTypes, init, reset
+  use fnet_fnetdata, only : readFnetdataWeight, readContiguousFnetdataWeights
   use fnet_fnetdata, only : readFnetdataGeometry, readContiguousFnetdataGeometries
   use fnet_fnetdata, only : readFnetdataTargets, readContiguousFnetdataTargets
   use fnet_fnetdata, only : inquireFeatures
@@ -258,6 +259,9 @@ module fnet_initprogram
 
     !> true, if z-score standardization should be applied
     logical :: tZscore
+
+    !> contains obtained datapoint weights
+    integer, allocatable :: weights(:)
 
     !> contains obtained dataset geometries
     type(TGeometry), allocatable :: geos(:)
@@ -963,6 +967,7 @@ contains
     if (this%data%tContiguous) then
       call readHSDAsXML(this%data%datapaths(1), xml)
       call getChild(xml, 'fnetdata', rootNode)
+      call readContiguousFnetdataWeights(rootNode, this%data%weights)
       call readContiguousFnetdataGeometries(rootNode, this%data%geos)
       this%data%nDatapoints = size(this%data%geos)
       select case (this%option%mode)
@@ -976,6 +981,7 @@ contains
       end if
       call destroyNode(xml)
     else
+      allocate(this%data%weights(this%data%nDatapoints))
       allocate(this%data%geos(this%data%nDatapoints))
       select case (this%option%mode)
       case('train', 'validate')
@@ -988,6 +994,7 @@ contains
         filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
         call readHSDAsXML(filename, xml)
         call getChild(xml, 'fnetdata', rootNode)
+        call readFnetdataWeight(rootNode, this%data%weights(iSys))
         call readFnetdataGeometry(rootNode, this%data%geos(iSys))
         select case (this%option%mode)
         case('train', 'validate')
@@ -1036,6 +1043,7 @@ contains
           filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
+          call readFnetdataWeight(rootNode, this%data%weights(iSys))
           call readFnetdataGeometry(rootNode, this%data%validGeos(iSys))
           select case (this%option%mode)
           case('train', 'validate')
@@ -1669,6 +1677,8 @@ contains
     @:ASSERT(size(this%data%geos) >= 1)
     @:ASSERT(size(this%data%netstatNames) == this%data%nSpecies)
     @:ASSERT(size(this%data%globalSpNames) == this%data%nSpecies)
+    @:ASSERT(minval(this%data%weights) >= 1)
+    @:ASSERT(size(this%data%weights) == size(this%data%geos))
     @:ASSERT(size(this%data%localSpToGlobalSp) == size(this%data%geos))
     @:ASSERT(size(this%data%localAtToGlobalSp) == size(this%data%geos))
 
