@@ -2,7 +2,9 @@
 Fortnet: A Behler-Parrinello-Neural-Network Implementation
 **********************************************************
 
-|lgpl badge|
+|license|
+|latest version|
+|issues|
 
 Fortnet is a Behler-Parrinello-Neural-Network implementation, written in modern
 Fortran. Using atom-centered symmetry functions to characterize local atomic
@@ -10,11 +12,13 @@ environments, Fortnet provides easy access to the famous BPNN neural network
 architecture to predict atomic or global properties of your physical system,
 featuring powerful but optional MPI parallelism.
 
-|Fortnet logo|
+|logo|
 
 
 Installation
 ============
+
+|build status|
 
 Building from source
 --------------------
@@ -61,6 +65,8 @@ For further details see the `detailed building instructions <INSTALL.rst>`_.
 Documentation
 =============
 
+|docs status|
+
 Consult following resources for documentation:
 
 * `Step-by-step instructions with selected examples (Fortnet Recipes)
@@ -82,17 +88,30 @@ I am looking forward to your pull request!
 License
 =======
 
-Fortnet is released under the GNU Lesser General Public License. See the included
-`LICENSE <LICENSE>`_ file for the detailed licensing conditions.
+Fortnet is released under the GNU Lesser General Public License. See the
+included `LICENSE <LICENSE>`_ file for the detailed licensing conditions.
 
 
-
-.. |Fortnet logo| image:: ./utils/art/logo.svg
+.. |logo| image:: ./utils/art/logo.svg
     :alt: Fortnet logo
     :width: 90
     :target: https://github.com/vanderhe/fortnet/
 
-.. |lgpl badge| image:: ./utils/art/gnu-lgplv3.svg
+.. |license| image:: ./utils/art/gnu-lgplv3.svg
     :alt: LGPL v3.0
     :scale: 100%
     :target: https://opensource.org/licenses/LGPL-3.0
+
+.. |latest version| image:: https://img.shields.io/github/v/release/vanderhe/fortnet
+    :target: https://github.com/vanderhe/fortnet/releases/latest
+
+.. |docs status| image:: https://readthedocs.org/projects/fortnet/badge/?version=latest
+    :alt: Documentation Status
+    :scale: 100%
+    :target: https://fortnet.readthedocs.io/en/latest/
+
+.. |issues| image:: https://img.shields.io/github/issues/vanderhe/fortnet.svg
+    :target: https://github.com/vanderhe/fortnet/issues/
+
+.. |build status| image:: https://img.shields.io/github/workflow/status/vanderhe/fortnet/Build%20and%20Test
+    :target: https://github.com/vanderhe/fortnet/actions/
