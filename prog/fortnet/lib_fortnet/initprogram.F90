@@ -31,6 +31,7 @@ module fnet_initprogram
 
   use fnet_precond, only : readPreconditioning, writePreconditioning
   use fnet_optimizers, only : TOptimizer, optimizerTypes, init, reset
+  use fnet_fnetdata, only : readFnetdataWeight, readContiguousFnetdataWeights
   use fnet_fnetdata, only : readFnetdataGeometry, readContiguousFnetdataGeometries
   use fnet_fnetdata, only : readFnetdataTargets, readContiguousFnetdataTargets
   use fnet_fnetdata, only : inquireFeatures
@@ -258,6 +259,9 @@ module fnet_initprogram
 
     !> true, if z-score standardization should be applied
     logical :: tZscore
+
+    !> contains obtained datapoint weights
+    integer, allocatable :: weights(:)
 
     !> contains obtained dataset geometries
     type(TGeometry), allocatable :: geos(:)
@@ -963,6 +967,7 @@ contains
     if (this%data%tContiguous) then
       call readHSDAsXML(this%data%datapaths(1), xml)
       call getChild(xml, 'fnetdata', rootNode)
+      call readContiguousFnetdataWeights(rootNode, this%data%weights)
       call readContiguousFnetdataGeometries(rootNode, this%data%geos)
       this%data%nDatapoints = size(this%data%geos)
       select case (this%option%mode)
@@ -976,6 +981,7 @@ contains
       end if
       call destroyNode(xml)
     else
+      allocate(this%data%weights(this%data%nDatapoints))
       allocate(this%data%geos(this%data%nDatapoints))
       select case (this%option%mode)
       case('train', 'validate')
@@ -988,6 +994,7 @@ contains
         filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
         call readHSDAsXML(filename, xml)
         call getChild(xml, 'fnetdata', rootNode)
+        call readFnetdataWeight(rootNode, this%data%weights(iSys))
         call readFnetdataGeometry(rootNode, this%data%geos(iSys))
         select case (this%option%mode)
         case('train', 'validate')
@@ -1036,6 +1043,7 @@ contains
           filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
+          call readFnetdataWeight(rootNode, this%data%weights(iSys))
           call readFnetdataGeometry(rootNode, this%data%validGeos(iSys))
           select case (this%option%mode)
           case('train', 'validate')
@@ -1164,9 +1172,10 @@ contains
     ! calculate means of the different outputs
     do iSys = 1, size(this%targets)
       do iAtom = 1, size(this%targets(iSys)%array, dim=2)
-        nTotAtoms = nTotAtoms + 1
+        nTotAtoms = nTotAtoms + this%weights(iSys)
         do iTarget = 1, this%nTargets
-          this%zPrec(iTarget, 1) = this%zPrec(iTarget, 1) + this%targets(iSys)%array(iTarget, iAtom)
+          this%zPrec(iTarget, 1) = this%zPrec(iTarget, 1) + real(this%weights(iSys), dp)&
+              & * this%targets(iSys)%array(iTarget, iAtom)
         end do
       end do
     end do
@@ -1177,15 +1186,15 @@ contains
     do iSys = 1, size(this%targets)
       do iAtom = 1, size(this%targets(iSys)%array, dim=2)
         do iTarget = 1, this%nTargets
-          this%zPrec(iTarget, 2) = this%zPrec(iTarget, 2) +&
-              & (this%targets(iSys)%array(iTarget, iAtom) - this%zPrec(iTarget, 1))**2
+          this%zPrec(iTarget, 2) = this%zPrec(iTarget, 2) + real(this%weights(iSys), dp)&
+              & * (this%targets(iSys)%array(iTarget, iAtom) - this%zPrec(iTarget, 1))**2
         end do
       end do
     end do
 
     this%zPrec(:, 2) = sqrt(this%zPrec(:, 2) / real(nTotAtoms, dp))
 
-    ! correct for vanishing variances (in those cases, do effectively nothing)
+    ! correct for vanishing variances (in those cases, effectively do nothing)
     do iTarget = 1, this%nTargets
       if (this%zPrec(iTarget, 2) < 1e-08) then
         this%zPrec(iTarget, 1) = 0.0_dp
@@ -1669,6 +1678,8 @@ contains
     @:ASSERT(size(this%data%geos) >= 1)
     @:ASSERT(size(this%data%netstatNames) == this%data%nSpecies)
     @:ASSERT(size(this%data%globalSpNames) == this%data%nSpecies)
+    @:ASSERT(minval(this%data%weights) >= 1)
+    @:ASSERT(size(this%data%weights) == size(this%data%geos))
     @:ASSERT(size(this%data%localSpToGlobalSp) == size(this%data%geos))
     @:ASSERT(size(this%data%localAtToGlobalSp) == size(this%data%geos))
 

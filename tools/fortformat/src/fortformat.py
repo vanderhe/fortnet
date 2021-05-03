@@ -82,19 +82,22 @@ class Fortformat:
         self._atomic = atomic
         self._frac = frac
 
-        self.checkfeatureconsistency(atoms, features=features)
+        self._nsystems, self._nfeatures = \
+            self._checkfeatureconsistency(atoms, features=features)
         self._atoms = atoms
         self._features = features
 
         if self._withtargets:
-            self.checktargetconsistency(targets)
+            self._checktargetconsistency(targets)
 
         self._targets = targets
 
-        self.process_paths()
+        self._process_paths()
+
+        self._weights = np.ones((self._nsystems,), dtype=int)
 
 
-    def process_paths(self):
+    def _process_paths(self):
         '''In case of non-contiguous files, appends suffix if not present.'''
 
         if not self._contiguous:
@@ -104,7 +107,7 @@ class Fortformat:
                         self._paths[isys], 'fnetdata.xml')
 
 
-    def process_data(self):
+    def _process_data(self):
         '''Based on the stored data, a list of dictionaries,
            containing the processed input, will be created.
         '''
@@ -165,12 +168,13 @@ class Fortformat:
         return data
 
 
-    def create_single_xml(self, data, features=None):
+    def _create_single_xml(self, data, weight, features=None):
         '''Creates a single fnetdata.xml file, as ET xml-tree instance.
 
         Args:
 
             data (dict): dictionary, containing all the necessary information
+            weight (int): weighting of current datapoint
             features (2darray): numpy array containing external atomic
                 features, used as an additional, optional input
 
@@ -182,6 +186,7 @@ class Fortformat:
 
         root = ET.Element('fnetdata')
 
+        root = xml_append_weight(root, weight)
         root = xml_append_geometry(root, data, self._frac)
 
         if self._withfeatures:
@@ -195,7 +200,7 @@ class Fortformat:
         return root
 
 
-    def create_contiguous_xml(self, data):
+    def _create_contiguous_xml(self, data):
         '''Creates a contiguous fnetdata.xml file, as ET xml-tree instance.
 
         Args:
@@ -238,6 +243,7 @@ class Fortformat:
 
             subroot = ET.SubElement(root, 'datapoint{}'.format(isys + 1))
 
+            subroot = xml_append_weight(subroot, self._weights[isys])
             subroot = xml_append_geometry(subroot, data[isys], self._frac)
 
             if self._withtargets:
@@ -258,23 +264,24 @@ class Fortformat:
            or various single fnetdata files get dumped to disk.
         '''
 
-        data = self.process_data()
+        data = self._process_data()
 
         if self._contiguous:
-            xml = self.create_contiguous_xml(data)
+            xml = self._create_contiguous_xml(data)
             dump_as_xml(xml, self._paths)
         else:
             for isys in range(self._nsystems):
                 if self._withfeatures:
-                    xml = self.create_single_xml(
-                        data[isys], features=self._features[isys])
+                    xml = self._create_single_xml(
+                        data[isys], self._weights[isys],
+                        features=self._features[isys])
                 else:
-                    xml = self.create_single_xml(
-                        data[isys], features=None)
+                    xml = self._create_single_xml(
+                        data[isys], self._weights[isys], features=None)
                 dump_as_xml(xml, self._paths[isys])
 
 
-    def checktargetconsistency(self, targets):
+    def _checktargetconsistency(self, targets):
         '''Performs basic consistency checks on the target values.
 
         Args:
@@ -311,7 +318,7 @@ class Fortformat:
             self._ntargets = targets.shape[1]
 
 
-    def checkfeatureconsistency(self, atoms, features=None):
+    def _checkfeatureconsistency(self, atoms, features=None):
         '''Performs basic consistency checks on the atomic features.
 
         Args:
@@ -348,37 +355,73 @@ class Fortformat:
             msg = 'Number of geometry features and paths does not match.'
             raise FortformatError(msg)
 
-        self._nsystems = len(atoms)
+        nsystems = len(atoms)
 
         if features is not None:
             msg = 'Mismatch in number of external features and ' +\
                 'number of atoms of the corresponding geometry.'
-            for isys in range(self._nsystems):
+            for isys in range(nsystems):
                 if not len(atoms[isys]) == features[isys].shape[0]:
                     raise FortformatError(msg)
 
-            self._nfeatures = features[0].shape[1]
+            nfeatures = features[0].shape[1]
+        else:
+            nfeatures = 0
+
+        return nsystems, nfeatures
 
 
-    def get_nr_structures(self):
-        '''Queries the number of structures.
+    @property
+    def weights(self):
+        '''Defines property, providing the weight of each datapoint.
 
         Returns:
 
-            self._nsystems (int): number of structures
+            weights (1darray): integer-valued array of datapoint weights
+
+        '''
+
+        return self._weights
+
+
+    @weights.setter
+    def weights(self, weights):
+        '''Sets user-specified weighting of each datapoint.'''
+
+        weights = np.array(weights)
+
+        if weights.ndim != 1:
+            msg = 'Invalid weights found, 1-dimensional list or array expected.'
+            raise FortformatError(msg)
+
+        if not issubclass(weights.dtype.type, np.integer) or any(weights < 1):
+            msg = 'Invalid weight(s) found, choose positive integers.'
+            raise FortformatError(msg)
+
+        self._weights = weights
+
+
+    @property
+    def ndatapoints(self):
+        '''Defines property, providing the number of datapoints.
+
+        Returns:
+
+            nsystems (1darray): total number of datapoints
 
         '''
 
         return self._nsystems
 
 
-    def get_nr_targets(self):
-        '''Queries the number of targets.
+    @property
+    def ntargets(self):
+        '''Defines property, providing the number of targets.
 
         Returns:
 
-            self._ntargets (int): If targets are atomic, the number of targets
-                per atom gets returned (otherwise number of targets per system).
+            ntargets (int): if targets are atomic, the number of targets
+                per atom gets returned, otherwise number of targets per system
 
         '''
 
@@ -400,6 +443,26 @@ def dump_as_xml(root, fname):
 
     fnetdata = ET.ElementTree(_beautify(root))
     fnetdata.write(fname, xml_declaration=True, encoding='utf-8')
+
+
+def xml_append_weight(root, weight):
+    '''Appends the datapoint weight to a given xml-tree root.
+
+    Args:
+
+        root (ET instance): xml-tree
+        weight (int): positive integer weight of current datapoint
+
+    Returns:
+
+        root (ET instance): xml-tree with a weight appended to it
+
+    '''
+
+    weighttag = ET.SubElement(root, 'weight')
+    weighttag.text = str(weight)
+
+    return root
 
 
 def xml_append_geometry(root, data, frac):

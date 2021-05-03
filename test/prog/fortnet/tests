@@ -18,6 +18,13 @@ input/extfeatures/rangeselected
 input/extfeatures/selected
 input/extfeatures/validate
 
+input/weighting/acsfPrec/contiguous
+input/weighting/acsfPrec/noncontiguous
+input/weighting/targetPrec/contiguous
+input/weighting/targetPrec/noncontiguous
+input/weighting/validate
+input/weighting/predict
+
 loss/mae
 loss/mse
 loss/rms

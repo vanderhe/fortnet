@@ -215,6 +215,39 @@ properties are present (default: False) and whether the coordinates should be
 saved in fractional or absolute format (default: False).
 
 
+********************
+Weighting Datapoints
+********************
+
+[Input: `recipes/fnetdata/weighting/`]
+
+There are countless conceivable situations in which weighting individual
+datapoints makes sense. The detour via the increased insertion of a datapoint is
+not only cumbersome but also inefficient, since exactly the same input features
+(e.g. ACSF) and gradients would be calculated multiple times. To elegantly
+circumvent this, ``Fortformat`` and ``Fortnet`` offer the possibility of
+individually weighting certain datapoints of a dataset. After a Fortformat
+object has been instantiated, the desired weights can be handed over via a
+setter function. The following code snippet shows what this could look like:
+
+.. code-block:: python
+
+  # start with homogeneous weighting
+  weights = np.ones((31,), dtype=int)
+  # possibly, certain datapoints are more important
+  weights[4:13] = 3
+
+  fnetdata = Fortformat(strucs, outpaths, targets=energies,
+			atomic=False, frac=True)
+  fnetdata.weights = weights
+  fnetdata.dump()
+
+For Fortformat to correctly recognize the weights, they must be specified as a
+onedimensional list or Numpy array of positive integers. If these requirements
+are not met, an error message is issued, so that nothing can terribly go wrong
+(fingers crossed).
+
+
 ***********************
 Contiguous Dataset File
 ***********************

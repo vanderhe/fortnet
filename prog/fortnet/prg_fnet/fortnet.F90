@@ -223,7 +223,8 @@ contains
     integer, intent(in) :: nSubNnParams
 
     write(stdout, '(A,/)') 'Dataset Information'
-    write(stdout, '(A,I0,3A)') 'found: ', data%nDatapoints, ' geometries'
+    write(stdout, '(A,I0,A,I0,A)') 'found: ', sum(data%weights), ' geometries (',&
+        & data%nDatapoints, ' unique ones)'
     write(stdout, '(2A)') 'in pathfile: ', data%datapath
     write(stdout, '(A,I0)') 'total sub-nn parameters: ', nSubNnParams
     write(stdout, '(A,F0.4,/)') 'targets per parameter: ', data%nTargetsPerParam
@@ -254,7 +255,7 @@ contains
     if (data%tMonitorValid) then
       validAcsf = acsf
     end if
-    call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp)
+    call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp, weights=prog%data%weights)
 
     if (data%tMonitorValid) then
       call validAcsf%calculate(data%validGeos, env, prog%data%localValidAtToGlobalSp,&

@@ -13,7 +13,7 @@ module fnet_bpnn
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
 
-  use fnet_initprogram
+  use fnet_initprogram, only : TProgramvariables
   use fnet_nestedtypes, only : TRealArray1D, TRealArray2D, TMultiLayerStruc, TMultiLayerStruc_init
   use fnet_nestedtypes, only : TBiasDerivs, TWeightDerivs, TDerivs, TDerivs_init
   use fnet_nestedtypes, only : TIntArray1D, TPredicts, TPredicts_init
@@ -95,7 +95,7 @@ contains
       call TNetwork_init(this%nets(iSpecies), dims, rndGen=rndGen, descriptor=activation)
     end do
 
-    ! we assume that every sub-nn has the same architecture
+    ! assume that every sub-nn has the same architecture
     this%nBiases = this%nets(1)%nBiases
     this%nWeights = this%nets(1)%nWeights
 
@@ -168,9 +168,9 @@ contains
         do iGlobalSp = 1, size(this%nets)
           do iLayer = 1, size(this%dims)
             dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
-                & ddTmp%dw(iGlobalSp)%dw(iLayer)%array
+                & ddTmp%dw(iGlobalSp)%dw(iLayer)%array * real(prog%data%weights(iSys), dp)
             dd%db(iGlobalSp)%db(iLayer)%array = dd%db(iGlobalSp)%db(iLayer)%array +&
-                & ddTmp%db(iGlobalSp)%db(iLayer)%array
+                & ddTmp%db(iGlobalSp)%db(iLayer)%array * real(prog%data%weights(iSys), dp)
           end do
         end do
       end do lpSystem
@@ -205,7 +205,7 @@ contains
               & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
           validLoss = prog%train%loss(validPredicts, prog%data%validTargets)
         end if
-        call this%update(prog%train%pOptimizer, ddRes, loss, prog%data%nDatapoints, totGradNorm,&
+        call this%update(prog%train%pOptimizer, ddRes, loss, sum(prog%data%weights), totGradNorm,&
             & tConverged)
       end if
 

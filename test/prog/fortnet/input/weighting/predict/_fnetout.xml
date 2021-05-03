@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<fnetout>
+ <mode> "predict"
+ </mode>
+ <output>
+  <ndatapoints>3
+  </ndatapoints>
+  <atomic>No
+  </atomic>
+  <ntargets>1
+  </ntargets>
+  <datapoint1> 0.83360219899179655
+  </datapoint1>
+  <datapoint2> 0.72460935754547395
+  </datapoint2>
+  <datapoint3> 0.66090864863460763
+  </datapoint3>
+ </output>
+</fnetout>

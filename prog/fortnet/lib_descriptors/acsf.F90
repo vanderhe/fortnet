@@ -79,14 +79,6 @@ module fnet_acsf
   end type TAcsfParams
 
 
-  ! type :: TAcsfVals
-
-  !   !> contains symmetry function values of atoms
-  !   real(dp), allocatable :: atoms(:,:)
-
-  ! end type TAcsfVals
-
-
   type :: TMultiAcsfVals
 
     !> array of ACSF value instances
@@ -394,10 +386,13 @@ contains
   end subroutine TMultiAcsfVals_init
 
 
-  subroutine TAcsf_getMeansAndVariances(this)
+  subroutine TAcsf_getMeansAndVariances(this, weights)
 
     !> representation of ACSF mappings
     class(TAcsf), intent(inout) :: this
+
+    !> weighting of each corresponding datapoint
+    integer, intent(in) :: weights(:)
 
     !> auxiliary variables
     integer :: iGeo, iAtom, nTotAtoms
@@ -414,8 +409,9 @@ contains
     ! calculate means of the different inputs
     do iGeo = 1, size(this%vals%vals)
       do iAtom = 1, size(this%vals%vals(iGeo)%array, dim=2)
-        nTotAtoms = nTotAtoms + 1
-        this%zPrec(:, 1) = this%zPrec(:, 1) + this%vals%vals(iGeo)%array(:, iAtom)
+        nTotAtoms = nTotAtoms + weights(iGeo)
+        this%zPrec(:, 1) = this%zPrec(:, 1) + real(weights(iGeo), dp)&
+            & * this%vals%vals(iGeo)%array(:, iAtom)
       end do
     end do
 
@@ -424,8 +420,8 @@ contains
     ! calculate variances of the different inputs
     do iGeo = 1, size(this%vals%vals)
       do iAtom = 1, size(this%vals%vals(iGeo)%array, dim=2)
-        this%zPrec(:, 2) = this%zPrec(:, 2) + (this%vals%vals(iGeo)%array(:, iAtom) -&
-            & this%zPrec(:, 1))**2
+        this%zPrec(:, 2) = this%zPrec(:, 2) + real(weights(iGeo), dp)&
+            & * (this%vals%vals(iGeo)%array(:, iAtom) - this%zPrec(:, 1))**2
       end do
     end do
 
@@ -462,7 +458,7 @@ contains
   end subroutine TAcsf_applyZscore
 
 
-  subroutine TAcsf_calculate(this, geos, env, localAtToGlobalSp, zPrec)
+  subroutine TAcsf_calculate(this, geos, env, localAtToGlobalSp, weights, zPrec)
 
     !> representation of ACSF mappings
     class(TAcsf), intent(inout) :: this
@@ -476,6 +472,9 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
+    !> optional weighting of each corresponding datapoint
+    integer, intent(in), optional :: weights(:)
+
     !> storage container of means and variances to calculate z-score
     real(dp), intent(in), optional :: zPrec(:,:)
 
@@ -488,11 +487,21 @@ contains
     !> temporary storage of ACSF values of each node
     type(TMultiAcsfVals) :: tmpVals
 
+    !> weighting of each corresponding datapoint
+    integer, allocatable :: weighting(:)
+
     !> true, if current process is the lead
     logical :: tLead
 
     !> auxiliary variables
     integer :: iGeo, iStart, iEnd
+
+    if (present(weights)) then
+      weighting = weights
+    else
+      allocate(weighting(size(geos)))
+      weighting(:) = 1
+    end if
 
     if (present(zPrec)) then
       this%zPrec = zPrec
@@ -536,7 +545,7 @@ contains
 
     if (tLead .and. this%tZscore) then
       if (.not. allocated(this%zPrec)) then
-        call this%getMeansAndVariances()
+        call this%getMeansAndVariances(weighting)
       end if
       call this%applyZscore()
     end if

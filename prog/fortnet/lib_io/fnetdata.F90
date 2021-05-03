@@ -29,6 +29,7 @@ module fnet_fnetdata
 
   private
 
+  public :: readFnetdataWeight, readContiguousFnetdataWeights
   public :: readFnetdataGeometry, readContiguousFnetdataGeometries
   public :: readFnetdataTargets, readContiguousFnetdataTargets
   public :: readFnetdataFeatures, readContiguousFnetdataFeatures
@@ -36,6 +37,56 @@ module fnet_fnetdata
 
 
 contains
+
+  !> interpret the weighting information stored in a contiguous fnetdata.xml file
+  subroutine readContiguousFnetdataWeights(root, weights)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> contains the weighting information on exit
+    integer, intent(out), allocatable :: weights(:)
+
+    !> node to get dataset size from
+    type(fnode), pointer :: datasetnode
+
+    !> temporary pointer to node, containing information
+    type(fnode), pointer :: tmp
+
+    !> number of datapoints contained in the dataset file
+    integer :: nDatapoints
+
+    !> auxiliary variable
+    integer :: iDatapoint
+
+    ! read dataset size
+    call getChild(root, 'dataset', datasetnode)
+    call getChildValue(datasetnode, 'ndatapoints', nDatapoints)
+
+    allocate(weights(nDatapoints))
+
+    do iDatapoint = 1, nDatapoints
+      call getChild(root, 'datapoint' // i2c(iDatapoint), tmp)
+      call readFnetdataWeight(tmp, weights(iDatapoint))
+    end do
+
+  end subroutine readContiguousFnetdataWeights
+
+
+  !> interpret the weighting information stored in fnetdata.xml files
+  subroutine readFnetdataWeight(root, weight)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> contains the weight information on exit
+    integer, intent(out) :: weight
+
+    ! read weight information
+    call getChildValue(root, 'weight', weight, default=1)
+
+  end subroutine readFnetdataWeight
+
 
   !> interpret the geometry information stored in fnetdata.xml files
   subroutine readFnetdataGeometry(root, geo)
