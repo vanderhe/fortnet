@@ -255,7 +255,7 @@ contains
     if (data%tMonitorValid) then
       validAcsf = acsf
     end if
-    call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp)
+    call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp, weights=prog%data%weights)
 
     if (data%tMonitorValid) then
       call validAcsf%calculate(data%validGeos, env, prog%data%localValidAtToGlobalSp,&

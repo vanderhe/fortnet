@@ -1172,9 +1172,10 @@ contains
     ! calculate means of the different outputs
     do iSys = 1, size(this%targets)
       do iAtom = 1, size(this%targets(iSys)%array, dim=2)
-        nTotAtoms = nTotAtoms + 1
+        nTotAtoms = nTotAtoms + this%weights(iSys)
         do iTarget = 1, this%nTargets
-          this%zPrec(iTarget, 1) = this%zPrec(iTarget, 1) + this%targets(iSys)%array(iTarget, iAtom)
+          this%zPrec(iTarget, 1) = this%zPrec(iTarget, 1) + real(this%weights(iSys), dp)&
+              & * this%targets(iSys)%array(iTarget, iAtom)
         end do
       end do
     end do
@@ -1185,15 +1186,15 @@ contains
     do iSys = 1, size(this%targets)
       do iAtom = 1, size(this%targets(iSys)%array, dim=2)
         do iTarget = 1, this%nTargets
-          this%zPrec(iTarget, 2) = this%zPrec(iTarget, 2) +&
-              & (this%targets(iSys)%array(iTarget, iAtom) - this%zPrec(iTarget, 1))**2
+          this%zPrec(iTarget, 2) = this%zPrec(iTarget, 2) + real(this%weights(iSys), dp)&
+              & * (this%targets(iSys)%array(iTarget, iAtom) - this%zPrec(iTarget, 1))**2
         end do
       end do
     end do
 
     this%zPrec(:, 2) = sqrt(this%zPrec(:, 2) / real(nTotAtoms, dp))
 
-    ! correct for vanishing variances (in those cases, do effectively nothing)
+    ! correct for vanishing variances (in those cases, effectively do nothing)
     do iTarget = 1, this%nTargets
       if (this%zPrec(iTarget, 2) < 1e-08) then
         this%zPrec(iTarget, 1) = 0.0_dp
