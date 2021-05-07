@@ -845,9 +845,6 @@ contains
     !> string buffer instances
     type(string) :: strBuffer, buffer, buffer1, buffer2
 
-    !> list of integers to parse external feature selection
-    type(TListInt) :: integerList
-
     !> nodes containig the information
     type(fnode), pointer :: child, child1, child2, value1, xml, rootNode
 
@@ -1043,7 +1040,6 @@ contains
           filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
-          call readFnetdataWeight(rootNode, this%data%weights(iSys))
           call readFnetdataGeometry(rootNode, this%data%validGeos(iSys))
           select case (this%option%mode)
           case('train', 'validate')
