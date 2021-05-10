@@ -1,0 +1,32 @@
+Data {
+
+  Dataset = 'training_data'
+  Standardization = No
+
+  NetstatFiles = Type2FileNames {
+    Prefix = "./"
+    Suffix = ".net"
+    LowerCaseTypeName = No
+  }
+
+}
+
+External {
+
+  # SpeciesID {
+  #   C = 0.364302
+  #   Si = 0.247609
+  # }
+  SpeciesID {
+    C = 1.0
+    Si = 1.0
+  }
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = 'validate'
+
+}

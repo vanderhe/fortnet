@@ -4,6 +4,8 @@
 
 #:include 'common.fypp'
 
+input/atomids
+
 input/contiguous/atomicTargets
 input/contiguous/globalTargets
 
@@ -17,6 +19,11 @@ input/extfeatures/predict
 input/extfeatures/rangeselected
 input/extfeatures/selected
 input/extfeatures/validate
+
+input/speciesids/hubbard
+input/speciesids/ones
+input/speciesids/predict
+input/speciesids/validate
 
 input/weighting/acsfPrec/contiguous
 input/weighting/acsfPrec/noncontiguous

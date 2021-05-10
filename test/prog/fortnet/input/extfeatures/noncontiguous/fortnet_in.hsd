@@ -30,7 +30,6 @@ Data {
 
   Dataset = 'training_data'
   Validset = 'training_data'
-  ExtFeatures = 1 2 3
 
   Standardization = No
 
@@ -39,6 +38,12 @@ Data {
     Suffix = ".net"
     LowerCaseTypeName = No
   }
+
+}
+
+External {
+
+  Features = 1 2 3
 
 }
 

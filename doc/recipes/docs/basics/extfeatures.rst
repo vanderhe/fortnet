@@ -45,7 +45,6 @@ with from the previous sections::
 
   Data {
     Dataset = 'fnetdata.xml'
-    ExtFeatures = 1 2 3
     Standardization = No
     NetstatFiles = Type2FileNames {
       Prefix = "./"
@@ -54,14 +53,18 @@ with from the previous sections::
     }
   }
 
+  External {
+    Features = 1 2 3
+  }
+
   Options {
     Mode = 'train'
     ReadNetStats = No
     RandomSeed = 123456
   }
 
-The only addition is located in the ``Data`` block. By specifying the
-``ExtFeatures`` entry we ask Fortnet to incorporate the corresponding entries of
+The only addition is located in the ``External`` block. By specifying the
+``Features`` entry we ask Fortnet to incorporate the corresponding entries of
 the dataset, provided they are available. So let's take a closer look at the
 specification options in the input. In this case, a dataset with three external
 features per atom is used. A dedicated :ref:`section <sec-fnetdata_extFeatures>`
@@ -73,39 +76,39 @@ to be used:
 
 1. Explicit specification of the feature indices as they appear in the dataset::
 
-       Data {
+       External {
           .
 	  .
-	 ExtFeatures = 1 2 3
+	 Features = 1 2 3
        }
 
   The advantage is that certain features can be left out or even used multiple
   times like this::
 
-       Data {
+       External {
           .
 	  .
-	 ExtFeatures = 1 1 2 2 2
+	 Features = 1 1 2 2 2
        }
 
 2. Specification of a contiguous range of indices (bounds included)::
 
-       Data {
+       External {
           .
 	  .
-	 ExtFeatures = 1:3
+	 Features = 1:3
        }
 
   This format can therefore be used to specify all the entries in the dataset in
   a convenient way::
 
-       Data {
+       External {
           .
 	  .
-	 ExtFeatures = 1:-1
+	 Features = 1:-1
        }
 
-  Or for example up to the penultimate entry: ``ExtFeatures = 1:-2``
+  Or for example up to the penultimate entry: ``Features = 1:-2``
 
 
 Standard Output

@@ -23,7 +23,7 @@ module fnet_loss
 
   interface
 
-    pure function lossFunc(predicts, targets) result(loss)
+    pure function lossFunc(predicts, targets, weights) result(loss)
 
       use dftbp_accuracy, only: dp
       use fnet_nestedtypes, only : TPredicts, TRealArray2D
@@ -35,6 +35,9 @@ module fnet_loss
 
       !> target reference data
       type(TRealArray2D), intent(in) :: targets(:)
+
+      !> optional weighting of individual datapoints
+      integer, intent(in), optional :: weights(:)
 
       !> summed root mean square loss of predictions, in comparison to targets
       real(dp) :: loss
@@ -133,7 +136,7 @@ contains
 
 
   !> mean absolute loss function
-  pure function maLoss(predicts, targets) result(loss)
+  pure function maLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
@@ -141,14 +144,27 @@ contains
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
 
+    !> optional weighting of individual datapoints
+    integer, intent(in), optional :: weights(:)
+
     !> summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
     real(dp) :: tmpLoss
 
+    !> weighting of individual datapoints
+    integer, allocatable :: weighting(:)
+
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
+
+    if (present(weights)) then
+      weighting = weights
+    else
+      allocate(weighting(size(predicts%sys)))
+      weighting(:) = 1
+    end if
 
     loss = 0.0_dp
     nValues = 0
@@ -156,8 +172,8 @@ contains
     do iSys = 1, size(predicts%sys)
       do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
         tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + tmpLoss
-        nValues = nValues + 1
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+        nValues = nValues + weighting(iSys)
       end do
     end do
 
@@ -167,7 +183,7 @@ contains
 
 
   !> mean squared loss function
-  pure function msLoss(predicts, targets) result(loss)
+  pure function msLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
@@ -175,14 +191,27 @@ contains
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
 
+    !> optional weighting of individual datapoints
+    integer, intent(in), optional :: weights(:)
+
     !> summed mean squared loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
     real(dp) :: tmpLoss
 
+    !> weighting of individual datapoints
+    integer, allocatable :: weighting(:)
+
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
+
+    if (present(weights)) then
+      weighting = weights
+    else
+      allocate(weighting(size(predicts%sys)))
+      weighting(:) = 1
+    end if
 
     loss = 0.0_dp
     nValues = 0
@@ -190,8 +219,8 @@ contains
     do iSys = 1, size(predicts%sys)
       do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
         tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + tmpLoss
-        nValues = nValues + 1
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+        nValues = nValues + weighting(iSys)
       end do
     end do
 
@@ -201,7 +230,7 @@ contains
 
 
   !> mean squared logarithmic loss function
-  pure function mslLoss(predicts, targets) result(loss)
+  pure function mslLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
@@ -209,14 +238,27 @@ contains
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
 
+    !> optional weighting of individual datapoints
+    integer, intent(in), optional :: weights(:)
+
     !> summed mean square logarithmic loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
     real(dp) :: tmpLoss
 
+    !> weighting of individual datapoints
+    integer, allocatable :: weighting(:)
+
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
+
+    if (present(weights)) then
+      weighting = weights
+    else
+      allocate(weighting(size(predicts%sys)))
+      weighting(:) = 1
+    end if
 
     loss = 0.0_dp
     nValues = 0
@@ -224,8 +266,8 @@ contains
     do iSys = 1, size(predicts%sys)
       do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
         tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + tmpLoss
-        nValues = nValues + 1
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+        nValues = nValues + weighting(iSys)
       end do
     end do
 
@@ -235,7 +277,7 @@ contains
 
 
   !> root mean square loss function
-  pure function rmsLoss(predicts, targets) result(loss)
+  pure function rmsLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
@@ -243,14 +285,27 @@ contains
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
 
+    !> optional weighting of individual datapoints
+    integer, intent(in), optional :: weights(:)
+
     !> summed root mean square loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
     real(dp) :: tmpLoss
 
+    !> weighting of individual datapoints
+    integer, allocatable :: weighting(:)
+
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
+
+    if (present(weights)) then
+      weighting = weights
+    else
+      allocate(weighting(size(predicts%sys)))
+      weighting(:) = 1
+    end if
 
     loss = 0.0_dp
     nValues = 0
@@ -258,8 +313,8 @@ contains
     do iSys = 1, size(predicts%sys)
       do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
         tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + tmpLoss
-        nValues = nValues + 1
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+        nValues = nValues + weighting(iSys)
       end do
     end do
 

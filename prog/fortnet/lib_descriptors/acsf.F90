@@ -101,6 +101,9 @@ module fnet_acsf
     !> species dependent scaling parameters for cutoff function
     real(dp), allocatable :: speciesIds(:)
 
+    !> real valued atom identifier, expected shape: [nDatapoints]
+    type(TRealArray1D), allocatable :: atomIds(:)
+
     !> container for all ACSF function parameters
     type(TAcsfParams) :: param
 
@@ -145,7 +148,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> optional species dependent scaling parameters for cutoff function
+    !> species dependent scaling parameters for cutoff function
     real(dp), intent(in) :: speciesIds(:)
 
     !> optional kappa parameter for G3 function
@@ -458,7 +461,7 @@ contains
   end subroutine TAcsf_applyZscore
 
 
-  subroutine TAcsf_calculate(this, geos, env, localAtToGlobalSp, weights, zPrec)
+  subroutine TAcsf_calculate(this, geos, env, localAtToGlobalSp, atomIds, weights, zPrec)
 
     !> representation of ACSF mappings
     class(TAcsf), intent(inout) :: this
@@ -471,6 +474,9 @@ contains
 
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
+
+    !> optional atom dependent scaling parameters for cutoff function
+    type(TRealArray1D), intent(in), optional :: atomIds(:)
 
     !> optional weighting of each corresponding datapoint
     integer, intent(in), optional :: weights(:)
@@ -487,6 +493,9 @@ contains
     !> temporary storage of ACSF values of each node
     type(TMultiAcsfVals) :: tmpVals
 
+    !> atom dependent scaling parameters for cutoff function
+    type(TRealArray1D), allocatable :: atomIdentifier(:)
+
     !> weighting of each corresponding datapoint
     integer, allocatable :: weighting(:)
 
@@ -494,7 +503,17 @@ contains
     logical :: tLead
 
     !> auxiliary variables
-    integer :: iGeo, iStart, iEnd
+    integer :: iSys, iStart, iEnd
+
+    if (present(atomIds)) then
+      atomIdentifier = atomIds
+    else
+      allocate(atomIdentifier(size(geos)))
+      do iSys = 1, size(geos)
+        allocate(atomIdentifier(iSys)%array(geos(iSys)%nAtom))
+        atomIdentifier(iSys)%array(:) = 1.0_dp
+      end do
+    end if
 
     if (present(weights)) then
       weighting = weights
@@ -520,23 +539,23 @@ contains
     call TMultiAcsfVals_init(tmpVals, geos, this%nRadial + this%nAngular)
     call TMultiAcsfVals_init(this%vals, geos, this%nRadial + this%nAngular)
 
-    lpSystem: do iGeo = iStart, iEnd
+    lpSystem: do iSys = iStart, iEnd
 
-      call TDynNeighList_init(neighList, this%rcut, geos(iGeo)%nAtom, geos(iGeo)%tPeriodic)
-      call neighList%updateCoords(geos(iGeo)%coords, localAtToGlobalSp(iGeo)%array)
-      if (geos(iGeo)%tPeriodic) then
-        call neighList%updateLatVecs(geos(iGeo)%latVecs, geos(iGeo)%recVecs2p)
+      call TDynNeighList_init(neighList, this%rcut, geos(iSys)%nAtom, geos(iSys)%tPeriodic)
+      call neighList%updateCoords(geos(iSys)%coords, localAtToGlobalSp(iSys)%array)
+      if (geos(iSys)%tPeriodic) then
+        call neighList%updateLatVecs(geos(iSys)%latVecs, geos(iSys)%recVecs2p)
       end if
       pNeighList => neighList
-      call iAtomAcsf(tmpVals%vals(iGeo), geos(iGeo), pNeighList, this%param, this%nRadial,&
-          & this%nAngular, this%rcut, this%speciesIds)
+      call iAtomAcsf(tmpVals%vals(iSys), geos(iSys), pNeighList, this%param, this%nRadial,&
+          & this%nAngular, this%rcut, this%speciesIds, atomIdentifier(iSys)%array)
 
     end do lpSystem
 
   #:if WITH_MPI
     ! sync ACSF mappings between MPI nodes
-    do iGeo = 1, size(geos)
-      call mpifx_allreduce(env%globalMpiComm, tmpVals%vals(iGeo)%array, this%vals%vals(iGeo)%array,&
+    do iSys = 1, size(geos)
+      call mpifx_allreduce(env%globalMpiComm, tmpVals%vals(iSys)%array, this%vals%vals(iSys)%array,&
           & MPI_SUM)
     end do
   #:else
@@ -551,15 +570,15 @@ contains
     end if
 
   #:if WITH_MPI
-    do iGeo = 1, size(this%vals%vals)
-      call mpifx_bcast(env%globalMpiComm, this%vals%vals(iGeo)%array)
+    do iSys = 1, size(this%vals%vals)
+      call mpifx_bcast(env%globalMpiComm, this%vals%vals(iSys)%array)
     end do
   #:endif
 
   end subroutine TAcsf_calculate
 
 
-  subroutine iAtomAcsf(this, geo, pNeighList, param, nRadial, nAngular, rcut, speciesIds)
+  subroutine iAtomAcsf(this, geo, pNeighList, param, nRadial, nAngular, rcut, speciesIds, atomIds)
 
     !> symmetry function value instance of geometry
     type(TRealArray2D), intent(inout) :: this
@@ -585,6 +604,9 @@ contains
     !> species dependent scaling parameters for G1 function
     real(dp), intent(in) :: speciesIds(:)
 
+    !> atom dependent scaling parameters for cutoff function
+    real(dp), intent(in) :: atomIds(:)
+
     !> instance of dynamic neighbour list iterator
     type(TNeighIterator) :: neighIter
 
@@ -594,20 +616,25 @@ contains
     !> obtained neighbor species indices
     integer :: speciesIndices(iterChunkSize)
 
-    !> neighbor coordinates, distances and spcies ID's of all iterator stepsizes
-    real(dp), allocatable :: allNeighDists(:), allNeighCoords(:,:), tmpCoords(:,:), allSpeciesIds(:)
+    !> obtained neighbor atom indices
+    integer :: atomIndices(iterChunkSize)
 
-    !> neighbor species indices of all iterator stepsizes
-    integer, allocatable :: allSpeciesIndices(:)
+    !> neighbor coordinates, distances and species/atom ID's of all iterator stepsizes
+    real(dp), allocatable :: allNeighDists(:), allNeighCoords(:,:), tmpCoords(:,:)
+    real(dp), allocatable :: allSpeciesIds(:), allAtomIds(:)
+
+    !> neighbor species/atom indices of all iterator stepsizes
+    integer, allocatable :: allSpeciesIndices(:), allAtomIndices(:)
 
     !> auxiliary variables
-    integer :: iAtom, iAcsf, iSp, nNeigh, nTotNeigh
+    integer :: iAtom, iAcsf, iSp, iAtomInd, nNeigh, nTotNeigh
 
     do iAtom = 1, geo%nAtom
 
       allocate(tmpCoords(3, 0))
       allocate(allNeighDists(0))
       allocate(allSpeciesIndices(0))
+      allocate(allAtomIndices(0))
 
       call TNeighIterator_init(neighIter, pNeighList, iAtom, includeSelf=.false.)
 
@@ -615,11 +642,12 @@ contains
 
       do while (nNeigh == iterChunkSize)
         call neighIter%getNextNeighbours(nNeigh, coords=neighCoords, dists=neighDists,&
-            & speciesIndices=speciesIndices)
+            & speciesIndices=speciesIndices, atomIndices=atomIndices)
         nTotNeigh = size(tmpCoords, dim=2) + nNeigh
         allocate(allNeighCoords(3, nTotNeigh))
         allNeighDists = [allNeighDists, neighDists(1:nNeigh)]
         allSpeciesIndices = [allSpeciesIndices, speciesIndices(1:nNeigh)]
+        allAtomIndices = [allAtomIndices, atomIndices(1:nNeigh)]
         allNeighCoords(:, 1:nTotNeigh - nNeigh) = tmpCoords
         allNeighCoords(:, nTotNeigh - nNeigh + 1:nTotNeigh) = neighCoords(:, 1:nNeigh)
         call move_alloc(allNeighCoords, tmpCoords)
@@ -628,27 +656,34 @@ contains
       allNeighCoords = tmpCoords
 
       allocate(allSpeciesIds(size(allSpeciesIndices)))
+      allocate(allAtomIds(size(allAtomIndices)))
 
       do iSp = 1, size(allSpeciesIds)
         allSpeciesIds(iSp) = speciesIds(allSpeciesIndices(iSp))
       end do
 
+      do iAtomInd = 1, size(allAtomIds)
+        allAtomIds(iAtomInd) = atomIds(allAtomIndices(iAtomInd))
+      end do
+
       do iAcsf = 1, nRadial
-        this%array(iAcsf, iAtom) = g2(allNeighDists, allSpeciesIds, param%g2%eta,&
+        this%array(iAcsf, iAtom) = g2(allNeighDists, allSpeciesIds, allAtomIds, param%g2%eta,&
             & param%g2%rs(iAcsf), rcut)
       end do
 
       do iAcsf = 1 + nRadial, nRadial + nAngular
         this%array(iAcsf, iAtom) = g4(geo%coords(:, iAtom), allNeighCoords, allNeighDists,&
-            & allSpeciesIds, param%g4%xi(iAcsf - nRadial), param%g4%lambda(iAcsf - nRadial),&
-            & param%g4%eta, rcut)
+            & allSpeciesIds, allAtomIds, param%g4%xi(iAcsf - nRadial),&
+            & param%g4%lambda(iAcsf - nRadial), param%g4%eta, rcut)
       end do
 
       deallocate(tmpCoords)
       deallocate(allNeighDists)
       deallocate(allNeighCoords)
       deallocate(allSpeciesIds)
+      deallocate(allAtomIds)
       deallocate(allSpeciesIndices)
+      deallocate(allAtomIndices)
 
     end do
 
@@ -691,13 +726,16 @@ contains
   end function theta
 
 
-  pure function cutoff(rr, speciesId, rcut) result(res)
+  pure function cutoff(rr, speciesId, atomId, rcut) result(res)
 
     !> atom distance (in cutoff range)
     real(dp), intent(in) :: rr
 
     !> species ID of neighbor
     real(dp), intent(in) :: speciesId
+
+    !> atom ID of neighbor
+    real(dp), intent(in) :: atomId
 
     !> cutoff radius
     real(dp), intent(in) :: rcut
@@ -708,19 +746,22 @@ contains
     if (rr > rcut) then
       res = 0.0_dp
     else
-      res = 0.5_dp * speciesId * (cos(pi * rr / rcut) + 1.0_dp)
+      res = 0.5_dp * speciesId * atomId * (cos(pi * rr / rcut) + 1.0_dp)
     end if
 
   end function cutoff
 
 
-  pure function cutoff_vec(rr, speciesIds, rcut) result(res)
+  pure function cutoff_vec(rr, speciesIds, atomIds, rcut) result(res)
 
     !> array of atom distances (in cutoff range)
     real(dp), intent(in) :: rr(:)
 
     !> species ID's of all neighbors
     real(dp), intent(in) :: speciesIds(:)
+
+    !> atom ID's of all neighbors
+    real(dp), intent(in) :: atomIds(:)
 
     !> cutoff radius
     real(dp), intent(in) :: rcut
@@ -731,19 +772,22 @@ contains
     where (rr > rcut)
       res = 0.0_dp
     elsewhere
-      res = 0.5_dp * speciesIds * (cos(pi * rr / rcut) + 1.0_dp)
+      res = 0.5_dp * speciesIds * atomIds * (cos(pi * rr / rcut) + 1.0_dp)
     end where
 
   end function cutoff_vec
 
 
-  pure function g1(rr, speciesIds, rcut)
+  pure function g1(rr, speciesIds, atomIds, rcut)
 
     !> array of atom distances in cutoff range
     real(dp), intent(in) :: rr(:)
 
     !> species ID's of all neighbors
     real(dp), intent(in) :: speciesIds(:)
+
+    !> atom ID's of all neighbors
+    real(dp), intent(in) :: atomIds(:)
 
     !> cutoff radius
     real(dp), intent(in) :: rcut
@@ -751,18 +795,21 @@ contains
     !> corresponding symmetry function values
     real(dp) :: g1
 
-    g1 = sum(cutoff_vec(rr, speciesIds, rcut))
+    g1 = sum(cutoff_vec(rr, speciesIds, atomIds, rcut))
 
   end function g1
 
 
-  pure function g2(rr, speciesIds, eta, rs, rcut)
+  pure function g2(rr, speciesIds, atomIds, eta, rs, rcut)
 
     !> array of atom distances in cutoff range
     real(dp), intent(in) :: rr(:)
 
     !> species ID's of all neighbors
     real(dp), intent(in) :: speciesIds(:)
+
+    !> atom ID's of all neighbors
+    real(dp), intent(in) :: atomIds(:)
 
     !> width of Gaussians
     real(dp), intent(in) :: eta
@@ -776,18 +823,21 @@ contains
     !> corresponding symmetry function values
     real(dp) :: g2
 
-    g2 = sum(exp(- eta * (rr - rs)**2) * cutoff_vec(rr, speciesIds, rcut))
+    g2 = sum(exp(- eta * (rr - rs)**2) * cutoff_vec(rr, speciesIds, atomIds, rcut))
 
   end function g2
 
 
-  pure function g3(rr, speciesIds, kappa, rcut)
+  pure function g3(rr, speciesIds, atomIds, kappa, rcut)
 
     !> array of atom distances in cutoff range
     real(dp), intent(in) :: rr(:)
 
     !> species ID's of all neighbors
     real(dp), intent(in) :: speciesIds(:)
+
+    !> atom ID's of all neighbors
+    real(dp), intent(in) :: atomIds(:)
 
     !> period length of damped cosine functions
     real(dp), intent(in) :: kappa
@@ -798,12 +848,12 @@ contains
     !> corresponding symmetry function values
     real(dp) :: g3
 
-    g3 = sum(cos(kappa * rr) * cutoff_vec(rr, speciesIds, rcut))
+    g3 = sum(cos(kappa * rr) * cutoff_vec(rr, speciesIds, atomIds, rcut))
 
   end function g3
 
 
-  pure function g4(atomCoords, neighCoords, neighDists, speciesIds, xi, lambda, eta, rcut)
+  pure function g4(atomCoords, neighCoords, neighDists, speciesIds, atomIds, xi, lambda, eta, rcut)
 
     !> coordinates of reference atom
     real(dp), intent(in) :: atomCoords(:)
@@ -816,6 +866,9 @@ contains
 
     !> species ID's of all neighbors
     real(dp), intent(in) :: speciesIds(:)
+
+    !> atom ID's of all neighbors
+    real(dp), intent(in) :: atomIds(:)
 
     !> parameter specifying angular resolution
     real(dp), intent(in) :: xi
@@ -841,8 +894,8 @@ contains
       do kk = 1, size(neighCoords, dim=2)
         g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords(:, jj), neighCoords(:, kk),&
             & neighDists(jj), neighDists(kk))))**xi * exp(- eta * (neighDists(jj)**2 +&
-            & neighDists(kk)**2)) * cutoff(neighDists(jj), speciesIds(jj), rcut) *&
-            & cutoff(neighDists(kk), speciesIds(kk), rcut)
+            & neighDists(kk)**2)) * cutoff(neighDists(jj), speciesIds(jj), atomIds(jj), rcut) *&
+            & cutoff(neighDists(kk), speciesIds(kk), atomIds(kk), rcut)
       end do
     end do
 

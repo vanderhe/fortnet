@@ -177,7 +177,7 @@ contains
     !> New coordinates
     real(dp), intent(in) :: coords(:,:)
 
-    !> Species indices of corresponding to new coordinates
+    !> Species indices corresponding to new coordinates
     integer, intent(in) :: speciesIndices(:)
 
     this%coords0(:,:) = coords
@@ -239,7 +239,7 @@ contains
 
   !> Returns the next group of neighbours.
   subroutine TNeighIterator_getNextNeighbours(this, nNeighbourSK, coords, dists, img2CentCell,&
-      & speciesIndices)
+      & speciesIndices, atomIndices)
 
     !> Neighbor list iterator instance
     class(TNeighIterator), intent(inout) :: this
@@ -260,11 +260,14 @@ contains
     !> Corresponding species indices of neighbors. Shape: (nNeighbourSK)
     integer, intent(out), optional :: speciesIndices(:)
 
+    !> Corresponding atom indices of neighbors. Shape: (nNeighbourSK)
+    integer, intent(out), optional :: atomIndices(:)
+
     real(dp) :: neighCoords(3)
     real(dp) :: coordsTmp(3, nNeighbourSK), distsTmp(nNeighbourSK)
     integer :: img2CentCellTmp(nNeighbourSK)
     real(dp) :: dist2
-    integer :: maxNeighs, iAtom2, speciesIndicesTmp(nNeighbourSK)
+    integer :: maxNeighs, iAtom2, speciesIndicesTmp(nNeighbourSK), atomIndicesTmp(nNeighbourSK)
 
     maxNeighs = nNeighbourSK
     nNeighbourSK = 0
@@ -301,6 +304,7 @@ contains
         nNeighbourSK = nNeighbourSK + 1
         coordsTmp(:, nNeighbourSK) = neighCoords
         speciesIndicesTmp(nNeighbourSK) = this%neighList%speciesIndices(iAtom2)
+        atomIndicesTmp(nNeighbourSK) = iAtom2
         distsTmp(nNeighbourSK) = dist2
         img2CentCellTmp(nNeighbourSK) = this%iAtom2
       end if
@@ -321,6 +325,9 @@ contains
     end if
     if (present(speciesIndices)) then
       speciesIndices(1:nNeighbourSK) = speciesIndicesTmp(1:nNeighbourSK)
+    end if
+    if (present(atomIndices)) then
+      atomIndices(1:nNeighbourSK) = atomIndicesTmp(1:nNeighbourSK)
     end if
 
   end subroutine TNeighIterator_getNextNeighbours

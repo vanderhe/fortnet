@@ -133,6 +133,45 @@ Last but not least, the parameter :math:`\lambda` alternately takes the values
 
    \lambda = \{-1,1\}
 
+=============================
+Atom-Specific Scaling Factors
+=============================
+
+One possible extension of the ACSF mappings is the incorporation of external
+atomic scaling factors :math:`q_j`, hereinafter referred to as atom identifiers,
+in the cutoff function :math:`f_\mathrm{c}`:
+
+.. math::
+
+   \begin{align*}
+   f_\mathrm{c}(R_{ij}) &=
+   \begin{cases}
+   \frac{\color{red}{q_j}}{2}\left[\cos\left(\frac{\pi R_{ij}}{R_\mathrm{c}}
+   \right)+1\right]&\text{ for }R_{ij}\leq R_\mathrm{c} \\ 0 &\text{ for }R_{ij}
+   >R_\mathrm{c}
+   \end{cases}
+   \end{align*}
+
+In addition to the structural information, atom-specific
+features can thus be taken into account. A reasonable choice for the atom
+identifiers would be, for example, the Mulliken populations from a quantum
+mechanical simulation of the system.
+
+The atom identifiers are extracted from the external atomic features provided by
+the dataset. To do so, the dataset must provide at least one external feature
+per atom to choose and an appropriate entry in the ``External`` HSD-block of the
+user input has to be set::
+
+   External {
+         .
+	 .
+	 .
+     AtomID = 1
+   }
+
+The integer index corresponds to the atomic feature of the dataset to extract
+and must take a value between one and the number of features per atom provided.
+
 =====================
 Multi-Species Systems
 =====================
@@ -144,10 +183,10 @@ species of the atoms contained in the cutoff sphere, defined by
 :math:`R_\mathrm{c}`.
 
 To overcome this limitation, Fortnet offers the possibility to specify
-so-called species identifier in the `Mapping` block of the ``fortnet_in.hsd``
+so-called species identifiers in the `External` block of the ``fortnet_in.hsd``
 input file::
 
-   Mapping = ACSF {
+   External {
          .
 	 .
 	 .
@@ -172,3 +211,6 @@ identifiers are then used as a pre-factor in the cutoff function
    >R_\mathrm{c}
    \end{cases}
    \end{align*}
+
+These species identifiers are compatible with the atom identifiers. If both are
+provided, the corresponding scalings are multiplied in the cutoff function. 
