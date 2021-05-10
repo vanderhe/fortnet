@@ -22,7 +22,7 @@ program fortnet
   use dftbp_globalenv, only : initGlobalEnv, destructGlobalEnv, stdOut
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TArch, TData, TEnv
-  use fnet_initprogram, only : initOptimizer, readAcsfFromFile
+  use fnet_initprogram, only : initOptimizer, readAcsfFromFile, TExternal
   use fnet_initprogram, only : TFeatures, TFeatures_init, TFeatures_collect
   use fnet_nestedtypes, only : TEnv_init, TPredicts
   use fnet_acsf, only : TAcsf, TAcsf_init, TAcsfParams_init
@@ -67,18 +67,18 @@ program fortnet
   call handleInitialisation(prog, bpnn)
 
   call printSubnnDetails(prog%arch)
-  call printMappingDetails(prog%acsf, prog%data%globalSpNames)
-  call printExternalFeatureDetails(prog%data)
+  call printMappingDetails(prog%acsf, prog%data%globalSpNames, prog%ext%atomIdIndex)
+  call printExternalFeatureDetails(prog%ext)
   call printDatasetDetails(prog%data, prog%arch%nSubNnParams)
 
-  call calculateMappings(prog%acsf, prog%validAcsf, prog%data, prog%env)
+  call calculateMappings(prog%ext, prog%data, prog%acsf, prog%validAcsf, prog%env)
 
   if (tLead .and. (.not. prog%option%tReadNetStats)) then
     call prog%acsf%toFile(acsfFile, prog%data%globalSpNames)
   end if
 
-  call runCore(prog%option%mode, prog%data, bpnn, prog%features, prog%acsf, prog%validAcsf,&
-      & prog%train%lossType, prog%env, predicts)
+  call runCore(prog%option%mode, prog%ext, prog%data, bpnn, prog%features, prog%acsf,&
+      & prog%validAcsf, prog%train%lossType, prog%env, predicts)
 
   if (tLead .and. (prog%option%mode == 'validate' .or. prog%option%mode == 'predict')) then
     call writeFnetout(fnetoutFile, prog%option%mode, prog%data%targets, predicts,&
@@ -122,7 +122,7 @@ contains
         call bpnn%fromFile(prog)
       else
         call TAcsf_init(prog%acsf, prog%mapping%nRadial, prog%mapping%nAngular, prog%mapping%rCut,&
-            & prog%mapping%speciesIds, tZscore=prog%mapping%tStandardize)
+            & prog%ext%speciesIds, tZscore=prog%mapping%tStandardize)
         call TAcsfParams_init(prog%acsf%param, prog%mapping%nRadial, prog%mapping%nAngular,&
             & prog%mapping%rCut)
         call TBpnn_init(bpnn, prog%arch%allDims, prog%data%nSpecies, rndGen=prog%rndGen,&
@@ -163,13 +163,16 @@ contains
   end subroutine printSubnnDetails
 
 
-  subroutine printMappingDetails(acsf, globalSpNames)
+  subroutine printMappingDetails(acsf, globalSpNames, atomIdIndex)
 
     !> representation of acsf mapping informations
     type(TAcsf), intent(in) :: acsf
 
     !> contains (unique) species of all dataset geometries
     character(len=*), intent(in) :: globalSpNames(:)
+
+    !> dataset index of atom identifier
+    integer, intent(in) :: atomIdIndex
 
     !> auxiliary variable
     integer :: ii
@@ -183,28 +186,34 @@ contains
       write(stdout, '(2A,F0.6)') trim(globalSpNames(ii)), ': ', acsf%speciesIds(ii)
     end do
     write(stdout, '(A)') ''
+    if (atomIdIndex > 0) then
+      write(stdout, '(A,I0)') 'atom id index: ', atomIdIndex
+    else
+      write(stdout, '(A)') 'atom id index: /'
+    end if
+    write(stdout, '(A)') ''
     write(stdout, '(A,L1,/)') 'Standardization: ', acsf%tZscore
     write(stdout, '(A,/)') repeat('-', 80)
 
   end subroutine printMappingDetails
 
 
-  subroutine printExternalFeatureDetails(data)
+  subroutine printExternalFeatureDetails(ext)
 
-    !> representation of dataset informations
-    type(TData), intent(in) :: data
+    !> representation of external informations
+    type(TExternal), intent(in) :: ext
 
     !> auxiliary variable
     integer :: ii
 
-    if (data%tExtFeatures) then
+    if (ext%tExtFeatures) then
 
       write(stdout, '(A,/)') 'External Features'
-      write(stdout, '(A,I0)') 'nr. of external features: ', data%nExtFeatures
+      write(stdout, '(A,I0)') 'nr. of external features: ', ext%nExtFeatures
       write(stdout, '(A)', advance='no') 'dataset indices:'
-      do ii = 1, size(data%extFeaturesInd)
+      do ii = 1, size(ext%extFeaturesInd)
         write(stdout, '(A)', advance='no') ' '
-        write(stdout, '(I0)', advance='no') data%extFeaturesInd(ii)
+        write(stdout, '(I0)', advance='no') ext%extFeaturesInd(ii)
       end do
       write(stdout, '(A,/)') ''
       write(stdout, '(A,/)') repeat('-', 80)
@@ -237,16 +246,19 @@ contains
   end subroutine printDatasetDetails
 
 
-  subroutine calculateMappings(acsf, validAcsf, data, env)
+  subroutine calculateMappings(ext, data, acsf, validAcsf, env)
 
-    !> representation of acsf mapping informations
+    !> representation of external information
+    type(TExternal), intent(in) :: ext
+
+    !> representation of dataset information
+    type(TData), intent(in) :: data
+
+    !> representation of acsf mapping information
     type(TAcsf), intent(inout) :: acsf
 
-    !> representation of acsf mapping informations
+    !> representation of acsf mapping information
     type(TAcsf), intent(inout) :: validAcsf
-
-    !> representation of dataset informations
-    type(TData), intent(inout) :: data
 
     !> if compiled with mpi enabled, contains mpi communicator
     type(TEnv), intent(in) :: env
@@ -255,11 +267,12 @@ contains
     if (data%tMonitorValid) then
       validAcsf = acsf
     end if
-    call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp, weights=prog%data%weights)
+    call acsf%calculate(data%geos, env, prog%data%localAtToGlobalSp, weights=prog%data%weights,&
+        & atomIds=ext%atomIds)
 
     if (data%tMonitorValid) then
       call validAcsf%calculate(data%validGeos, env, prog%data%localValidAtToGlobalSp,&
-          & zPrec=acsf%zPrec)
+          & atomIds=ext%validAtomIds, zPrec=acsf%zPrec)
     end if
 
     write(stdout, '(A)') 'done'
@@ -267,10 +280,13 @@ contains
   end subroutine calculateMappings
 
 
-  subroutine runCore(mode, data, bpnn, features, acsf, validAcsf, lossType, env, predicts)
+  subroutine runCore(mode, ext, data, bpnn, features, acsf, validAcsf, lossType, env, predicts)
 
     !> mode of current run (train, validate, run)
     character(len=*), intent(in) :: mode
+
+    !> representation of external informations
+    type(TExternal), intent(inout) :: ext
 
     !> representation of dataset informations
     type(TData), intent(inout) :: data
@@ -317,10 +333,10 @@ contains
     tLead = .true.
   #:endif
 
-    call TFeatures_init(features, nFeatures, data, acsf, validAcsf)
+    call TFeatures_init(features, nFeatures, data, ext, acsf, validAcsf)
 
     if (tLead) then
-      call TFeatures_collect(features, data, acsf, validAcsf)
+      call TFeatures_collect(features, data, ext, acsf, validAcsf)
       if (bpnn%dims(1) /= nFeatures) then
         call error('Mismatch in number of features and BPNN input nodes.')
       end if
@@ -333,15 +349,15 @@ contains
     deallocate(data%geos)
     deallocate(acsf%vals%vals)
 
-    if (data%tExtFeatures) then
-      deallocate(data%extFeatures)
+    if (ext%tExtFeatures) then
+      deallocate(ext%extFeatures)
     end if
 
     if (data%tMonitorValid) then
       deallocate(data%validGeos)
       deallocate(validAcsf%vals%vals)
-      if (data%tExtFeatures) then
-        deallocate(data%extValidFeatures)
+      if (ext%tExtFeatures) then
+        deallocate(ext%extValidFeatures)
       end if
     end if
 

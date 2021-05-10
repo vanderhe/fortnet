@@ -23,7 +23,7 @@ module fnet_fnetdata
   use dftbp_simplealgebra, only : invert33, determinant33
   use dftbp_charmanip, only : tolower, i2c
 
-  use fnet_nestedtypes, only : TRealArray2D
+  use fnet_nestedtypes, only : TRealArray1D, TRealArray2D
 
   implicit none
 
@@ -33,6 +33,7 @@ module fnet_fnetdata
   public :: readFnetdataGeometry, readContiguousFnetdataGeometries
   public :: readFnetdataTargets, readContiguousFnetdataTargets
   public :: readFnetdataFeatures, readContiguousFnetdataFeatures
+  public :: readFnetdataAtomIdentifier, readContiguousFnetdataAtomIdentifier
   public :: inquireFeatures
 
 
@@ -409,7 +410,7 @@ contains
     !> indices of external features to extract (default: all)
     integer, intent(in), optional :: inds(:)
 
-    !> node to get targets from
+    !> node to get features from
     type(fnode), pointer :: featuresnode
 
     !> number of features per atom
@@ -428,7 +429,7 @@ contains
   end subroutine readFnetdataFeatures
 
 
-  !> interpret the geometry information stored in a contiguous fnetdata.xml file
+  !> interpret the feature information stored in a contiguous fnetdata.xml file
   subroutine readContiguousFnetdataFeatures(root, geo, features, inds)
 
     !> pointer to the node, containing the data
@@ -484,7 +485,7 @@ contains
     !> number of features per atom, provided by the dataset
     integer, intent(out) :: nFeatures
 
-    !> node to get targets from
+    !> node to get features from
     type(fnode), pointer :: featuresnode
 
     ! read feature information
@@ -513,5 +514,89 @@ contains
     end if
 
   end subroutine checkFeatureInds
+
+
+  !> interpret single external atomic feature information stored in fnetdata.xml files
+  subroutine readFnetdataAtomIdentifier(root, nAtom, ind, features)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> number of atoms of current geometry
+    integer, intent(in) :: nAtom
+
+    !> index of external features to extract
+    integer, intent(in) :: ind
+
+    !> contains the atom identifier on exit
+    real(dp), intent(out), allocatable :: features(:)
+
+    !> temporary container to overcome different ranks
+    real(dp), allocatable :: tmpFeatures(:,:)
+
+    !> node to get features from
+    type(fnode), pointer :: featuresnode
+
+    !> number of features per atom
+    integer :: nFeatures
+
+    ! read feature information
+    call getChild(root, 'features', featuresnode)
+    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
+    call checkFeatureInds([ind], nFeatures)
+    call readFeatures(featuresnode, nFeatures, nAtom, tmpFeatures, inds=[ind])
+
+    features = tmpFeatures(1, :)
+
+  end subroutine readFnetdataAtomIdentifier
+
+
+  !> interpret single feature information stored in a contiguous fnetdata.xml file
+  subroutine readContiguousFnetdataAtomIdentifier(root, geo, ind, features)
+
+    !> pointer to the node, containing the data
+    type(fnode), pointer :: root
+
+    !> contains corresponding geometry information
+    type(TGeometry), intent(in) :: geo(:)
+
+    !> index of external features to extract
+    integer, intent(in) :: ind
+
+    !> contains atom identifier for mapping on exit
+    type(TRealArray1D), intent(out), allocatable :: features(:)
+
+    !> temporary container to overcome different ranks
+    type(TRealArray2D), allocatable :: tmpFeatures(:)
+
+    !> node to get feature properties from
+    type(fnode), pointer :: featuresnode
+
+    !> temporary pointer to node, containing information
+    type(fnode), pointer :: tmp
+
+    !> number of features per atom in dataset
+    integer :: nFeatures
+
+    !> auxiliary variable
+    integer :: iFeatureSet
+
+    ! read feature information
+    call getChild(root, 'features', featuresnode)
+    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
+    call checkFeatureInds([ind], nFeatures)
+
+    allocate(features(size(geo)))
+    allocate(tmpFeatures(size(geo)))
+
+    do iFeatureSet = 1, size(geo)
+      call getChild(root, 'datapoint' // i2c(iFeatureSet), tmp)
+      call getChild(tmp, 'features', featuresnode)
+      call readFeatures(featuresnode, nFeatures, geo(iFeatureSet)%nAtom,&
+          & tmpFeatures(iFeatureSet)%array, inds=[ind])
+      features(iFeatureSet)%array = tmpFeatures(iFeatureSet)%array(1, :)
+    end do
+
+  end subroutine readContiguousFnetdataAtomIdentifier
 
 end module fnet_fnetdata

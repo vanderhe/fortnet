@@ -199,7 +199,7 @@ contains
         if (prog%data%tZscore) then
           call removeZscore(resPredicts, prog%data%zPrec)
         end if
-        loss = prog%train%loss(resPredicts, prog%data%targets)
+        loss = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
         if (prog%data%tMonitorValid) then
           validPredicts = this%predictBatch(prog%features%validFeatures,&
               & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
