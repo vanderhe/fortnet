@@ -32,13 +32,17 @@ Data {
   Validset = 'fnetvdata.xml'
   Standardization = No
 
-  ExtFeatures = {}
-
   NetstatFiles = Type2FileNames {
     Prefix = "./"
     Suffix = ".net"
     LowerCaseTypeName = No
   }
+
+}
+
+External {
+
+  Features = {}
 
 }
 

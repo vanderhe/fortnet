@@ -30,7 +30,6 @@ Data {
 
   Dataset = 'fnetdata.xml'
   Validset = 'training_data'
-  ExtFeatures = 1:-1
 
   Standardization = No
 
@@ -39,6 +38,12 @@ Data {
     Suffix = ".net"
     LowerCaseTypeName = No
   }
+
+}
+
+External {
+
+  Features = 1:-1
 
 }
 
