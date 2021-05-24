@@ -23,12 +23,13 @@ program fortnet
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TArch, TData, TEnv
   use fnet_initprogram, only : initOptimizer, readAcsfFromFile, TExternal
-  use fnet_initprogram, only : TFeatures, TFeatures_init, TFeatures_collect
+  use fnet_initprogram, only : TFeatures, TFeatures_init, TFeatures_collect, TOption
   use fnet_nestedtypes, only : TEnv_init, TPredicts
   use fnet_acsf, only : TAcsf, TAcsf_init, TAcsfParams_init
   use fnet_bpnn, only : TBpnn, TBpnn_init
   use fnet_loss, only : minError, maxError, msLoss, rmsLoss, maLoss
   use fnet_fnetout, only : writeFnetout
+  use fnet_iterout, only : writeIterTrajToFile
 
   implicit none
 
@@ -50,6 +51,9 @@ program fortnet
 
   !> file name of generic Fortnet fortout.xml file
   character(len=*), parameter :: fnetoutFile = 'fnetout.xml'
+
+  !> file name of generic Fortnet iterout.dat file
+  character(len=*), parameter :: iteroutFile = 'iterout.dat'
 
   !> initialise global environment
   call initGlobalEnv()
@@ -77,7 +81,7 @@ program fortnet
     call prog%acsf%toFile(acsfFile, prog%data%globalSpNames)
   end if
 
-  call runCore(prog%option%mode, prog%ext, prog%data, bpnn, prog%features, prog%acsf,&
+  call runCore(prog%option, prog%ext, prog%data, bpnn, prog%features, prog%acsf,&
       & prog%validAcsf, prog%train%lossType, prog%env, predicts)
 
   if (tLead .and. (prog%option%mode == 'validate' .or. prog%option%mode == 'predict')) then
@@ -280,10 +284,10 @@ contains
   end subroutine calculateMappings
 
 
-  subroutine runCore(mode, ext, data, bpnn, features, acsf, validAcsf, lossType, env, predicts)
+  subroutine runCore(option, ext, data, bpnn, features, acsf, validAcsf, lossType, env, predicts)
 
-    !> mode of current run (train, validate, run)
-    character(len=*), intent(in) :: mode
+    !> representation of option informations
+    type(TOption), intent(in) :: option
 
     !> representation of external informations
     type(TExternal), intent(inout) :: ext
@@ -320,6 +324,15 @@ contains
 
     !> total number of input features
     integer :: nFeatures
+
+    !> iteration of lowest training/validation loss
+    integer :: iMin, iValidMin
+
+    !> training/validation loss obtained during training
+    real(dp), allocatable :: loss(:), validLoss(:)
+
+    !> training gradients obtained during training
+    real(dp), allocatable :: gradients(:)
 
     !> summed loss of predictions, in comparison to targets
     real(dp) :: mse, rms, mae
@@ -361,7 +374,7 @@ contains
       end if
     end if
 
-    select case(mode)
+    select case(option%mode)
     case ('train')
       write(stdOut, '(A,/)') 'Starting training...'
       if (data%tMonitorValid) then
@@ -371,13 +384,30 @@ contains
         write(stdOut, '(A11,6X,A13,6X,A13)') 'iTrain', toupper(lossType) // '-Loss', 'Gradients'
       end if
       write(stdout, '(A)') repeat('-', 68)
-      call bpnn%nTrain(prog, tConverged)
+      call bpnn%nTrain(prog, tConverged, loss=loss, validLoss=validLoss, gradients=gradients)
+      if (option%tWriteIterTraj .and. data%tMonitorValid) then
+        call writeIterTrajToFile(iteroutFile, loss=loss, validLoss=validLoss, gradients=gradients)
+      elseif (option%tWriteIterTraj .and. (.not. data%tMonitorValid)) then
+        call writeIterTrajToFile(iteroutFile, loss=loss, gradients=gradients)
+      end if
       write(stdout, '(A,/)') repeat('-', 68)
       if (tConverged) then
-        write(stdOut, '(A)') 'Training finished (gradients converged)'
+        write(stdOut, '(A,/)') 'Training finished (gradients converged)'
       else
-        write(stdOut, '(A)') 'Training finished (max. Iterations reached)'
+        write(stdOut, '(A,/)') 'Training finished (max. Iterations reached)'
       end if
+      write(stdout, '(A,/)') repeat('-', 68)
+      write(stdOut, '(A,/)') 'Loss Analysis (global min.)'
+      iMin = minloc(loss, dim=1)
+      write(stdOut, '(A,I0,A,(ES12.6E2))') 'iTrain: ', iMin, ', Loss: ', loss(iMin)
+      if (data%tMonitorValid) then
+        iValidMin = minloc(validLoss, dim=1)
+        write(stdOut, '(A,I0,A,(ES12.6E2),/)') 'iTrain: ', iValidMin, ', V-Loss: ',&
+            & validLoss(iValidMin)
+      else
+        write(stdOut, '(A)') ''
+      end if
+      write(stdout, '(A,/)') repeat('-', 68)
     case ('validate')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
       predicts = bpnn%predictBatch(prog%features%features, prog%data%localAtToGlobalSp,&
