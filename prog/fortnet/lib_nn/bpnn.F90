@@ -103,7 +103,7 @@ contains
   end subroutine TBpnn_init
 
 
-  subroutine TBpnn_nTrain(this, prog, tConverged, loss, validLoss)
+  subroutine TBpnn_nTrain(this, prog, tConverged, loss, validLoss, gradients)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -120,6 +120,9 @@ contains
     !> optional, iteration-resolved total validation loss
     real(dp), intent(out), allocatable, optional :: validLoss(:)
 
+    !> optional, iteration-resolved total gradients
+    real(dp), intent(out), allocatable, optional :: gradients(:)
+
     !> predictions of a single datapoint
     real(dp), allocatable :: iPredict(:,:)
 
@@ -135,8 +138,8 @@ contains
     !> temporary (validation) loss function container
     real(dp), allocatable :: tmpLoss(:), tmpValidLoss(:)
 
-    !> euclidean norm of total gradient
-    real(dp) :: totGradNorm
+    !> temporary iteration-resolved euclidean norm of total gradient
+    real(dp), allocatable :: tmpGradients(:)
 
     !> true, if current process is the lead
     logical :: tLead
@@ -155,6 +158,7 @@ contains
     call TPredicts_init(validPredicts, prog%data%targets)
 
     allocate(tmpLoss(prog%train%nTrainIt))
+    allocate(tmpGradients(prog%train%nTrainIt))
 
     if (prog%data%tMonitorValid) then
       allocate(tmpValidLoss(prog%train%nTrainIt))
@@ -192,7 +196,7 @@ contains
 
       if (tLead) then
         call this%update(prog%train%pOptimizer, ddRes, tmpLoss(iIter), sum(prog%data%weights),&
-            & totGradNorm, tConverged)
+            & tmpGradients(iIter), tConverged)
       end if
 
     #:if WITH_MPI
@@ -219,10 +223,10 @@ contains
 
       if (tPrintOut) then
         if (prog%data%tMonitorValid) then
-          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm,&
-              & tmpValidLoss(iIter)
+          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter),&
+              & tmpGradients(iIter), tmpValidLoss(iIter)
         else
-          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm
+          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), tmpGradients(iIter)
         end if
       end if
 
@@ -234,10 +238,10 @@ contains
 
       if (tConverged) then
         if (prog%data%tMonitorValid) then
-          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm,&
-              & tmpValidLoss(iIter)
+          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter),&
+              & tmpGradients(iIter), tmpValidLoss(iIter)
         else
-          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm
+          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), tmpGradients(iIter)
         end if
         if (tLead) then
           call this%toFile(prog)
@@ -251,6 +255,10 @@ contains
     if (present(loss)) then
       allocate(loss(iLastIter))
       loss(:) = tmpLoss(1:iLastIter)
+    end if
+    if (present(gradients)) then
+      allocate(gradients(iLastIter))
+      gradients(:) = tmpGradients(1:iLastIter)
     end if
     if (prog%data%tMonitorValid .and. present(validLoss)) then
       allocate(validLoss(iLastIter))

@@ -58,7 +58,7 @@ module fnet_initprogram
 
   public :: TProgramVariables, TProgramVariables_init
   public :: TFeatures, TFeatures_init, TFeatures_collect
-  public :: TArch, TData, TEnv, TExternal
+  public :: TArch, TData, TEnv, TExternal, TOption
   public :: initOptimizer, readAcsfFromFile
 
 
@@ -322,6 +322,9 @@ module fnet_initprogram
 
     !> wether to resume from existing netstat files on disk
     logical :: tReadNetStats
+
+    !> wether to write loss and gradients for all training iterations to disk
+    logical :: tWriteIterTraj
 
     !> mode of current run (train, validate, predict)
     character(len=:), allocatable :: mode
@@ -966,6 +969,8 @@ contains
     real(dp) :: tmpRealSeed
 
     call getChildValue(node, 'ReadNetStats', this%option%tReadNetStats, .false.)
+
+    call getChildValue(node, 'WriteIterationTrajectory', this%option%tWriteIterTraj, .false.)
 
     call getChildValue(node, 'Mode', strBuffer)
     this%option%mode = tolower(unquote(char(strBuffer)))
