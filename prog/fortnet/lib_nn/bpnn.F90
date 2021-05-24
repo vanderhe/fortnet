@@ -54,7 +54,8 @@ module fnet_bpnn
     procedure :: serialWeightsAndBiasesFillup => TBpnn_serialWeightsAndBiasesFillup
     procedure :: resetActivations => TBpnn_resetActivations
     procedure :: collectOutput => TBpnn_collectOutput
-    procedure :: iTrain => TBpnn_iTrain
+    procedure :: sysTrain => TBpnn_sysTrain
+    procedure :: updateGradients => TBpnn_updateGradients
     procedure :: nTrain => TBpnn_nTrain
     procedure :: iPredict => TBpnn_iPredict
     procedure :: predictBatch => TBpnn_predictBatch
@@ -102,7 +103,7 @@ contains
   end subroutine TBpnn_init
 
 
-  subroutine TBpnn_nTrain(this, prog, tConverged)
+  subroutine TBpnn_nTrain(this, prog, tConverged, loss, validLoss)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -112,6 +113,12 @@ contains
 
     !> true, if gradient got below the specified tolerance
     logical, intent(out) :: tConverged
+
+    !> optional, iteration-resolved total loss
+    real(dp), intent(out), allocatable, optional :: loss(:)
+
+    !> optional, iteration-resolved total validation loss
+    real(dp), intent(out), allocatable, optional :: validLoss(:)
 
     !> predictions of a single datapoint
     real(dp), allocatable :: iPredict(:,:)
@@ -125,8 +132,8 @@ contains
     !> temporary weight and bias gradient storage of the current atom
     type(TDerivs) :: ddTmp
 
-    !> total (validation) rms loss, by comparison of predictions and targets
-    real(dp) :: loss, validLoss
+    !> temporary (validation) loss function container
+    real(dp), allocatable :: tmpLoss(:), tmpValidLoss(:)
 
     !> euclidean norm of total gradient
     real(dp) :: totGradNorm
@@ -138,7 +145,7 @@ contains
     logical :: tPrintOut, tSaveNet
 
     !> auxiliary variables
-    integer :: iIter, iSys, iGlobalSp, iLayer, iStart, iEnd
+    integer :: iIter, iSys, iGlobalSp, iLayer, iStart, iEnd, iLastIter
 
     call TDerivs_init(this%dims, size(this%nets), dd)
     call TDerivs_init(this%dims, size(this%nets), ddRes)
@@ -146,6 +153,13 @@ contains
     call TPredicts_init(predicts, prog%data%targets)
     call TPredicts_init(resPredicts, prog%data%targets)
     call TPredicts_init(validPredicts, prog%data%targets)
+
+    allocate(tmpLoss(prog%train%nTrainIt))
+
+    if (prog%data%tMonitorValid) then
+      allocate(tmpValidLoss(prog%train%nTrainIt))
+      tmpValidLoss(:) = 0.0_dp
+    end if
 
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead
@@ -158,55 +172,27 @@ contains
     iEnd = prog%data%nDatapoints
   #:endif
 
+    call this%updateGradients(prog, iStart, iEnd, dd, ddRes, predicts, resPredicts)
+
+    if (tLead) then
+      if (prog%data%tZscore) then
+        call removeZscore(resPredicts, prog%data%zPrec)
+      end if
+      tmpLoss(1) = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
+      if (prog%data%tMonitorValid) then
+        validPredicts = this%predictBatch(prog%features%validFeatures,&
+            & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+        tmpValidLoss(1) = prog%train%loss(validPredicts, prog%data%validTargets)
+      end if
+    end if
+
     lpIter: do iIter = 1, prog%train%nTrainIt
 
-      lpSystem: do iSys = iStart, iEnd
-        call this%iTrain(prog%features%features(iSys)%array, prog%data%zTargets(iSys)%array,&
-            & prog%data%localAtToGlobalSp(iSys)%array, prog%data%tAtomicTargets, ddTmp, iPredict)
-        ! collect outputs and gradients of the systems in range
-        predicts%sys(iSys)%array(:,:) = iPredict
-        do iGlobalSp = 1, size(this%nets)
-          do iLayer = 1, size(this%dims)
-            dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
-                & ddTmp%dw(iGlobalSp)%dw(iLayer)%array * real(prog%data%weights(iSys), dp)
-            dd%db(iGlobalSp)%db(iLayer)%array = dd%db(iGlobalSp)%db(iLayer)%array +&
-                & ddTmp%db(iGlobalSp)%db(iLayer)%array * real(prog%data%weights(iSys), dp)
-          end do
-        end do
-      end do lpSystem
-
-    #:if WITH_MPI
-      ! collect outputs of all nodes
-      do iSys = 1, prog%data%nDatapoints
-        call mpifx_allreduce(prog%env%globalMpiComm, predicts%sys(iSys)%array,&
-            & resPredicts%sys(iSys)%array, MPI_SUM)
-      end do
-      ! sync gradients between MPI nodes
-      do iGlobalSp = 1, size(this%nets)
-        do iLayer = 1, size(this%dims)
-          call mpifx_allreduce(prog%env%globalMpiComm, dd%dw(iGlobalSp)%dw(iLayer)%array,&
-              & ddRes%dw(iGlobalSp)%dw(iLayer)%array, MPI_SUM)
-          call mpifx_allreduce(prog%env%globalMpiComm, dd%db(iGlobalSp)%db(iLayer)%array,&
-              & ddRes%db(iGlobalSp)%db(iLayer)%array, MPI_SUM)
-        end do
-      end do
-    #:else
-      resPredicts = predicts
-      ddRes = dd
-    #:endif
+      iLastIter = iIter
 
       if (tLead) then
-        if (prog%data%tZscore) then
-          call removeZscore(resPredicts, prog%data%zPrec)
-        end if
-        loss = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
-        if (prog%data%tMonitorValid) then
-          validPredicts = this%predictBatch(prog%features%validFeatures,&
-              & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
-          validLoss = prog%train%loss(validPredicts, prog%data%validTargets)
-        end if
-        call this%update(prog%train%pOptimizer, ddRes, loss, sum(prog%data%weights), totGradNorm,&
-            & tConverged)
+        call this%update(prog%train%pOptimizer, ddRes, tmpLoss(iIter), sum(prog%data%weights),&
+            & totGradNorm, tConverged)
       end if
 
     #:if WITH_MPI
@@ -214,17 +200,33 @@ contains
       call syncWeightsAndBiases(this, prog%env%globalMpiComm)
     #:endif
 
-      tPrintOut = modulo(iIter, prog%train%nPrintOut) == 0 .or. iIter == prog%train%nTrainIt
+      call ddRes%reset()
+      call this%updateGradients(prog, iStart, iEnd, dd, ddRes, predicts, resPredicts)
 
-      if (tPrintOut) then
+      if (tLead) then
+        if (prog%data%tZscore) then
+          call removeZscore(resPredicts, prog%data%zPrec)
+        end if
+        tmpLoss(iIter) = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
         if (prog%data%tMonitorValid) then
-          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, loss, totGradNorm, validLoss
-        else
-          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, loss, totGradNorm
+          validPredicts = this%predictBatch(prog%features%validFeatures,&
+              & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+          tmpValidLoss(iIter) = prog%train%loss(validPredicts, prog%data%validTargets)
         end if
       end if
 
-      tSaveNet = modulo(iIter, prog%train%nSaveNet) == 0 .or. iIter == prog%train%nTrainIt
+      tPrintOut = (modulo(iIter, prog%train%nPrintOut) == 0) .or. (iIter == prog%train%nTrainIt)
+
+      if (tPrintOut) then
+        if (prog%data%tMonitorValid) then
+          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm,&
+              & tmpValidLoss(iIter)
+        else
+          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm
+        end if
+      end if
+
+      tSaveNet = (modulo(iIter, prog%train%nSaveNet) == 0) .or. (iIter == prog%train%nTrainIt)
 
       if (tLead .and. tSaveNet) then
         call this%toFile(prog)
@@ -232,9 +234,10 @@ contains
 
       if (tConverged) then
         if (prog%data%tMonitorValid) then
-          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, loss, totGradNorm, validLoss
+          write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm,&
+              & tmpValidLoss(iIter)
         else
-          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, loss, totGradNorm
+          write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), totGradNorm
         end if
         if (tLead) then
           call this%toFile(prog)
@@ -242,12 +245,91 @@ contains
         exit lpIter
       end if
 
-      call dd%reset()
-      call ddRes%reset()
-
     end do lpIter
 
+    ! crop loss to actual range of past iterations and, if desired, pass through
+    if (present(loss)) then
+      allocate(loss(iLastIter))
+      loss(:) = tmpLoss(1:iLastIter)
+    end if
+    if (prog%data%tMonitorValid .and. present(validLoss)) then
+      allocate(validLoss(iLastIter))
+      validLoss(:) = tmpValidLoss(1:iLastIter)
+    end if
+
   end subroutine TBpnn_nTrain
+
+
+  subroutine TBpnn_updateGradients(this, prog, iStart, iEnd, dd, resDd, predicts, resPredicts)
+
+    !> representation of a Behler-Parrinello neural network
+    class(TBpnn), intent(inout) :: this
+
+    !> representation of program variables
+    type(TProgramVariables), intent(in) :: prog
+
+    !> system index to start and end at
+    integer, intent(in) :: iStart, iEnd
+
+    !> total weight and bias gradients of the current system
+    type(TDerivs), intent(inout) :: dd
+
+    !> resulting total weight and bias gradients
+    type(TDerivs), intent(inout) :: resDd
+
+    !> network predictions during the training
+    type(TPredicts), intent(inout) :: predicts
+
+    !> resulting network predictions
+    type(TPredicts), intent(inout) :: resPredicts
+
+    !> predictions of a single datapoint
+    real(dp), allocatable :: iPredict(:,:)
+
+    !> temporary weight and bias gradient storage of the current atom
+    type(TDerivs) :: ddTmp
+
+    !> auxiliary variables
+    integer :: iSys, iGlobalSp, iLayer
+
+    lpSystem: do iSys = iStart, iEnd
+      call this%sysTrain(prog%features%features(iSys)%array, prog%data%zTargets(iSys)%array,&
+          & prog%data%localAtToGlobalSp(iSys)%array, prog%data%tAtomicTargets, ddTmp, iPredict)
+      ! collect outputs and gradients of the systems in range
+      predicts%sys(iSys)%array(:,:) = iPredict
+      do iGlobalSp = 1, size(this%nets)
+        do iLayer = 1, size(this%dims)
+          dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
+              & ddTmp%dw(iGlobalSp)%dw(iLayer)%array * real(prog%data%weights(iSys), dp)
+          dd%db(iGlobalSp)%db(iLayer)%array = dd%db(iGlobalSp)%db(iLayer)%array +&
+              & ddTmp%db(iGlobalSp)%db(iLayer)%array * real(prog%data%weights(iSys), dp)
+        end do
+      end do
+    end do lpSystem
+
+  #:if WITH_MPI
+    ! collect outputs of all nodes
+    do iSys = 1, prog%data%nDatapoints
+      call mpifx_allreduce(prog%env%globalMpiComm, predicts%sys(iSys)%array,&
+          & resPredicts%sys(iSys)%array, MPI_SUM)
+    end do
+    ! sync gradients between MPI nodes
+    do iGlobalSp = 1, size(this%nets)
+      do iLayer = 1, size(this%dims)
+        call mpifx_allreduce(prog%env%globalMpiComm, dd%dw(iGlobalSp)%dw(iLayer)%array,&
+            & resDd%dw(iGlobalSp)%dw(iLayer)%array, MPI_SUM)
+        call mpifx_allreduce(prog%env%globalMpiComm, dd%db(iGlobalSp)%db(iLayer)%array,&
+            & resDd%db(iGlobalSp)%db(iLayer)%array, MPI_SUM)
+      end do
+    end do
+  #:else
+    resPredicts = predicts
+    resDd = dd
+  #:endif
+
+    call dd%reset()
+
+  end subroutine TBpnn_updateGradients
 
 
   subroutine removeZscore(output, zPrec)
@@ -275,7 +357,7 @@ contains
   subroutine syncWeightsAndBiases(this, comm)
 
     !> representation of a Behler-Parrinello neural network
-    type(TBpnn), intent(in) :: this
+    type(TBpnn), intent(inout) :: this
 
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
@@ -301,7 +383,7 @@ contains
 #:endif
 
 
-  subroutine TBpnn_iTrain(this, input, targets, localAtToGlobalSp, tAtomic, dd, predicts)
+  subroutine TBpnn_sysTrain(this, input, targets, localAtToGlobalSp, tAtomic, dd, predicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -386,7 +468,7 @@ contains
       end do
     end do
 
-  end subroutine TBpnn_iTrain
+  end subroutine TBpnn_sysTrain
 
 
   subroutine TBpnn_update(this, pOptimizer, dd, loss, nDatapoints, totGradNorm, tConverged)

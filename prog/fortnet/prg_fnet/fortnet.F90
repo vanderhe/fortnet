@@ -321,6 +321,12 @@ contains
     !> total number of input features
     integer :: nFeatures
 
+    !> iteration of lowest training/validation loss
+    integer :: iMin, iValidMin
+
+    !> training/validation loss obtained during training
+    real(dp), allocatable :: loss(:), validLoss(:)
+
     !> summed loss of predictions, in comparison to targets
     real(dp) :: mse, rms, mae
 
@@ -371,13 +377,29 @@ contains
         write(stdOut, '(A11,6X,A13,6X,A13)') 'iTrain', toupper(lossType) // '-Loss', 'Gradients'
       end if
       write(stdout, '(A)') repeat('-', 68)
-      call bpnn%nTrain(prog, tConverged)
+      if (data%tMonitorValid) then
+        call bpnn%nTrain(prog, tConverged, loss=loss, validLoss=validLoss)
+      else
+        call bpnn%nTrain(prog, tConverged, loss=loss)
+      end if
       write(stdout, '(A,/)') repeat('-', 68)
       if (tConverged) then
-        write(stdOut, '(A)') 'Training finished (gradients converged)'
+        write(stdOut, '(A,/)') 'Training finished (gradients converged)'
       else
-        write(stdOut, '(A)') 'Training finished (max. Iterations reached)'
+        write(stdOut, '(A,/)') 'Training finished (max. Iterations reached)'
       end if
+      write(stdout, '(A,/)') repeat('=', 68)
+      write(stdOut, '(A,/)') 'Loss Analysis (global min.)'
+      iMin = minloc(loss, dim=1)
+      write(stdOut, '(A,I0,A,(ES12.6E2))') 'iTrain: ', iMin, ', Loss: ', loss(iMin)
+      if (data%tMonitorValid) then
+        iValidMin = minloc(validLoss, dim=1)
+        write(stdOut, '(A,I0,A,(ES12.6E2),/)') 'iTrain: ', iValidMin, ', V-Loss: ',&
+            & validLoss(iValidMin)
+      else
+        write(stdOut, '(A)') ''
+      end if
+      write(stdout, '(A,/)') repeat('-', 68)
     case ('validate')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
       predicts = bpnn%predictBatch(prog%features%features, prog%data%localAtToGlobalSp,&
