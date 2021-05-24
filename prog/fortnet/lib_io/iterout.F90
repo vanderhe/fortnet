@@ -13,7 +13,7 @@ module fnet_iterout
   ! use dftbp_hsdutils, only : writeChildValue
   use dftbp_message, only : error
   use dftbp_accuracy, only: dp
-  ! use dftbp_charmanip, only : i2c
+  use dftbp_charmanip, only : i2c
 
   ! use fnet_nestedtypes, only : TRealArray2D, TPredicts
 
@@ -43,6 +43,9 @@ contains
 
     !> pointer holding the available data
     real(dp), pointer :: pData(:,:)
+
+    !> formatting of output file
+    character(len=:), allocatable :: fmt
 
     !> unique fileunit
     integer :: fd
@@ -94,8 +97,10 @@ contains
 
     open(newunit=fd, file=fname, form='formatted', status='replace', action='write')
 
+    fmt = '(I' // i2c(len(i2c(nLines))) // ',3ES26.16E3)'
+
     do iLine = 1, nLines
-      write(fd, '(I0,3ES26.16E3)') iLine, pData(:, iLine)
+      write(fd, fmt) iLine, pData(:, iLine)
     end do
 
     close(fd)

@@ -389,3 +389,17 @@ training process or for predictions based on the resulting network potential.
 
 In fact, the relevant output ``fnetout.xml`` is only created in validation or
 prediction mode and introduced in the :ref:`next section <sec-firstpredict>`.
+
+If the total trajectory of the loss function and total gradient is of interest,
+it can be written out as ``iterout.dat`` by setting the corresponding entry
+(default: No)::
+
+  Options {
+       .
+       .
+       .
+    WriteIterationTrajectory = Yes
+  }
+
+The column order of the output in ``iterout.dat`` is analogous to the standard
+output.
