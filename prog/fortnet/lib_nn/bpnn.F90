@@ -123,17 +123,11 @@ contains
     !> optional, iteration-resolved total gradients
     real(dp), intent(out), allocatable, optional :: gradients(:)
 
-    !> predictions of a single datapoint
-    real(dp), allocatable :: iPredict(:,:)
-
     !> network predictions during the training
     type(TPredicts) :: predicts, resPredicts, validPredicts
 
     !> total weight and bias gradients of the current system
     type(TDerivs) :: dd, ddRes
-
-    !> temporary weight and bias gradient storage of the current atom
-    type(TDerivs) :: ddTmp
 
     !> temporary (validation) loss function container
     real(dp), allocatable :: tmpLoss(:), tmpValidLoss(:)
@@ -148,7 +142,7 @@ contains
     logical :: tPrintOut, tSaveNet
 
     !> auxiliary variables
-    integer :: iIter, iSys, iGlobalSp, iLayer, iStart, iEnd, iLastIter
+    integer :: iIter, iStart, iEnd, iTmpIter, iLastIter
 
     call TDerivs_init(this%dims, size(this%nets), dd)
     call TDerivs_init(this%dims, size(this%nets), ddRes)
@@ -192,7 +186,7 @@ contains
 
     lpIter: do iIter = 1, prog%train%nTrainIt
 
-      iLastIter = iIter
+      iTmpIter = iIter
 
       if (tLead) then
         call this%update(prog%train%pOptimizer, ddRes, tmpLoss(iIter), sum(prog%data%weights),&
@@ -250,6 +244,13 @@ contains
       end if
 
     end do lpIter
+
+  #:if WITH_MPI
+    call mpifx_bcast(prog%env%globalMpiComm, tmpLoss)
+    call mpifx_bcast(prog%env%globalMpiComm, tmpValidLoss)
+    call mpifx_bcast(prog%env%globalMpiComm, tmpGradients)
+    call mpifx_allreduce(prog%env%globalMpiComm, iTmpIter, iLastIter, MPI_MAX)
+  #:endif
 
     ! crop loss to actual range of past iterations and, if desired, pass through
     if (present(loss)) then
