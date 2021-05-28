@@ -52,17 +52,13 @@ module fnet_initprogram
   private
   save
 
-#:if WITH_MPI
-  public :: syncFeatures
-#:endif
-
   public :: TProgramVariables, TProgramVariables_init
   public :: TFeatures, TFeatures_init, TFeatures_collect
   public :: TArch, TData, TEnv, TExternal, TOption
   public :: initOptimizer, readAcsfFromFile
 
 
-  !> data type containing variables of the Network block
+  !> Data type containing variables of the Network block
   type TArch
 
     !> number of nodes per hidden layer, expected shape: [nHiddenLayer]
@@ -80,13 +76,13 @@ module fnet_initprogram
     !> type of activation functions
     character(len=:), allocatable :: activation
 
-    !> architecture type (currently only the BPNN topology is available)
+    !> architecture type (currently, only the BPNN topology is available)
     character(len=:), allocatable :: type
 
   end type TArch
 
 
-  !> data type containing variables of the Mapping block
+  !> Data type containing variables of the Mapping block
   type TMapping
 
     !> number of radial symmetry functions
@@ -107,7 +103,7 @@ module fnet_initprogram
   end type TMapping
 
 
-  !> data type containing the collected features
+  !> Data type containing the collected features
   type TFeatures
 
     !> pointer to the different input features for training
@@ -116,13 +112,18 @@ module fnet_initprogram
     !> pointer to the different input features for validation
     type(TRealArray2D), allocatable :: validFeatures(:)
 
+#:if WITH_MPI
+  contains
+    procedure :: sync => TFeatures_sync
+#:endif
+
   end type TFeatures
 
 
-  !> data type containing variables of the Training block
+  !> Data type containing variables of the Training block
   type TTraining
 
-    !> integer ID of specified optimizertExtFeatures
+    !> integer ID of specified optimizert
     integer :: iOptimizer
 
     !> general function optimizer
@@ -140,10 +141,10 @@ module fnet_initprogram
     !> type of loss function to use during the training
     character(len=:), allocatable :: lossType
 
-    !> procedure, pointing to the choosed loss function
+    !> procedure, pointing to the choosen loss function
     procedure(lossFunc), pointer, nopass :: loss => null()
 
-    !> gradient threshold where to stop the training, if given
+    !> gradient threshold where to stop the training, if provided
     real(dp) :: threshold
 
     !> learning rate for steepest descent optimizer
@@ -171,7 +172,7 @@ module fnet_initprogram
   end type TTraining
 
 
-  !> data type containing variables of the Data block
+  !> Data type containing variables of the Data block
   type TData
 
     !> prefix of paths to saved species networks
@@ -180,10 +181,10 @@ module fnet_initprogram
     !> suffix of paths to saved species networks
     character(len=1024) :: suffix
 
-    !> path to file containing paths to dataset geometries/targets
+    !> path to file containing paths to training datapoints
     character(len=:), allocatable :: datapath
 
-    !> path to file containing paths to validation geometries/targets
+    !> path to file containing paths to validation datapoints
     character(len=:), allocatable :: validpath
 
     !> contains paths to fnetdata.xml files for training
@@ -275,13 +276,14 @@ module fnet_initprogram
 
   contains
 
+    procedure :: getIndexMappings => TData_getIndexMappings
     procedure :: getTargetMeansAndVariances => TData_getTargetMeansAndVariances
     procedure :: applyZscore => TData_applyZscore
 
   end type TData
 
 
-  !> data type containing variables of the Option block
+  !> Data type containing variables of the Option block
   type TExternal
 
     !> real valued species identifier, expected shape: [nSpecies]
@@ -317,7 +319,7 @@ module fnet_initprogram
   end type TExternal
 
 
-  !> data type containing variables of the Option block
+  !> Data type containing variables of the Option block
   type TOption
 
     !> wether to resume from existing netstat files on disk
@@ -335,7 +337,7 @@ module fnet_initprogram
   end type TOption
 
 
-  !> data type containing the program variables
+  !> Data type containing the program variables
   type TProgramVariables
 
     !> contains mpi communicator, if compiled with mpi enabled
@@ -374,7 +376,6 @@ module fnet_initprogram
   contains
 
     procedure :: checkInputConsistency => TProgramVariables_checkInputConsistency
-    procedure :: getIndexMappings => TProgramVariables_getIndexMappings
 
   end type TProgramVariables
 
@@ -409,7 +410,7 @@ module fnet_initprogram
 
 contains
 
-  !> initialise program variables
+  !> Initializes all necessary program variables depending on the user input.
   subroutine TProgramVariables_init(this)
 
     !> container of program variables
@@ -424,11 +425,11 @@ contains
     !> input version number
     integer :: inputVersion
 
-    ! write header
+    ! write standard output header
     call printFortnetHeader(version, copyrightYear)
     call printDateAndTime()
 
-    ! read in input file as HSD
+    ! read user input file as HSD
     call parseHSD(rootTag, hsdInput, hsdTree)
     call getChild(hsdTree, rootTag, root)
 
@@ -443,15 +444,18 @@ contains
 
     ! read options
     call getChild(root, 'Options', tmp)
-    call readOptions(this, tmp)
+    call readOptions(this%option, tmp)
+
+    ! define state of luxury random number generator
+    call init(this%rndGen, luxlev=3, initSeed=this%option%seed)
 
     ! read data informations
     call getChild(root, 'Data', tmp)
-    call readPrec(this, tmp)
-    call readData(this, tmp)
+    call readPrec(this%data, tmp, this%option%tReadNetStats)
+    call readData(this%data, this%option, tmp)
 
     ! if present, read external features and identifiers
-    call readExternal(this, root)
+    call readExternal(this%ext, this%data, root)
 
     select case(this%option%mode)
 
@@ -460,36 +464,37 @@ contains
       if (this%option%tReadNetStats) then
 
         ! in the case of resumed training, read network informations from netstat files
-        call readFromNetstats(this)
+        call readFromNetstats(this%arch, this%data)
 
       else
 
         ! read network informations
         call getChildValue(root, 'Network', tmp)
         call getNodeName(tmp, strBuffer)
-        call readNetwork(this, tmp, trim(char(strBuffer)))
+        call readNetwork(this%arch, tmp, trim(char(strBuffer)))
 
         ! read mapping informations
         call getChildValue(root, 'Mapping', tmp)
         call getNodeName(tmp, strBuffer)
-        call readMapping(this, tmp, trim(char(strBuffer)))
+        call readMapping(this%mapping, this%arch, tmp, trim(char(strBuffer)), this%data%nTargets,&
+            & this%ext%nExtFeatures)
 
       end if
 
       ! read training informations
       call getChildValue(root, 'Training', tmp)
       call getNodeName(tmp, strBuffer)
-      call readTraining(this, tmp, trim(char(strBuffer)))
+      call readTraining(this%train, tmp, trim(char(strBuffer)))
 
     case ('validate', 'predict')
 
       ! read informations from acsf and netstat files
-      call readFromNetstats(this)
+      call readFromNetstats(this%arch, this%data)
 
     end select
 
-    ! calculate the number of targets per sub-network parameters
-    call calcTargetsPerParam(this)
+    ! calculate the number of targets per sub-network parameter
+    call calcTargetsPerParam(this%data, this%arch%nSubNnParams)
 
     ! issue warning about unprocessed nodes
     call warnUnprocessedNodes(root, .true.)
@@ -509,30 +514,42 @@ contains
   end subroutine TProgramVariables_init
 
 
-  !> initialize ACSF parameters from given file
-  subroutine readAcsfFromFile(this, filename)
+  !> Initializes basic ACSF parameters from a given file.
+  subroutine readAcsfFromFile(mapping, acsf, filename, globalSpNames, nSpecies)
 
-    !> container of program variables
-    class(TProgramVariables), intent(inout) :: this
+    !> representation of mapping informations
+    type(TMapping), intent(inout) :: mapping
+
+    !> representation of ACSF mappings
+    type(TAcsf), intent(inout) :: acsf
 
     !> filename or path to save acsf parameters to
     character(len=*), intent(in) :: filename
 
-    this%mapping%type = 'acsf'
+    !> contains (unique) species of all dataset geometries
+    character(len=50), intent(in) :: globalSpNames(:)
+
+    !> number of dataset species
+    integer, intent(in) :: nSpecies
+
+    mapping%type = 'acsf'
 
     write(stdOut, '(A)', advance='no') 'reading ACSF from file...'
-    call this%acsf%fromFile(filename, this%data%globalSpNames)
-    @:ASSERT(size(this%acsf%speciesIds) == this%data%nSpecies)
+    call acsf%fromFile(filename, globalSpNames)
+    @:ASSERT(size(acsf%speciesIds) == nSpecies)
     write(stdout, '(A,/)') 'done'    
 
   end subroutine readAcsfFromFile
 
 
-  !> initialize networks from netstat files
-  subroutine readFromNetstats(this)
+  !> Initializes neural sub-networks from netstat files.
+  subroutine readFromNetstats(arch, data)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of network architecture information
+    type(TArch), intent(inout) :: arch
+
+    !> representation of dataset information
+    type(TData), intent(inout) :: data
 
     !> unique fileunit
     integer :: fd
@@ -543,50 +560,50 @@ contains
     character(len=50) :: spName
     character(len=1024) :: activation
 
-    do iSpecies = 1, this%data%nSpecies
+    do iSpecies = 1, data%nSpecies
 
-      open(newunit=fd, file=this%data%netstatNames(iSpecies), form='formatted', status='old',&
+      open(newunit=fd, file=data%netstatNames(iSpecies), form='formatted', status='old',&
           & action='read')
 
       read(fd, *) archType, targetType
-      this%arch%type = tolower(trim(archType))
+      arch%type = tolower(trim(archType))
       if (tolower(trim(targetType)) == 'atomic') then
-        this%data%tAtomicTargets = .true.
+        data%tAtomicTargets = .true.
       elseif (tolower(trim(targetType)) == 'global') then
-        this%data%tAtomicTargets = .false.
+        data%tAtomicTargets = .false.
       else
-        call error("Unrecognized target type in file '" // this%data%netstatNames(iSpecies) // "'.")
+        call error("Unrecognized target type in file '" // data%netstatNames(iSpecies) // "'.")
       end if
 
       read(fd, *) spName
-      @:ASSERT(tolower(this%data%globalSpNames(iSpecies)) == tolower(spName))
+      @:ASSERT(tolower(data%globalSpNames(iSpecies)) == tolower(spName))
 
       read(fd, *) nLayers
       @:ASSERT(nLayers > 2)
-      if (allocated(this%arch%allDims)) deallocate(this%arch%allDims)
-      allocate(this%arch%allDims(nLayers))
-      read(fd, *) this%arch%allDims
+      if (allocated(arch%allDims)) deallocate(arch%allDims)
+      allocate(arch%allDims(nLayers))
+      read(fd, *) arch%allDims
 
-      this%arch%hidden = this%arch%allDims(2:size(this%arch%allDims) - 1)
-      this%arch%nHiddenLayer = size(this%arch%hidden)
+      arch%hidden = arch%allDims(2:size(arch%allDims) - 1)
+      arch%nHiddenLayer = size(arch%hidden)
 
       read(fd, *) activation
-      this%arch%activation = tolower(trim(activation))
+      arch%activation = tolower(trim(activation))
 
       close(fd)
 
     end do
 
-    this%arch%nSubNnParams = getNumberOfParameters(this%arch%allDims)
+    arch%nSubNnParams = getNumberOfParameters(arch%allDims)
 
   end subroutine readFromNetstats
 
 
-  !> interpret the Network block
-  subroutine readNetwork(this, node, case)
+  !> Interprets the Network HSD block.
+  subroutine readNetwork(arch, node, case)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of network architecture information
+    type(TArch), intent(inout) :: arch
 
     !> node containig the information
     type(fnode), pointer :: node
@@ -604,17 +621,17 @@ contains
 
     case ('bpnn')
 
-      this%arch%type = 'bpnn'
+      arch%type = 'bpnn'
 
       call init(integerList)
       call getChildValue(node, 'Hidden', integerList)
-      allocate(this%arch%hidden(len(integerList)))
-      call asArray(integerList, this%arch%hidden)
+      allocate(arch%hidden(len(integerList)))
+      call asArray(integerList, arch%hidden)
       call destruct(integerList)
-      this%arch%nHiddenLayer = size(this%arch%hidden)
+      arch%nHiddenLayer = size(arch%hidden)
 
       call getChildValue(node, 'Activation', strBuffer)
-      this%arch%activation = tolower(trim(unquote(char(strBuffer))))
+      arch%activation = tolower(trim(unquote(char(strBuffer))))
 
     case default
 
@@ -625,30 +642,39 @@ contains
   end subroutine readNetwork
 
 
-  !> interpret the Mapping block
-  subroutine readMapping(this, node, case)
+  !> Interprets the Mapping HSD block.
+  subroutine readMapping(mapping, arch, node, case, nTargets, nExtFeatures)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of mapping informations
+    type(TMapping), intent(inout) :: mapping
 
-    !> node containig the information
+    !> representation of network architecture information
+    type(TArch), intent(inout) :: arch
+
+    !> node containing the information
     type(fnode), intent(in), pointer :: node
 
     !> type of neural network
     character(len=*), intent(in) :: case
 
-    call getChildValue(node, 'Standardization', this%mapping%tStandardize, .true.)
+    !> number of target values per atom (if tAtomicTargets = .true.) or system
+    integer, intent(in) :: nTargets
+
+    !> number of external, atomic features
+    integer, intent(in) :: nExtFeatures
+
+    call getChildValue(node, 'Standardization', mapping%tStandardize, .true.)
 
     select case (tolower(case))
 
     case ('acsf')
 
-      call getChildValue(node, 'NRadial', this%mapping%nRadial)
-      call getChildValue(node, 'NAngular', this%mapping%nAngular)
-      call getChildValue(node, 'RCut', this%mapping%rCut)
+      call getChildValue(node, 'NRadial', mapping%nRadial)
+      call getChildValue(node, 'NAngular', mapping%nAngular)
+      call getChildValue(node, 'RCut', mapping%rCut)
 
       ! convert Angstrom to Bohr
-      this%mapping%rCut = this%mapping%rCut * AA__Bohr
+      mapping%rCut = mapping%rCut * AA__Bohr
 
     case default
 
@@ -656,19 +682,21 @@ contains
 
     end select
 
-    this%arch%allDims = [this%mapping%nRadial + this%mapping%nAngular + this%ext%nExtFeatures,&
-        & this%arch%hidden, this%data%nTargets]
+    arch%allDims = [mapping%nRadial + mapping%nAngular + nExtFeatures, arch%hidden, nTargets]
 
-    this%arch%nSubNnParams = getNumberOfParameters(this%arch%allDims)
+    arch%nSubNnParams = getNumberOfParameters(arch%allDims)
 
   end subroutine readMapping
 
 
-  !> interpret the External block
-  subroutine readExternal(this, node)
+  !> Interprets the External HSD block.
+  subroutine readExternal(ext, data, node)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of external feature information
+    type(TExternal), intent(inout) :: ext
+
+    !> representation of dataset information
+    type(TData), intent(inout) :: data
 
     !> node containig the information
     type(fnode), intent(in), pointer :: node
@@ -686,49 +714,49 @@ contains
     integer :: iSp, iSys, nTmpExtFeatures
 
     ! inquire external training dataset features
-    if (this%data%tContiguous) then
-      call readHSDAsXML(this%data%datapaths(1), xml)
+    if (data%tContiguous) then
+      call readHSDAsXML(data%datapaths(1), xml)
       call getChild(xml, 'fnetdata', rootNode)
-      call inquireFeatures(rootNode, this%data%nExtFeatures)
+      call inquireFeatures(rootNode, data%nExtFeatures)
       call destroyNode(xml)
     else
-      this%data%nExtFeatures = 0
-      nTmpExtFeatures = this%data%nExtFeatures
-      do iSys = 1, this%data%nDatapoints
-        filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
+      data%nExtFeatures = 0
+      nTmpExtFeatures = data%nExtFeatures
+      do iSys = 1, data%nDatapoints
+        filename = trim(data%datapaths(iSys)) // '/' // fnetdataFile
         call readHSDAsXML(filename, xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call inquireFeatures(rootNode, this%data%nExtFeatures)
-        if ((nTmpExtFeatures /= this%data%nExtFeatures) .and. (iSys /= 1)) then
+        call inquireFeatures(rootNode, data%nExtFeatures)
+        if ((nTmpExtFeatures /= data%nExtFeatures) .and. (iSys /= 1)) then
           call error('Inconsistency in number of external features of dataset found.')
         end if
-        nTmpExtFeatures = this%data%nExtFeatures
+        nTmpExtFeatures = data%nExtFeatures
         call destroyNode(xml)
       end do
     end if
 
     ! inquire external validation dataset features
-    if (this%data%tMonitorValid) then
-      if (this%data%tValidContiguous) then
-        nTmpExtFeatures = this%data%nExtFeatures
-        call readHSDAsXML(this%data%validpaths(1), xml)
+    if (data%tMonitorValid) then
+      if (data%tValidContiguous) then
+        nTmpExtFeatures = data%nExtFeatures
+        call readHSDAsXML(data%validpaths(1), xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call inquireFeatures(rootNode, this%data%nExtFeatures)
+        call inquireFeatures(rootNode, data%nExtFeatures)
         call destroyNode(xml)
-        if (nTmpExtFeatures /= this%data%nExtFeatures) then
+        if (nTmpExtFeatures /= data%nExtFeatures) then
           call error('Inconsistency in number of external features between datasets found.')
         end if
         else
-          nTmpExtFeatures = this%data%nExtFeatures
-          do iSys = 1, this%data%nValidDatapoints
-            filename = trim(this%data%validpaths(iSys)) // '/' // fnetdataFile
+          nTmpExtFeatures = data%nExtFeatures
+          do iSys = 1, data%nValidDatapoints
+            filename = trim(data%validpaths(iSys)) // '/' // fnetdataFile
             call readHSDAsXML(filename, xml)
             call getChild(xml, 'fnetdata', rootNode)
-            call inquireFeatures(rootNode, this%data%nExtFeatures)
-            if (nTmpExtFeatures /= this%data%nExtFeatures) then
+            call inquireFeatures(rootNode, data%nExtFeatures)
+            if (nTmpExtFeatures /= data%nExtFeatures) then
               call error('Inconsistency in number of external features between datasets found.')
             end if
-            nTmpExtFeatures = this%data%nExtFeatures
+            nTmpExtFeatures = data%nExtFeatures
             call destroyNode(xml)
           end do
         end if
@@ -739,75 +767,72 @@ contains
     if (associated(extnode)) then
 
       ! read species identifier
-      allocate(this%ext%speciesIds(this%data%nSpecies))
+      allocate(ext%speciesIds(data%nSpecies))
       call getChild(extnode, 'SpeciesID', child1, requested=.false.)
       if (associated(child1)) then
-        do iSp = 1, this%data%nSpecies
-          call getChildValue(child1, this%data%globalSpNames(iSp), this%ext%speciesIds(iSp),&
-              & 1.0_dp)
-          if (this%ext%speciesIds(iSp) <= 0.0_dp) then
-            call warning("Obtained potentially dangerous '" // trim(this%data%globalSpNames(iSp))&
+        do iSp = 1, data%nSpecies
+          call getChildValue(child1, data%globalSpNames(iSp), ext%speciesIds(iSp), 1.0_dp)
+          if (ext%speciesIds(iSp) <= 0.0_dp) then
+            call warning("Obtained potentially dangerous '" // trim(data%globalSpNames(iSp))&
                 & // "' species" // NEW_LINE('A') //&
                 & '   identifier equal or below zero, watch out.')
           end if
         end do
       else
-        this%ext%speciesIds(:) = 1.0_dp
+        ext%speciesIds(:) = 1.0_dp
       end if
 
       call getChild(extnode, 'Features', featuresnode, requested=.false.)
       if (associated(featuresnode)) then
         call getChildValue(featuresnode, '', buffer, child=child, multiple=.true.)
-        call convRangeToInt(char(buffer), featuresnode, this%ext%extFeaturesInd,&
-            & this%data%nExtFeatures)
-        call setChildValue(child, '', this%ext%extFeaturesInd, replace=.true.)
-        this%ext%nExtFeatures = size(this%ext%extFeaturesInd)
-        if (size(this%ext%extFeaturesInd) > 0) then
-          this%ext%tExtFeatures = .true.
+        call convRangeToInt(char(buffer), featuresnode, ext%extFeaturesInd, data%nExtFeatures)
+        call setChildValue(child, '', ext%extFeaturesInd, replace=.true.)
+        ext%nExtFeatures = size(ext%extFeaturesInd)
+        if (size(ext%extFeaturesInd) > 0) then
+          ext%tExtFeatures = .true.
         else
-          this%ext%tExtFeatures = .false.
-          this%ext%nExtFeatures = 0
+          ext%tExtFeatures = .false.
+          ext%nExtFeatures = 0
         end if
       else
-        this%ext%tExtFeatures = .false.
-        this%ext%nExtFeatures = 0
+        ext%tExtFeatures = .false.
+        ext%nExtFeatures = 0
       end if
 
       ! read external features from generic fnetdata.xml file(s)
-      if (this%data%tContiguous .and. this%ext%tExtFeatures) then
-        call readHSDAsXML(this%data%datapaths(1), xml)
+      if (data%tContiguous .and. ext%tExtFeatures) then
+        call readHSDAsXML(data%datapaths(1), xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call readContiguousFnetdataFeatures(rootNode, this%data%geos, this%ext%extFeatures,&
-            & inds=this%ext%extFeaturesInd)
+        call readContiguousFnetdataFeatures(rootNode, data%geos, ext%extFeatures,&
+            & inds=ext%extFeaturesInd)
         call destroyNode(xml)
-      elseif ((.not. this%data%tContiguous) .and. this%ext%tExtFeatures) then
-        allocate(this%ext%extFeatures(this%data%nDatapoints))
-        do iSys = 1, this%data%nDatapoints
-          filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
+      elseif ((.not. data%tContiguous) .and. ext%tExtFeatures) then
+        allocate(ext%extFeatures(data%nDatapoints))
+        do iSys = 1, data%nDatapoints
+          filename = trim(data%datapaths(iSys)) // '/' // fnetdataFile
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
-          call readFnetdataFeatures(rootNode, this%data%geos(iSys)%nAtom,&
-              & this%ext%extFeatures(iSys)%array, inds=this%ext%extFeaturesInd)
+          call readFnetdataFeatures(rootNode, data%geos(iSys)%nAtom, ext%extFeatures(iSys)%array,&
+              & inds=ext%extFeaturesInd)
           call destroyNode(xml)
         end do
       end if
 
       ! if present, read external validation features from generic fnetdata.xml file(s)
-      if (this%data%tMonitorValid .and. this%ext%tExtFeatures .and. this%data%tValidContiguous) then
-        call readHSDAsXML(this%data%validpaths(1), xml)
+      if (data%tMonitorValid .and. ext%tExtFeatures .and. data%tValidContiguous) then
+        call readHSDAsXML(data%validpaths(1), xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call readContiguousFnetdataFeatures(rootNode, this%data%validGeos,&
-            & this%ext%extValidFeatures, inds=this%ext%extFeaturesInd)
+        call readContiguousFnetdataFeatures(rootNode, data%validGeos, ext%extValidFeatures,&
+            & inds=ext%extFeaturesInd)
         call destroyNode(xml)
-      elseif (this%data%tMonitorValid .and. this%ext%tExtFeatures .and.&
-          & (.not. this%data%tValidContiguous)) then
-        allocate(this%ext%extValidFeatures(this%data%nValidDatapoints))
-        do iSys = 1, this%data%nValidDatapoints
-          filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
+      elseif (data%tMonitorValid .and. ext%tExtFeatures .and. (.not. data%tValidContiguous)) then
+        allocate(ext%extValidFeatures(data%nValidDatapoints))
+        do iSys = 1, data%nValidDatapoints
+          filename = trim(data%validpaths(iSys)) // '/fnetdata.xml'
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
-          call readFnetdataFeatures(rootNode, this%data%validGeos(iSys)%nAtom,&
-              & this%ext%extValidFeatures(iSys)%array, inds=this%ext%extFeaturesInd)
+          call readFnetdataFeatures(rootNode, data%validGeos(iSys)%nAtom,&
+              & ext%extValidFeatures(iSys)%array, inds=ext%extFeaturesInd)
           call destroyNode(xml)
         end do
       end if
@@ -815,76 +840,75 @@ contains
       ! read atom identifier
       call getChild(extnode, 'AtomID', child2, requested=.false.)
       if (associated(child2)) then
-        call getChildValue(child2, '', this%ext%atomIdIndex)
-        if (this%ext%atomIdIndex <= 0) then
+        call getChildValue(child2, '', ext%atomIdIndex)
+        if (ext%atomIdIndex <= 0) then
           call warning('Atom identifier index less or equal zero specified, will be ignored.')
-        elseif (this%ext%atomIdIndex > this%data%nExtFeatures) then
+        elseif (ext%atomIdIndex > data%nExtFeatures) then
           call error('Atom identifier index exceeds number of external features in dataset.')
         end if
       else
-        this%ext%atomIdIndex = 0
+        ext%atomIdIndex = 0
       end if
 
     else
 
-      allocate(this%ext%speciesIds(this%data%nSpecies))
-      this%ext%speciesIds(:) = 1.0_dp
-      this%ext%atomIdIndex = 0
-      this%ext%tExtFeatures = .false.
-      this%ext%nExtFeatures = 0
+      allocate(ext%speciesIds(data%nSpecies))
+      ext%speciesIds(:) = 1.0_dp
+      ext%atomIdIndex = 0
+      ext%tExtFeatures = .false.
+      ext%nExtFeatures = 0
 
     end if
 
-    if (this%ext%atomIdIndex > 0) then
-      if (this%data%tContiguous) then
-        call readHSDAsXML(this%data%datapaths(1), xml)
+    if (ext%atomIdIndex > 0) then
+      if (data%tContiguous) then
+        call readHSDAsXML(data%datapaths(1), xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call readContiguousFnetdataAtomIdentifier(rootNode, this%data%geos,&
-            & this%ext%atomIdIndex, this%ext%atomIds)
+        call readContiguousFnetdataAtomIdentifier(rootNode, data%geos, ext%atomIdIndex, ext%atomIds)
         call destroyNode(xml)
       else
-        allocate(this%ext%atomIds(this%data%nDatapoints))
-        do iSys = 1, this%data%nDatapoints
-          filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
+        allocate(ext%atomIds(data%nDatapoints))
+        do iSys = 1, data%nDatapoints
+          filename = trim(data%datapaths(iSys)) // '/' // fnetdataFile
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
-          call readFnetdataAtomIdentifier(rootNode, this%data%geos(iSys)%nAtom,&
-              & this%ext%atomIdIndex, this%ext%atomIds(iSys)%array)
+          call readFnetdataAtomIdentifier(rootNode, data%geos(iSys)%nAtom, ext%atomIdIndex,&
+              & ext%atomIds(iSys)%array)
           call destroyNode(xml)
         end do
       end if
     else
-      allocate(this%ext%atomIds(this%data%nDatapoints))
-      do iSys = 1, this%data%nDatapoints
-        allocate(this%ext%atomIds(iSys)%array(this%data%geos(iSys)%nAtom))
-        this%ext%atomIds(iSys)%array(:) = 1.0_dp
+      allocate(ext%atomIds(data%nDatapoints))
+      do iSys = 1, data%nDatapoints
+        allocate(ext%atomIds(iSys)%array(data%geos(iSys)%nAtom))
+        ext%atomIds(iSys)%array(:) = 1.0_dp
       end do
     end if
 
-    if (this%data%tMonitorValid) then
-      if (this%ext%atomIdIndex > 0) then
-        if (this%data%tValidContiguous) then
-          call readHSDAsXML(this%data%validpaths(1), xml)
+    if (data%tMonitorValid) then
+      if (ext%atomIdIndex > 0) then
+        if (data%tValidContiguous) then
+          call readHSDAsXML(data%validpaths(1), xml)
           call getChild(xml, 'fnetdata', rootNode)
-          call readContiguousFnetdataAtomIdentifier(rootNode, this%data%validGeos,&
-              & this%ext%atomIdIndex, this%ext%validAtomIds)
+          call readContiguousFnetdataAtomIdentifier(rootNode, data%validGeos, ext%atomIdIndex,&
+              & ext%validAtomIds)
           call destroyNode(xml)
         else
-          allocate(this%ext%validAtomIds(this%data%nValidDatapoints))
-          do iSys = 1, this%data%nValidDatapoints
-            filename = trim(this%data%validpaths(iSys)) // '/' // fnetdataFile
+          allocate(ext%validAtomIds(data%nValidDatapoints))
+          do iSys = 1, data%nValidDatapoints
+            filename = trim(data%validpaths(iSys)) // '/' // fnetdataFile
             call readHSDAsXML(filename, xml)
             call getChild(xml, 'fnetdata', rootNode)
-            call readFnetdataAtomIdentifier(rootNode, this%data%validGeos(iSys)%nAtom,&
-                & this%ext%atomIdIndex, this%ext%validAtomIds(iSys)%array)
+            call readFnetdataAtomIdentifier(rootNode, data%validGeos(iSys)%nAtom, ext%atomIdIndex,&
+                & ext%validAtomIds(iSys)%array)
             call destroyNode(xml)
           end do
         end if
       else
-        allocate(this%ext%validAtomIds(this%data%nValidDatapoints))
-        do iSys = 1, this%data%nValidDatapoints
-          allocate(this%ext%validAtomIds(iSys)%array(this%data%validGeos(iSys)%nAtom))
-          this%ext%validAtomIds(iSys)%array(:) = 1.0_dp
+        allocate(ext%validAtomIds(data%nValidDatapoints))
+        do iSys = 1, data%nValidDatapoints
+          allocate(ext%validAtomIds(iSys)%array(data%validGeos(iSys)%nAtom))
+          ext%validAtomIds(iSys)%array(:) = 1.0_dp
         end do
       end if
     end if
@@ -892,11 +916,11 @@ contains
   end subroutine readExternal
 
 
-  !> interpret the Training block
-  subroutine readTraining(this, node, case)
+  !> Interprets the Training HSD block.
+  subroutine readTraining(train, node, case)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of training/optimizer information
+    type(TTraining), intent(inout) :: train
 
     !> node containig the information
     type(fnode), intent(in), pointer :: node
@@ -911,23 +935,23 @@ contains
 
     case ('sd')
 
-      this%train%iOptimizer = optimizerTypes%steepDesc
-      call getChildValue(node, 'LearningRate', this%train%learningRate, 0.01_dp)
+      train%iOptimizer = optimizerTypes%steepDesc
+      call getChildValue(node, 'LearningRate', train%learningRate, 0.01_dp)
 
     case ('cg')
 
-      this%train%iOptimizer = optimizerTypes%conjGrad
+      train%iOptimizer = optimizerTypes%conjGrad
 
     case ('lbfgs')
 
-      this%train%iOptimizer = optimizerTypes%lbfgs
-      call getChildValue(node, 'MaxForQNDisplacement', this%train%maxForQNDisplacement, .false.)
-      call getChildValue(node, 'Linemin', this%train%tLinesearch, .true.)
-      call getChildValue(node, 'Memory', this%train%mem, 1000)
+      train%iOptimizer = optimizerTypes%lbfgs
+      call getChildValue(node, 'MaxForQNDisplacement', train%maxForQNDisplacement, .false.)
+      call getChildValue(node, 'Linemin', train%tLinesearch, .true.)
+      call getChildValue(node, 'Memory', train%mem, 1000)
 
     case ('fire')
 
-      this%train%iOptimizer = optimizerTypes%fire
+      train%iOptimizer = optimizerTypes%fire
 
     case default
 
@@ -935,26 +959,26 @@ contains
 
     end select
 
-    call getChildValue(node, 'MinDisplacement', this%train%minDisplacement, 1e-06_dp)
-    call getChildValue(node, 'MaxDisplacement', this%train%maxDisplacement, 1e+04_dp)
+    call getChildValue(node, 'MinDisplacement', train%minDisplacement, 1e-06_dp)
+    call getChildValue(node, 'MaxDisplacement', train%maxDisplacement, 1e+04_dp)
 
-    call getChildValue(node, 'NIterations', this%train%nTrainIt, huge(0))
-    call getChildValue(node, 'Threshold', this%train%threshold, tiny(0.0_dp))
+    call getChildValue(node, 'NIterations', train%nTrainIt, huge(0))
+    call getChildValue(node, 'Threshold', train%threshold, tiny(0.0_dp))
 
-    call getChildValue(node, 'NPrintout', this%train%nPrintOut, 10)
-    call getChildValue(node, 'NSaveNet', this%train%nSaveNet, 100)
+    call getChildValue(node, 'NPrintout', train%nPrintOut, 10)
+    call getChildValue(node, 'NSaveNet', train%nSaveNet, 100)
 
     call getChildValue(node, 'Loss', strBuffer, 'rms')
-    call this%train%setLossFunc(tolower(trim(unquote(char(strBuffer)))))
+    call train%setLossFunc(tolower(trim(unquote(char(strBuffer)))))
 
   end subroutine readTraining
 
 
-  !> interpret the Options block
-  subroutine readOptions(this, node)
+  !> Interprets the Options HSD block.
+  subroutine readOptions(option, node)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of user specified options
+    type(TOption), intent(inout) :: option
 
     !> node containig the information
     type(fnode), pointer :: node
@@ -968,64 +992,64 @@ contains
     !> auxiliary variable
     real(dp) :: tmpRealSeed
 
-    call getChildValue(node, 'ReadNetStats', this%option%tReadNetStats, .false.)
+    call getChildValue(node, 'ReadNetStats', option%tReadNetStats, .false.)
 
-    call getChildValue(node, 'WriteIterationTrajectory', this%option%tWriteIterTraj, .false.)
+    call getChildValue(node, 'WriteIterationTrajectory', option%tWriteIterTraj, .false.)
 
     call getChildValue(node, 'Mode', strBuffer)
-    this%option%mode = tolower(unquote(char(strBuffer)))
+    option%mode = tolower(unquote(char(strBuffer)))
 
-    if ((trim(this%option%mode) == 'validate' .or. trim(this%option%mode) == 'predict') .and.&
-        & (this%option%tReadNetStats .eqv. .false.)) then
+    if ((trim(option%mode) == 'validate' .or. trim(option%mode) == 'predict') .and.&
+        & (option%tReadNetStats .eqv. .false.)) then
       write(stdout, '(A)') ''
       call warning('Running in validation or prediction mode without initialising from'&
           & //NEW_LINE('A')//'   existing netstat files is not possible. Overwriting user input...')
       write(stdout, '(A)') ''
-      this%option%tReadNetStats = .true.
+      option%tReadNetStats = .true.
     end if
 
     call random_number(tmpRealSeed)
     tmpIntSeed = floor(tmpRealSeed * huge(0) + tiny(0.0))
 
-    call getChildValue(node, 'RandomSeed', this%option%seed, tmpIntSeed)
+    call getChildValue(node, 'RandomSeed', option%seed, tmpIntSeed)
 
-    if (this%option%seed < 0) then
+    if (option%seed < 0) then
       call detailedError(node, 'Random seed must be greater or equal zero.')
     end if
-
-    call init(this%rndGen, luxlev=3, initSeed=this%option%seed)
 
   end subroutine readOptions
 
 
-  !> interpret preconditioning of the Data block
-  subroutine readPrec(this, node)
+  !> Interprets and reads preconditioning of the Data HSD block.
+  subroutine readPrec(data, node, tReadNetStats)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of dataset information
+    type(TData), intent(inout) :: data
 
     !> node containig the information
     type(fnode), pointer :: node, child
 
+    !> wether to resume from existing netstat files on disk
+    logical, intent(in) :: tReadNetStats
+
     !> true, if preconditioning file is in place
     logical :: tExist
 
-    call getChildValue(node, 'Standardization', this%data%tZscore, .false., child=child)
+    call getChildValue(node, 'Standardization', data%tZscore, .false., child=child)
 
     inquire(file=precFile, exist=tExist)
 
-    if (.not. this%data%tZscore .and. tExist) then
+    if (.not. data%tZscore .and. tExist) then
       call warning('User input manually deactivated target standardization,'&
           & //NEW_LINE('A')// '   but preconditioning parameters are present.')
     end if
 
-    call readPreconditioning(precFile, this%option%tReadNetStats, this%data%tZscore,&
-        & this%data%nTargets, this%data%zPrec)
+    call readPreconditioning(precFile, tReadNetStats, data%tZscore, data%nTargets, data%zPrec)
 
   end subroutine readPrec
 
 
-  !> read datapoint paths from file
+  !> Reads datapoint paths from file.
   subroutine readDatapathsFromFile(fname, node, nDatapoints, datapaths)
 
     !> name of file that contains the datapoint paths
@@ -1068,11 +1092,14 @@ contains
   end subroutine readDatapathsFromFile
 
 
-  !> interpret the Data block
-  subroutine readData(this, node)
+  !> Interprets the Data HSD block.
+  subroutine readData(data, option, node)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of dataset information
+    type(TData), intent(inout) :: data
+
+    !> representation of user specified options
+    type(TOption), intent(in) :: option
 
     !> node containig the information
     type(fnode), pointer :: node
@@ -1103,108 +1130,106 @@ contains
     logical :: tExist
 
     call getChildValue(node, 'Dataset', strBuffer)
-    this%data%datapath = trim(unquote(char(strBuffer)))
+    data%datapath = trim(unquote(char(strBuffer)))
 
-    if (this%data%datapath(len(this%data%datapath)-len(fnetdataFile)+1:len(this%data%datapath))&
+    if (data%datapath(len(data%datapath)-len(fnetdataFile)+1:len(data%datapath))&
         & == fnetdataFile) then
-      this%data%tContiguous = .true.
-      allocate(this%data%datapaths(1))
-      this%data%datapaths(1) = this%data%datapath
+      data%tContiguous = .true.
+      allocate(data%datapaths(1))
+      data%datapaths(1) = data%datapath
     else
-      this%data%tContiguous = .false.
-      call readDatapathsFromFile(this%data%datapath, node, this%data%nDatapoints,&
-          & this%data%datapaths)
+      data%tContiguous = .false.
+      call readDatapathsFromFile(data%datapath, node, data%nDatapoints, data%datapaths)
     end if
 
     call getChildValue(node, 'Validset', strBuffer, default='')
 
     select case (char(strBuffer))
     case ('')
-      this%data%tMonitorValid = .false.
+      data%tMonitorValid = .false.
     case ('none')
-      this%data%tMonitorValid = .false.
+      data%tMonitorValid = .false.
     case default
-      this%data%tMonitorValid = .true.
-      this%data%validpath = trim(unquote(char(strBuffer)))
-      if (this%data%validpath(len(this%data%validpath)-len(fnetvdataFile)+1&
-          & :len(this%data%validpath)) == fnetvdataFile) then
-        this%data%tValidContiguous = .true.
-        allocate(this%data%validpaths(1))
-        this%data%validpaths(1) = this%data%validpath
+      data%tMonitorValid = .true.
+      data%validpath = trim(unquote(char(strBuffer)))
+      if (data%validpath(len(data%validpath)-len(fnetvdataFile)+1:len(data%validpath))&
+          & == fnetvdataFile) then
+        data%tValidContiguous = .true.
+        allocate(data%validpaths(1))
+        data%validpaths(1) = data%validpath
       else
-        this%data%tValidContiguous = .false.
-        call readDatapathsFromFile(this%data%validpath, node, this%data%nValidDatapoints,&
-            & this%data%validpaths)
+        data%tValidContiguous = .false.
+        call readDatapathsFromFile(data%validpath, node, data%nValidDatapoints, data%validpaths)
       end if
     end select
 
     ! read geometries from generic fnetdata.xml file(s)
-    if (this%data%tContiguous) then
-      call readHSDAsXML(this%data%datapaths(1), xml)
+    if (data%tContiguous) then
+      call readHSDAsXML(data%datapaths(1), xml)
       call getChild(xml, 'fnetdata', rootNode)
-      call readContiguousFnetdataWeights(rootNode, this%data%weights)
-      call readContiguousFnetdataGeometries(rootNode, this%data%geos)
-      this%data%nDatapoints = size(this%data%geos)
-      select case (this%option%mode)
+      call readContiguousFnetdataWeights(rootNode, data%weights)
+      call readContiguousFnetdataGeometries(rootNode, data%geos)
+      data%nDatapoints = size(data%geos)
+      select case (option%mode)
       case('train', 'validate')
-        call readContiguousFnetdataTargets(rootNode, this%data%geos, this%data%targets,&
-            & this%data%nTargets, this%data%tAtomicTargets)
+        call readContiguousFnetdataTargets(rootNode, data%geos, data%targets, data%nTargets,&
+            & data%tAtomicTargets)
       end select
       call destroyNode(xml)
     else
-      allocate(this%data%weights(this%data%nDatapoints))
-      allocate(this%data%geos(this%data%nDatapoints))
-      select case (this%option%mode)
+      allocate(data%weights(data%nDatapoints))
+      allocate(data%geos(data%nDatapoints))
+      select case (option%mode)
       case('train', 'validate')
-        allocate(this%data%targets(this%data%nDatapoints))
+        allocate(data%targets(data%nDatapoints))
       end select
-      do iSys = 1, this%data%nDatapoints
-        filename = trim(this%data%datapaths(iSys)) // '/' // fnetdataFile
+      do iSys = 1, data%nDatapoints
+        filename = trim(data%datapaths(iSys)) // '/' // fnetdataFile
         call readHSDAsXML(filename, xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call readFnetdataWeight(rootNode, this%data%weights(iSys))
-        call readFnetdataGeometry(rootNode, this%data%geos(iSys))
-        select case (this%option%mode)
+        call readFnetdataWeight(rootNode, data%weights(iSys))
+        call readFnetdataGeometry(rootNode, data%geos(iSys))
+        select case (option%mode)
         case('train', 'validate')
-          call readFnetdataTargets(rootNode, this%data%geos(iSys)%nAtom,&
-              & this%data%targets(iSys)%array, this%data%tAtomicTargets)
-          this%data%nTargets = size(this%data%targets(iSys)%array, dim=1)
+          call readFnetdataTargets(rootNode, data%geos(iSys)%nAtom, data%targets(iSys)%array,&
+              & data%tAtomicTargets)
+          data%nTargets = size(data%targets(iSys)%array, dim=1)
         end select
         call destroyNode(xml)
       end do
     end if
 
-    this%data%nTotalAtoms = getTotalNumberOfAtoms(this%data%geos)
+    data%nTotalAtoms = getTotalNumberOfAtoms(data%geos)
 
     ! if present, read validation geometries from generic fnetdata.xml file(s)
-    if (this%data%tMonitorValid) then
-      if (this%data%tValidContiguous) then
-        call readHSDAsXML(this%data%validpaths(1), xml)
+    if (data%tMonitorValid) then
+      if (data%tValidContiguous) then
+        call readHSDAsXML(data%validpaths(1), xml)
         call getChild(xml, 'fnetdata', rootNode)
-        call readContiguousFnetdataGeometries(rootNode, this%data%validGeos)
-        this%data%nValidDatapoints = size(this%data%validGeos)
-        select case (this%option%mode)
+        call readContiguousFnetdataGeometries(rootNode, data%validGeos)
+        data%nValidDatapoints = size(data%validGeos)
+        select case (option%mode)
         case('train', 'validate')
-          call readContiguousFnetdataTargets(rootNode, this%data%validGeos, this%data%validTargets,&
-              & this%data%nValidTargets, this%data%tAtomicTargets)
+          call readContiguousFnetdataTargets(rootNode, data%validGeos, data%validTargets,&
+              & data%nValidTargets, data%tAtomicTargets)
         end select
         call destroyNode(xml)
       else
-        allocate(this%data%validGeos(this%data%nValidDatapoints))
-        select case (this%option%mode)
+        allocate(data%validGeos(data%nValidDatapoints))
+        select case (option%mode)
         case('train', 'validate')
-          allocate(this%data%validTargets(this%data%nValidDatapoints))
+          allocate(data%validTargets(data%nValidDatapoints))
         end select
-        do iSys = 1, this%data%nValidDatapoints
-          filename = trim(this%data%validpaths(iSys)) // '/fnetdata.xml'
+        do iSys = 1, data%nValidDatapoints
+          filename = trim(data%validpaths(iSys)) // '/fnetdata.xml'
           call readHSDAsXML(filename, xml)
           call getChild(xml, 'fnetdata', rootNode)
-          call readFnetdataGeometry(rootNode, this%data%validGeos(iSys))
-          select case (this%option%mode)
+          call readFnetdataGeometry(rootNode, data%validGeos(iSys))
+          select case (option%mode)
           case('train', 'validate')
-            call readFnetdataTargets(rootNode, this%data%validGeos(iSys)%nAtom,&
-                & this%data%validTargets(iSys)%array, this%data%tAtomicTargets)
-            this%data%nValidTargets = size(this%data%validTargets(iSys)%array, dim=1)
+            call readFnetdataTargets(rootNode, data%validGeos(iSys)%nAtom,&
+                & data%validTargets(iSys)%array, data%tAtomicTargets)
+            data%nValidTargets = size(data%validTargets(iSys)%array, dim=1)
           end select
           call destroyNode(xml)
         end do
@@ -1212,22 +1237,22 @@ contains
     end if
 
     ! apply z-score standardization, if desired
-    if (this%data%tZscore) then
-      if (.not. allocated(this%data%zPrec)) then
-        call this%data%getTargetMeansAndVariances()
-        call writePreconditioning(precFile, this%data%zPrec)
+    if (data%tZscore) then
+      if (.not. allocated(data%zPrec)) then
+        call data%getTargetMeansAndVariances()
+        call writePreconditioning(precFile, data%zPrec)
       end if
-      call this%data%applyZscore()
-    elseif (.not. this%option%mode == 'predict') then
-      this%data%zTargets = this%data%targets
-      if (this%data%tMonitorValid) then
-        this%data%zValidTargets = this%data%validTargets
+      call data%applyZscore()
+    elseif (.not. option%mode == 'predict') then
+      data%zTargets = data%targets
+      if (data%tMonitorValid) then
+        data%zValidTargets = data%validTargets
       end if
     end if
 
     ! establish convenient index mappings and global species list
-    call this%getIndexMappings()
-    allocate(this%data%netstatNames(this%data%nSpecies))
+    call data%getIndexMappings()
+    allocate(data%netstatNames(data%nSpecies))
 
     ! netstat file names
     call getChildValue(node, 'NetstatFiles', value1, child=child1)
@@ -1244,21 +1269,21 @@ contains
 
       call getChildValue(value1, 'LowerCaseTypeName', tLower, .false.)
 
-      do iSp = 1, this%data%nSpecies
+      do iSp = 1, data%nSpecies
         if (tLower) then
-          elem = tolower(this%data%globalSpNames(iSp))
+          elem = tolower(data%globalSpNames(iSp))
         else
-          elem = this%data%globalSpNames(iSp)
+          elem = data%globalSpNames(iSp)
         end if
 
         strTmp = trim(prefix) // trim(elem) // trim(suffix)
-        this%data%netstatNames(iSp) = strTmp
+        data%netstatNames(iSp) = strTmp
 
-        if (this%option%tReadNetStats) then
+        if (option%tReadNetStats) then
           inquire(file=strTmp, exist=tExist)
         end if
 
-        if (this%option%tReadNetStats .and. (.not. tExist)) then
+        if (option%tReadNetStats .and. (.not. tExist)) then
           call detailedError(value1, "Netstat file with generated name '" // trim(strTmp) //&
               & "' does not exist.")
         end if
@@ -1269,26 +1294,26 @@ contains
 
       call setUnprocessed(value1)
 
-      do iSp = 1, this%data%nSpecies
+      do iSp = 1, data%nSpecies
 
           call init(lStr)
-          call getChildValue(child1, trim(this%data%globalSpNames(iSp)), lStr, child=child2)
+          call getChildValue(child1, trim(data%globalSpNames(iSp)), lStr, child=child2)
 
-          this%data%netstatNames(iSp) = trim(this%data%globalSpNames(iSp))
+          data%netstatNames(iSp) = trim(data%globalSpNames(iSp))
 
-          if (len(lStr) /= this%data%nSpecies) then
+          if (len(lStr) /= data%nSpecies) then
             call detailedError(child2, "Incorrect number of netstat files")
           end if
 
           do ii = 1, len(lStr)
-            call get(lStr, this%data%globalSpNames(iSp), ii)
+            call get(lStr, data%globalSpNames(iSp), ii)
 
-            if (this%option%tReadNetStats) then
+            if (option%tReadNetStats) then
               inquire(file=strTmp, exist=tExist)
             end if
 
-            if (this%option%tReadNetStats .and. (.not. tExist)) then
-              call detailedError(child2, "Netstat file '" // trim(this%data%globalSpNames(iSp))&
+            if (option%tReadNetStats .and. (.not. tExist)) then
+              call detailedError(child2, "Netstat file '" // trim(data%globalSpNames(iSp))&
                   & // "' does not exist'")
             end if
           end do
@@ -1302,7 +1327,7 @@ contains
   end subroutine readData
 
 
-  !> calculates z-score standardization means and variances
+  !> Calculates means and variances for z-score standardization.
   subroutine TData_getTargetMeansAndVariances(this)
 
     !> target values for training
@@ -1399,13 +1424,13 @@ contains
 
 
   !> interpret the Training block
-  subroutine initOptimizer(this, initialPoints)
+  subroutine initOptimizer(train, initialGuess)
 
-    !> container of program variables
-    type(TProgramVariables), intent(inout) :: this
+    !> representation of training/optimizer information
+    type(TTraining), intent(inout) :: train
 
     !> starting points, shape: [nPoints, nStrucs]
-    real(dp), intent(in) :: initialPoints(:,:)
+    real(dp), intent(in) :: initialGuess(:,:)
 
     !> steepest descent optimizer
     type(TWrapSteepDesc), allocatable :: wrapSteepDesc(:)
@@ -1425,24 +1450,24 @@ contains
     !> auxiliary variable
     integer :: iStruc, nStrucs, nValues
 
-    nValues = size(initialPoints, dim=1)
-    nStrucs = size(initialPoints, dim=2)
+    nValues = size(initialGuess, dim=1)
+    nStrucs = size(initialGuess, dim=2)
 
-    allocate(this%train%pOptimizer(nStrucs))
+    allocate(train%pOptimizer(nStrucs))
 
-    select case (this%train%iOptimizer)
+    select case (train%iOptimizer)
 
     case(optimizerTypes%steepDesc)
 
       allocate(wrapSteepDesc(nStrucs))
       allocate(weights(nValues))
-      weights(:) = this%train%learningRate
+      weights(:) = train%learningRate
 
       do iStruc = 1, nStrucs
         allocate(wrapSteepDesc(iStruc)%pSteepDesc)
-        call init(wrapSteepDesc(iStruc)%pSteepDesc, nValues, this%train%threshold,&
-            & this%train%maxDisplacement, weights)
-        call init(wrapSteepDesc(iStruc)%pSteepDesc, this%train%pOptimizer(iStruc))
+        call init(wrapSteepDesc(iStruc)%pSteepDesc, nValues, train%threshold,&
+            & train%maxDisplacement, weights)
+        call init(wrapSteepDesc(iStruc)%pSteepDesc, train%pOptimizer(iStruc))
       end do
 
       deallocate(weights)
@@ -1453,9 +1478,8 @@ contains
 
       do iStruc = 1, nStrucs
         allocate(wrapConjGrad(iStruc)%pConjGrad)
-        call init(wrapConjGrad(iStruc)%pConjGrad, nValues, this%train%threshold,&
-            & this%train%maxDisplacement)
-        call init(wrapConjGrad(iStruc)%pConjGrad, this%train%pOptimizer(iStruc))
+        call init(wrapConjGrad(iStruc)%pConjGrad, nValues, train%threshold, train%maxDisplacement)
+        call init(wrapConjGrad(iStruc)%pConjGrad, train%pOptimizer(iStruc))
       end do
 
     case (optimizerTypes%lbfgs)
@@ -1464,10 +1488,10 @@ contains
 
       do iStruc = 1, nStrucs
         allocate(wrapLbfgs(iStruc)%pLbfgs)
-        call TLbfgs_init(wrapLbfgs(iStruc)%pLbfgs, nValues, this%train%threshold,&
-            & this%train%minDisplacement, this%train%maxDisplacement, this%train%mem,&
-            & this%train%tLinesearch, .false., this%train%maxForQNDisplacement)
-        call init(wrapLbfgs(iStruc)%pLbfgs, this%train%pOptimizer(iStruc))
+        call TLbfgs_init(wrapLbfgs(iStruc)%pLbfgs, nValues, train%threshold, train%minDisplacement,&
+            & train%maxDisplacement, train%mem, train%tLinesearch, .false.,&
+            & train%maxForQNDisplacement)
+        call init(wrapLbfgs(iStruc)%pLbfgs, train%pOptimizer(iStruc))
       end do
 
     case (optimizerTypes%fire)
@@ -1476,15 +1500,14 @@ contains
 
       do iStruc = 1, nStrucs
         allocate(wrapFire(iStruc)%pFire)
-        call TFire_init(wrapFire(iStruc)%pFire, nValues, this%train%threshold,&
-            & this%train%maxDisplacement)
-        call init(wrapFire(iStruc)%pFire, this%train%pOptimizer(iStruc))
+        call TFire_init(wrapFire(iStruc)%pFire, nValues, train%threshold, train%maxDisplacement)
+        call init(wrapFire(iStruc)%pFire, train%pOptimizer(iStruc))
       end do
 
     end select
 
     do iStruc = 1, nStrucs
-      call reset(this%train%pOptimizer(iStruc), initialPoints(:, iStruc))
+      call reset(train%pOptimizer(iStruc), initialGuess(:, iStruc))
     end do
 
   end subroutine initOptimizer
@@ -1587,10 +1610,11 @@ contains
 
 
 #:if WITH_MPI
-  subroutine syncFeatures(features, comm)
+  !> Synchronizes the collected features between the MPI nodes.
+  subroutine TFeatures_sync(this, comm)
 
     !> collected features of data and mapping block
-    type(TFeatures), intent(in) :: features
+    class(TFeatures), intent(in) :: this
 
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
@@ -1598,21 +1622,21 @@ contains
     !> auxiliary variable
     integer :: iGeo
 
-    do iGeo = 1, size(features%features)
-      call mpifx_bcast(comm, features%features(iGeo)%array)
+    do iGeo = 1, size(this%features)
+      call mpifx_bcast(comm, this%features(iGeo)%array)
     end do
 
-    if (allocated(features%validFeatures)) then
-      do iGeo = 1, size(features%validFeatures)
-        call mpifx_bcast(comm, features%validFeatures(iGeo)%array)
+    if (allocated(this%validFeatures)) then
+      do iGeo = 1, size(this%validFeatures)
+        call mpifx_bcast(comm, this%validFeatures(iGeo)%array)
       end do
     end if
 
-  end subroutine syncFeatures
+  end subroutine TFeatures_sync
 #:endif
 
 
-  !> calculates the total number of network fitting parameters per sub-nn
+  !> Calculates the total number of parameters per sub-network.
   pure function getNumberOfParameters(allDims) result(nSubNnParams)
 
     !> number of nodes per layer, including in- and output, expected shape: [nHiddenLayer + 2]
@@ -1633,7 +1657,7 @@ contains
   end function getNumberOfParameters
 
 
-  !> calculates the total number of atoms in a list of geometries
+  !> Calculates the total number of atoms in a list of geometry instances.
   pure function getTotalNumberOfAtoms(geos) result(nTotalAtoms)
 
     !> contains the geometry information
@@ -1654,24 +1678,28 @@ contains
   end function getTotalNumberOfAtoms
 
 
-  !> calculates the number of targets per sub-network parameters
-  subroutine calcTargetsPerParam(this)
+  !> Calculates the number of targets per sub-network parameter.
+  subroutine calcTargetsPerParam(data, nSubNnParams)
 
-    !> container of program variables
-    class(TProgramVariables), intent(inout) :: this
+    !> representation of dataset information
+    type(TData), intent(inout) :: data
+
+    !> number of network paramaters (weights + biases) per sub-nn
+    integer, intent(in) :: nSubNnParams
 
     ! calculate number of targets per network parameter
-    if (this%data%tAtomicTargets) then
-      this%data%nTargetsPerParam = real(this%data%nTargets * this%data%nTotalAtoms, dp) /&
-          & real(this%data%nSpecies * this%arch%nSubNnParams , dp)
+    if (data%tAtomicTargets) then
+      data%nTargetsPerParam = real(data%nTargets * data%nTotalAtoms, dp) /&
+          & real(data%nSpecies * nSubNnParams , dp)
     else
-      this%data%nTargetsPerParam = real(this%data%nTargets * this%data%nDatapoints, dp) /&
-          & real(this%data%nSpecies * this%arch%nSubNnParams, dp)
+      data%nTargetsPerParam = real(data%nTargets * data%nDatapoints, dp) /&
+          & real(data%nSpecies * nSubNnParams, dp)
     end if
 
   end subroutine calcTargetsPerParam
 
 
+  !> Set the user defined loss function type.
   subroutine TTraining_setLossFunc(this, descriptor)
 
     !> data type containing variables of the Training block
@@ -1707,84 +1735,82 @@ contains
   end subroutine TTraining_setLossFunc
 
 
-  !> establish convenient index mappings
-  subroutine TProgramVariables_getIndexMappings(this)
+  !> Establishes convenient index mappings.
+  subroutine TData_getIndexMappings(this)
 
-    !> container of program variables
-    class(TProgramVariables), intent(inout) :: this
+    !> representation of dataset information
+    class(TData), intent(inout) :: this
 
     !> auxiliary variables
     integer :: iGeo, iSp, iAtom, localSp, ind
 
-    allocate(this%data%globalSpNames(1))
-    this%data%globalSpNames(1) = this%data%geos(1)%speciesNames(1)
+    allocate(this%globalSpNames(1))
+    this%globalSpNames(1) = this%geos(1)%speciesNames(1)
 
-    allocate(this%data%localSpToGlobalSp(this%data%nDatapoints))
-    if (this%data%tMonitorValid) then
+    allocate(this%localSpToGlobalSp(this%nDatapoints))
+    if (this%tMonitorValid) then
 
     end if
 
     ind = 1
 
-    do iGeo = 1, this%data%nDatapoints
-      allocate(this%data%localSpToGlobalSp(iGeo)%array(this%data%geos(iGeo)%nSpecies))
-      do iSp = 1, this%data%geos(iGeo)%nSpecies
-        if (.not. any(this%data%globalSpNames .eq. this%data%geos(iGeo)%speciesNames(iSp))) then
-          this%data%globalSpNames = [this%data%globalSpNames,&
-              & this%data%geos(iGeo)%speciesNames(iSp)]
+    do iGeo = 1, this%nDatapoints
+      allocate(this%localSpToGlobalSp(iGeo)%array(this%geos(iGeo)%nSpecies))
+      do iSp = 1, this%geos(iGeo)%nSpecies
+        if (.not. any(this%globalSpNames .eq. this%geos(iGeo)%speciesNames(iSp))) then
+          this%globalSpNames = [this%globalSpNames, this%geos(iGeo)%speciesNames(iSp)]
           ind = ind + 1
         end if
         ! work around the findloc intrinsic
-        ! this%data%localSpToGlobalSp(iGeo)%array(iSp) = findloc(this%data%globalSpNames,&
-        !     & this%data%geos(iGeo)%speciesNames(iSp), dim=1)
-        this%data%localSpToGlobalSp(iGeo)%array(iSp) = myFindloc(this%data%globalSpNames,&
-            & this%data%geos(iGeo)%speciesNames(iSp))
+        ! this%localSpToGlobalSp(iGeo)%array(iSp) = findloc(this%globalSpNames,&
+        !     & this%geos(iGeo)%speciesNames(iSp), dim=1)
+        this%localSpToGlobalSp(iGeo)%array(iSp) = myFindloc(this%globalSpNames,&
+            & this%geos(iGeo)%speciesNames(iSp))
       end do
     end do
 
-    this%data%nSpecies = ind
+    this%nSpecies = ind
 
-    if (this%data%tMonitorValid) then
-      allocate(this%data%localValidSpToGlobalSp(this%data%nValidDatapoints))
-      do iGeo = 1, this%data%nValidDatapoints
-        allocate(this%data%localValidSpToGlobalSp(iGeo)%array(this%data%validGeos(iGeo)%nSpecies))
-        do iSp = 1, this%data%validGeos(iGeo)%nSpecies
+    if (this%tMonitorValid) then
+      allocate(this%localValidSpToGlobalSp(this%nValidDatapoints))
+      do iGeo = 1, this%nValidDatapoints
+        allocate(this%localValidSpToGlobalSp(iGeo)%array(this%validGeos(iGeo)%nSpecies))
+        do iSp = 1, this%validGeos(iGeo)%nSpecies
           ! work around the findloc intrinsic
-          ! this%data%localValidSpToGlobalSp(iGeo)%array(iSp) = findloc(this%data%globalSpNames,&
-          !     & this%data%validGeos(iGeo)%speciesNames(iSp), dim=1)
-          this%data%localValidSpToGlobalSp(iGeo)%array(iSp) = myFindloc(this%data%globalSpNames,&
-              & this%data%validGeos(iGeo)%speciesNames(iSp))
+          ! this%localValidSpToGlobalSp(iGeo)%array(iSp) = findloc(this%globalSpNames,&
+          !     & this%validGeos(iGeo)%speciesNames(iSp), dim=1)
+          this%localValidSpToGlobalSp(iGeo)%array(iSp) = myFindloc(this%globalSpNames,&
+              & this%validGeos(iGeo)%speciesNames(iSp))
         end do
       end do
     end if
 
-    allocate(this%data%localAtToGlobalSp(this%data%nDatapoints))
+    allocate(this%localAtToGlobalSp(this%nDatapoints))
 
-    do iGeo = 1, this%data%nDatapoints
-      allocate(this%data%localAtToGlobalSp(iGeo)%array(this%data%geos(iGeo)%nAtom))
-      do iAtom = 1, this%data%geos(iGeo)%nAtom
-        localSp = this%data%geos(iGeo)%species(iAtom)
-        this%data%localAtToGlobalSp(iGeo)%array(iAtom) =&
-            & this%data%localSpToGlobalSp(iGeo)%array(localSp)
+    do iGeo = 1, this%nDatapoints
+      allocate(this%localAtToGlobalSp(iGeo)%array(this%geos(iGeo)%nAtom))
+      do iAtom = 1, this%geos(iGeo)%nAtom
+        localSp = this%geos(iGeo)%species(iAtom)
+        this%localAtToGlobalSp(iGeo)%array(iAtom) = this%localSpToGlobalSp(iGeo)%array(localSp)
       end do
     end do
 
-    if (this%data%tMonitorValid) then
-      allocate(this%data%localValidAtToGlobalSp(this%data%nValidDatapoints))
-      do iGeo = 1, this%data%nValidDatapoints
-        allocate(this%data%localValidAtToGlobalSp(iGeo)%array(this%data%validGeos(iGeo)%nAtom))
-        do iAtom = 1, this%data%validGeos(iGeo)%nAtom
-          localSp = this%data%validGeos(iGeo)%species(iAtom)
-          this%data%localValidAtToGlobalSp(iGeo)%array(iAtom) =&
-              & this%data%localValidSpToGlobalSp(iGeo)%array(localSp)
+    if (this%tMonitorValid) then
+      allocate(this%localValidAtToGlobalSp(this%nValidDatapoints))
+      do iGeo = 1, this%nValidDatapoints
+        allocate(this%localValidAtToGlobalSp(iGeo)%array(this%validGeos(iGeo)%nAtom))
+        do iAtom = 1, this%validGeos(iGeo)%nAtom
+          localSp = this%validGeos(iGeo)%species(iAtom)
+          this%localValidAtToGlobalSp(iGeo)%array(iAtom) =&
+              & this%localValidSpToGlobalSp(iGeo)%array(localSp)
         end do
       end do
     end if
 
-  end subroutine TProgramVariables_getIndexMappings
+  end subroutine TData_getIndexMappings
 
 
-  !> several assertions to check input consistency
+  !> Check input consistency by evaluating several assertions.
   subroutine TProgramVariables_checkInputConsistency(this)
 
     !> instance containing program variables
@@ -1877,7 +1903,7 @@ contains
   end subroutine TProgramVariables_checkInputConsistency
 
 
-  !> prints the greeting message of Fortnet to stdout
+  !> Prints the greeting message of Fortnet to standard output.
   subroutine printFortnetHeader(release, year)
 
     !> release version of the code
@@ -1902,6 +1928,7 @@ contains
   end subroutine printFortnetHeader
 
 
+  !> Prints date and time information to standard output.
   subroutine printDateAndTime()
 
     !> Current date
@@ -1919,6 +1946,5 @@ contains
     write(stdout, '(8A)') 'time: ', time(1:2), ':', time(3:4), ':', date(5:6), ', ', zone
 
   end subroutine printDateAndTime
-
 
 end module fnet_initprogram

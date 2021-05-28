@@ -159,10 +159,11 @@ contains
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
 
+    allocate(weighting(size(predicts%sys)))
+
     if (present(weights)) then
-      weighting = weights
+      weighting(:) = weights
     else
-      allocate(weighting(size(predicts%sys)))
       weighting(:) = 1
     end if
 
@@ -206,10 +207,11 @@ contains
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
 
+    allocate(weighting(size(predicts%sys)))
+
     if (present(weights)) then
-      weighting = weights
+      weighting(:) = weights
     else
-      allocate(weighting(size(predicts%sys)))
       weighting(:) = 1
     end if
 
@@ -253,10 +255,11 @@ contains
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
 
+    allocate(weighting(size(predicts%sys)))
+
     if (present(weights)) then
-      weighting = weights
+      weighting(:) = weights
     else
-      allocate(weighting(size(predicts%sys)))
       weighting(:) = 1
     end if
 
@@ -300,10 +303,11 @@ contains
     !> auxiliary variables
     integer :: iSys, iAtom, nValues
 
+    allocate(weighting(size(predicts%sys)))
+
     if (present(weights)) then
-      weighting = weights
+      weighting(:) = weights
     else
-      allocate(weighting(size(predicts%sys)))
       weighting(:) = 1
     end if
 

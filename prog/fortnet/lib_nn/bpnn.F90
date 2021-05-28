@@ -432,9 +432,6 @@ contains
     !> temporary output storage of sub-nn's
     real(dp), allocatable :: tmpOut(:)
 
-    !> temporary real valued storage
-    real(dp), allocatable :: globalPredicts(:)
-
     !> auxiliary variable
     integer :: iAtom, iGlobalSp, iLayer
 
@@ -452,16 +449,17 @@ contains
 
     ! calculate absolute deviation between predictions and targets
     if (.not. tAtomic) then
-      globalPredicts = sum(predicts, dim=2)
+      ! globalPredicts = sum(predicts, dim=2)
       allocate(deviation(size(predicts, dim=1), size(input, dim=2)))
       do iAtom = 1, size(input, dim=2)
-        deviation(:, iAtom) = globalPredicts - targets(:, 1)
+        deviation(:, iAtom) = sum(predicts, dim=2) - targets(:, 1)
       end do
       deallocate(predicts)
       allocate(predicts(size(targets, dim=1), 1))
-      predicts(:, 1) = globalPredicts
+      predicts(:, 1) = sum(predicts, dim=2)
     else
-      deviation = predicts - targets
+      allocate(deviation, source=predicts)
+      deviation(:,:) = predicts - targets
     end if
 
     ! collect gradients and normalize them by atom number

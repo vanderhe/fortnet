@@ -63,6 +63,8 @@ contains
       call error('Empty list of entries obtained. Provide at least one array with data.')
     end if
 
+    fmt = '(I' // i2c(len(i2c(nLines))) // ',3ES26.16E3)'
+
     nColumns = 0
     allocate(pData(nColumns, nLines))
 
@@ -96,8 +98,6 @@ contains
     end if
 
     open(newunit=fd, file=fname, form='formatted', status='replace', action='write')
-
-    fmt = '(I' // i2c(len(i2c(nLines))) // ',3ES26.16E3)'
 
     do iLine = 1, nLines
       write(fd, fmt) iLine, pData(:, iLine)
