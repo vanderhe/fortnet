@@ -505,10 +505,12 @@ contains
     !> auxiliary variables
     integer :: iSys, iStart, iEnd
 
+    allocate(atomIdentifier(size(geos)))
+    allocate(weighting(size(geos)))
+
     if (present(atomIds)) then
-      atomIdentifier = atomIds
+      atomIdentifier(:) = atomIds
     else
-      allocate(atomIdentifier(size(geos)))
       do iSys = 1, size(geos)
         allocate(atomIdentifier(iSys)%array(geos(iSys)%nAtom))
         atomIdentifier(iSys)%array(:) = 1.0_dp
@@ -516,9 +518,8 @@ contains
     end if
 
     if (present(weights)) then
-      weighting = weights
+      weighting(:) = weights
     else
-      allocate(weighting(size(geos)))
       weighting(:) = 1
     end if
 

@@ -11,7 +11,6 @@ program fortnet
 
 #:if WITH_MPI
   use fnet_mpifx
-  use fnet_initprogram, only : syncFeatures
 #:endif
 
   use dftbp_accuracy, only : dp
@@ -122,7 +121,8 @@ contains
     select case(prog%option%mode)
     case ('train')
       if (prog%option%tReadNetStats) then
-        call readAcsfFromFile(prog, acsfFile)
+        call readAcsfFromFile(prog%mapping, prog%acsf, acsfFile, prog%data%globalSpNames,&
+            & prog%data%nSpecies)
         call bpnn%fromFile(prog)
       else
         call TAcsf_init(prog%acsf, prog%mapping%nRadial, prog%mapping%nAngular, prog%mapping%rCut,&
@@ -133,12 +133,13 @@ contains
             & activation=prog%arch%activation)
       end if
     case ('validate', 'predict')
-      call readAcsfFromFile(prog, acsfFile)
+      call readAcsfFromFile(prog%mapping, prog%acsf, acsfFile, prog%data%globalSpNames,&
+          & prog%data%nSpecies)
       call bpnn%fromFile(prog)
     end select
 
     call bpnn%serializedWeightsAndBiases(weightsAndBiases)
-    call initOptimizer(prog, weightsAndBiases)
+    call initOptimizer(prog%train, weightsAndBiases)
 
     write(stdout, '(A,/)') repeat('-', 80)
 
@@ -356,7 +357,7 @@ contains
     end if
 
   #:if WITH_MPI
-    call syncFeatures(features, env%globalMpiComm)
+    call features%sync(env%globalMpiComm)
   #:endif
 
     deallocate(data%geos)
