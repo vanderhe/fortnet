@@ -13,7 +13,7 @@ module fnet_bpnn
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
 
-  use fnet_initprogram, only : TProgramvariables
+  use fnet_initprogram, only : TProgramvariables, TEnv
   use fnet_nestedtypes, only : TRealArray1D, TRealArray2D, TMultiLayerStruc, TMultiLayerStruc_init
   use fnet_nestedtypes, only : TBiasDerivs, TWeightDerivs, TDerivs, TDerivs_init
   use fnet_nestedtypes, only : TIntArray1D, TPredicts, TPredicts_init
@@ -177,9 +177,11 @@ contains
         call removeZscore(resPredicts, prog%data%zPrec)
       end if
       tmpLoss(1) = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
-      if (prog%data%tMonitorValid) then
-        validPredicts = this%predictBatch(prog%features%validFeatures,&
-            & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+    end if
+    if (prog%data%tMonitorValid) then
+      validPredicts = this%predictBatch(prog%features%validFeatures, prog%env,&
+          & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+      if (tLead) then
         tmpValidLoss(1) = prog%train%loss(validPredicts, prog%data%validTargets)
       end if
     end if
@@ -206,9 +208,11 @@ contains
           call removeZscore(resPredicts, prog%data%zPrec)
         end if
         tmpLoss(iIter) = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
-        if (prog%data%tMonitorValid) then
-          validPredicts = this%predictBatch(prog%features%validFeatures,&
-              & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+      end if
+      if (prog%data%tMonitorValid) then
+        validPredicts = this%predictBatch(prog%features%validFeatures, prog%env,&
+            & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+        if (tLead) then
           tmpValidLoss(iIter) = prog%train%loss(validPredicts, prog%data%validTargets)
         end if
       end if
@@ -432,6 +436,9 @@ contains
     !> temporary output storage of sub-nn's
     real(dp), allocatable :: tmpOut(:)
 
+    !> temporary real valued storage
+    real(dp), allocatable :: globalPredicts(:)
+
     !> auxiliary variable
     integer :: iAtom, iGlobalSp, iLayer
 
@@ -449,14 +456,14 @@ contains
 
     ! calculate absolute deviation between predictions and targets
     if (.not. tAtomic) then
-      ! globalPredicts = sum(predicts, dim=2)
+      globalPredicts = sum(predicts, dim=2)
       allocate(deviation(size(predicts, dim=1), size(input, dim=2)))
       do iAtom = 1, size(input, dim=2)
-        deviation(:, iAtom) = sum(predicts, dim=2) - targets(:, 1)
+        deviation(:, iAtom) = globalPredicts - targets(:, 1)
       end do
       deallocate(predicts)
       allocate(predicts(size(targets, dim=1), 1))
-      predicts(:, 1) = sum(predicts, dim=2)
+      predicts(:, 1) = globalPredicts
     else
       allocate(deviation, source=predicts)
       deviation(:,:) = predicts - targets
@@ -649,23 +656,27 @@ contains
       atomicOut(:, iAtom) = this%nets(iGlobalSp)%iPredict(input(:, iAtom))
     end do
 
-    if (.not. tAtomic) then
+    if (tAtomic) then
+      output = atomicOut
+    else
       allocate(output(nOutput, 1))
       output(:, 1) = sum(atomicOut, dim=2)
-    else
-      output = atomicOut
     end if
 
   end function TBpnn_iPredict
 
 
-  function TBpnn_predictBatch(this, features, localAtToGlobalSp, tAtomic, zPrec) result(predicts)
+  function TBpnn_predictBatch(this, features, env, localAtToGlobalSp, tAtomic, zPrec)&
+      & result(resPredicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this
 
     !> atomic features as network input
     type(TRealArray2D), intent(in) :: features(:)
+
+    !> if compiled with mpi enabled, contains mpi communicator
+    type(TEnv), intent(in) :: env
 
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
@@ -677,21 +688,69 @@ contains
     real(dp), intent(in), optional :: zPrec(:,:)
 
     !> network predictions during the training
-    type(TPredicts) :: predicts
+    type(TPredicts) :: predicts, resPredicts
 
-    !> auxiliary variable
-    integer :: iSys
+    !> true, if current process is the lead
+    logical :: tLead
+
+    !> auxiliary variables
+    integer :: iSys, iStart, iEnd
+
+  #:if WITH_MPI
+    tLead = env%globalMpiComm%lead
+    call getStartAndEndIndex(size(features), env%globalMpiComm%size, env%globalMpiComm%rank,&
+        & iStart, iEnd)
+  #:else
+    tLead = .true.
+    iStart = 1
+    iEnd = size(features)
+  #:endif
 
     allocate(predicts%sys(size(features)))
 
-    do iSys = 1, size(features)
-      predicts%sys(iSys)%array = this%iPredict(features(iSys)%array, localAtToGlobalSp(iSys)%array,&
-          & tAtomic)
+    if (tAtomic) then
+      do iSys = 1, size(features)
+        allocate(predicts%sys(iSys)%array(this%dims(size(this%dims)),&
+            & size(features(iSys)%array, dim=2)))
+        predicts%sys(iSys)%array(:,:) = 0.0_dp
+      end do
+    else
+      do iSys = 1, size(features)
+        allocate(predicts%sys(iSys)%array(this%dims(size(this%dims)), 1))
+        predicts%sys(iSys)%array(:,:) = 0.0_dp
+      end do
+    end if
+
+    resPredicts = predicts
+
+    do iSys = iStart, iEnd
+      predicts%sys(iSys)%array(:,:) = this%iPredict(features(iSys)%array,&
+          & localAtToGlobalSp(iSys)%array, tAtomic)
     end do
 
-    if (present(zPrec)) then
-      call removeZscore(predicts, zPrec)
+  #:if WITH_MPI
+    do iSys = 1, size(features)
+      call mpifx_allreduce(env%globalMpiComm, predicts%sys(iSys)%array,&
+          & resPredicts%sys(iSys)%array, MPI_SUM)
+    end do
+  #:else
+    resPredicts = predicts
+  #:endif
+
+  #:if WITH_MPI
+    if (present(zPrec) .and. tLead) then
+      call removeZscore(resPredicts, zPrec)
     end if
+    if (present(zPrec)) then
+      do iSys = 1, size(features)
+        call mpifx_bcast(env%globalMpiComm, resPredicts%sys(iSys)%array)
+      end do
+    end if
+  #:else
+    if (present(zPrec)) then
+      call removeZscore(resPredicts, zPrec)
+    end if
+  #:endif
 
   end function TBpnn_predictBatch
 

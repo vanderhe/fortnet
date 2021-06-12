@@ -1000,12 +1000,23 @@ contains
     option%mode = tolower(unquote(char(strBuffer)))
 
     if ((trim(option%mode) == 'validate' .or. trim(option%mode) == 'predict') .and.&
+        & (option%tWriteIterTraj .eqv. .true.)) then
+      write(stdout, '(A)') ''
+      call warning('Running in validation or prediction mode does not produce an iteration'&
+          & //NEW_LINE('A')//'   trajectory. Overwriting user input...')
+      write(stdout, '(A)') ''
+      option%tWriteIterTraj = .false.
+      call setChildValue(node, 'WriteIterationTrajectory', option%tWriteIterTraj, replace=.true.)
+    end if
+
+    if ((trim(option%mode) == 'validate' .or. trim(option%mode) == 'predict') .and.&
         & (option%tReadNetStats .eqv. .false.)) then
       write(stdout, '(A)') ''
       call warning('Running in validation or prediction mode without initialising from'&
           & //NEW_LINE('A')//'   existing netstat files is not possible. Overwriting user input...')
       write(stdout, '(A)') ''
       option%tReadNetStats = .true.
+      call setChildValue(node, 'ReadNetStats', option%tReadNetStats, replace=.true.)
     end if
 
     call random_number(tmpRealSeed)
@@ -1849,7 +1860,7 @@ contains
       @:ASSERT(this%train%nSaveNet >= 1)
     end if
 
-    if (tolower(this%option%mode) == 'train' .and. (.not. this%option%tReadNetStats)) then
+    if ((tolower(this%option%mode) == 'train') .and. (.not. this%option%tReadNetStats)) then
       @:ASSERT(this%mapping%nRadial >= 0)
       @:ASSERT(this%mapping%nAngular >= 0)
       @:ASSERT(minval([this%mapping%nRadial, this%mapping%nAngular]) > 0)
@@ -1879,7 +1890,7 @@ contains
       @:ASSERT(minval(this%ext%extFeaturesInd) >= 0)
     end if
 
-    if (this%data%tMonitorValid) then
+    if ((tolower(this%option%mode) == 'train') .and. this%data%tMonitorValid) then
       @:ASSERT(this%data%nTargets == this%data%nValidTargets)
       @:ASSERT(this%data%nValidDatapoints >= 1)
       @:ASSERT(size(this%data%validGeos) >= 1)

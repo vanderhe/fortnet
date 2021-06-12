@@ -80,8 +80,7 @@ program fortnet
     call prog%acsf%toFile(acsfFile, prog%data%globalSpNames)
   end if
 
-  call runCore(prog%option, prog%ext, prog%data, bpnn, prog%features, prog%acsf,&
-      & prog%validAcsf, prog%train%lossType, prog%env, predicts)
+  call runCore(prog, predicts)
 
   if (tLead .and. (prog%option%mode == 'validate' .or. prog%option%mode == 'predict')) then
     call writeFnetout(fnetoutFile, prog%option%mode, prog%data%targets, predicts,&
@@ -285,34 +284,10 @@ contains
   end subroutine calculateMappings
 
 
-  subroutine runCore(option, ext, data, bpnn, features, acsf, validAcsf, lossType, env, predicts)
+  subroutine runCore(prog, predicts)
 
-    !> representation of option informations
-    type(TOption), intent(in) :: option
-
-    !> representation of external informations
-    type(TExternal), intent(inout) :: ext
-
-    !> representation of dataset informations
-    type(TData), intent(inout) :: data
-
-    !> Behler-Parrinello-Neural-Network instance
-    type(TBpnn), intent(inout) :: bpnn
-
-    !> collected features of data and mapping block
-    type(TFeatures), intent(inout) :: features
-
-    !> representation of acsf mapping informations
-    type(TAcsf), intent(inout) :: acsf
-
-    !> representation of acsf mapping informations
-    type(TAcsf), intent(inout) :: validAcsf
-
-    !> type of loss function to use
-    character(len=*), intent(in) :: lossType
-
-    !> if compiled with mpi enabled, contains mpi communicator
-    type(TEnv), intent(in) :: env
+    !> representation of program variables
+    type(TProgramVariables), intent(inout) :: prog
 
     !> obtained network predictions
     type(TPredicts), intent(out) :: predicts
@@ -347,48 +322,49 @@ contains
     tLead = .true.
   #:endif
 
-    call TFeatures_init(features, nFeatures, data, ext, acsf, validAcsf)
+    call TFeatures_init(prog%features, nFeatures, prog%data, prog%ext, prog%acsf, prog%validAcsf)
 
     if (tLead) then
-      call TFeatures_collect(features, data, ext, acsf, validAcsf)
+      call TFeatures_collect(prog%features, prog%data, prog%ext, prog%acsf, prog%validAcsf)
       if (bpnn%dims(1) /= nFeatures) then
         call error('Mismatch in number of features and BPNN input nodes.')
       end if
     end if
 
   #:if WITH_MPI
-    call features%sync(env%globalMpiComm)
+    call prog%features%sync(prog%env%globalMpiComm)
   #:endif
 
-    deallocate(data%geos)
-    deallocate(acsf%vals%vals)
+    deallocate(prog%data%geos)
+    deallocate(prog%acsf%vals%vals)
 
-    if (ext%tExtFeatures) then
-      deallocate(ext%extFeatures)
+    if (prog%ext%tExtFeatures) then
+      deallocate(prog%ext%extFeatures)
     end if
 
-    if (data%tMonitorValid) then
-      deallocate(data%validGeos)
-      deallocate(validAcsf%vals%vals)
-      if (ext%tExtFeatures) then
-        deallocate(ext%extValidFeatures)
+    if (prog%data%tMonitorValid) then
+      deallocate(prog%data%validGeos)
+      deallocate(prog%validAcsf%vals%vals)
+      if (prog%ext%tExtFeatures) then
+        deallocate(prog%ext%extValidFeatures)
       end if
     end if
 
-    select case(option%mode)
+    select case(prog%option%mode)
     case ('train')
       write(stdOut, '(A,/)') 'Starting training...'
-      if (data%tMonitorValid) then
-        write(stdOut, '(A11,6X,A13,6X,A13,6X,A13)') 'iTrain', toupper(lossType) // '-Loss',&
-            & 'Gradients', toupper(lossType) // '-V-Loss'
+      if (prog%data%tMonitorValid) then
+        write(stdOut, '(A11,6X,A13,6X,A13,6X,A13)') 'iTrain', toupper(prog%train%lossType) //&
+            & '-Loss', 'Gradients', toupper(prog%train%lossType) // '-V-Loss'
       else
-        write(stdOut, '(A11,6X,A13,6X,A13)') 'iTrain', toupper(lossType) // '-Loss', 'Gradients'
+        write(stdOut, '(A11,6X,A13,6X,A13)') 'iTrain', toupper(prog%train%lossType) //&
+            & '-Loss', 'Gradients'
       end if
       write(stdout, '(A)') repeat('-', 68)
       call bpnn%nTrain(prog, tConverged, loss=loss, validLoss=validLoss, gradients=gradients)
-      if (option%tWriteIterTraj .and. data%tMonitorValid) then
+      if (prog%option%tWriteIterTraj .and. prog%data%tMonitorValid) then
         call writeIterTrajToFile(iteroutFile, loss=loss, validLoss=validLoss, gradients=gradients)
-      elseif (option%tWriteIterTraj .and. (.not. data%tMonitorValid)) then
+      elseif (prog%option%tWriteIterTraj .and. (.not. prog%data%tMonitorValid)) then
         call writeIterTrajToFile(iteroutFile, loss=loss, gradients=gradients)
       end if
       write(stdout, '(A,/)') repeat('-', 68)
@@ -401,7 +377,7 @@ contains
       write(stdOut, '(A,/)') 'Loss Analysis (global min.)'
       iMin = minloc(loss, dim=1)
       write(stdOut, '(A,I0,A,(ES12.6E2))') 'iTrain: ', iMin, ', Loss: ', loss(iMin)
-      if (data%tMonitorValid) then
+      if (prog%data%tMonitorValid) then
         iValidMin = minloc(validLoss, dim=1)
         write(stdOut, '(A,I0,A,(ES12.6E2),/)') 'iTrain: ', iValidMin, ', V-Loss: ',&
             & validLoss(iValidMin)
@@ -411,7 +387,7 @@ contains
       write(stdout, '(A,/)') repeat('-', 68)
     case ('validate')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      predicts = bpnn%predictBatch(prog%features%features, prog%data%localAtToGlobalSp,&
+      predicts = bpnn%predictBatch(prog%features%features, prog%env, prog%data%localAtToGlobalSp,&
           & prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
       write(stdOut, '(A,/)') 'done'
       write(stdout, '(A,/)') repeat('-', 80)
@@ -429,7 +405,7 @@ contains
       write(stdout, '(A,/)') repeat('-', 80)
     case ('predict')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      predicts = bpnn%predictBatch(prog%features%features, prog%data%localAtToGlobalSp,&
+      predicts = bpnn%predictBatch(prog%features%features, prog%env, prog%data%localAtToGlobalSp,&
           & prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
       write(stdOut, '(A,/)') 'done'
       write(stdout, '(A,/)') repeat('-', 80)
