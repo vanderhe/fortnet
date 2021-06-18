@@ -45,7 +45,8 @@ Root Mean Square Error
 .. math::
 
   \begin{align*}
-  C = \sqrt{\frac{1}{N}\sum_{i=1}^N \left(y_i^\mathrm{ref} - y_i^\mathrm{nn}\right)^2}
+  C = \sqrt{\frac{1}{N}\sum_{i=1}^N \Big(y_i^\mathrm{ref} -
+  y_i^\mathrm{nn}\Big)^2}
   \end{align*}
 
 ::
@@ -79,8 +80,8 @@ Mean Absolute Percentage Error
 .. math::
 
   \begin{align*}
-  C = \frac{100}{N}\sum_{i=1}^N \left|\frac{y_i^\mathrm{ref} - y_i^\mathrm{nn}}
-  {y_i^\mathrm{ref}}\right|
+  C = \frac{100}{N}\sum_{i=1}^N \Bigg|\frac{y_i^\mathrm{ref} - y_i^\mathrm{nn}}
+  {y_i^\mathrm{ref}}\Bigg|
   \end{align*}
 
 ::
