@@ -47,7 +47,7 @@ follows::
     MaxDisplacement = 5e-02
     LineMin = Yes
     Memory = 1000
-    Loss = 'rms'
+    Loss = 'mse'
   }
 
   Data {
@@ -140,7 +140,7 @@ Training
     MaxDisplacement = 5e-02
     LineMin = Yes
     Memory = 1000
-    Loss = 'rms'
+    Loss = 'mse'
   }
 
 To successively optimize the weight and bias network parameters during the
