@@ -27,12 +27,15 @@ input/speciesids/validate
 
 input/weighting/acsfPrec/contiguous
 input/weighting/acsfPrec/noncontiguous
+input/weighting/noPrec/contiguous
+input/weighting/noPrec/noncontiguous
 input/weighting/targetPrec/contiguous
 input/weighting/targetPrec/noncontiguous
 input/weighting/validate
 input/weighting/predict
 
 loss/mae
+loss/mape
 loss/mse
 loss/rms
 

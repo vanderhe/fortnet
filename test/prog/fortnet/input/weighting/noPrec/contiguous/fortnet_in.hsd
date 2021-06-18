@@ -10,7 +10,7 @@ Mapping = ACSF {
   NRadial = 5
   NAngular = 4
   RCut = 4.0
-  Standardization = Yes
+  Standardization = No
 
 }
 
@@ -23,6 +23,7 @@ Training = SD {
   MinDisplacement = 1e-10
   MaxDisplacement = 5e-02
   LearningRate = 0.01
+  Loss = 'rms'
 
 }
 

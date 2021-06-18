@@ -8,6 +8,7 @@ Training = LBFGS {
   MaxDisplacement = 5e-02
   Memory = 1
   Linemin = Yes
+  Loss = 'rms'
 
 }
 
