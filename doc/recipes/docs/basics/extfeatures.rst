@@ -40,7 +40,7 @@ with from the previous sections::
     NSaveNet = 1000
     MinDisplacement = 1e-10
     MaxDisplacement = 5e-02
-    Loss = 'rms'
+    Loss = 'mse'
   }
 
   Data {

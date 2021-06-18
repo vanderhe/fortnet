@@ -13,7 +13,7 @@ Fortnet implements the following functions:
   - mean squared loss (mse)
   - root mean square loss (rms)
   - mean absolute loss (mae)
-  - mean squared logarithmic loss (msle)
+  - mean absolute percentage loss (mape)
 
 The loss function used during the training is selected in the ``Training`` block
 of the HSD input. The functions and an associated, exemplary training block, are
@@ -21,7 +21,7 @@ listed below, assuming a dataset of :math:`N` targets :math:`y_i^\mathrm{ref}`
 and network predictions :math:`y_i^\mathrm{nn}`.
 
 .. note::
-   The default loss function is the root mean squared error (``rms``). 
+   The default loss function is the mean squared error (``mse``). 
 
 Mean Squared Error
 ==================
@@ -74,13 +74,13 @@ Mean Absolute Error
     Loss = 'mae'
   }
 
-Mean Squared Logarithmic Error
+Mean Absolute Percentage Error
 ==============================
 .. math::
 
   \begin{align*}
-  C = \frac{1}{N}\sum_{i=1}^N \left(\log\left(y_i^\mathrm{ref} + 1\right)
-  - \log\left(y_i^\mathrm{nn} + 1\right)\right)^2
+  C = \frac{100}{N}\sum_{i=1}^N \left|\frac{y_i^\mathrm{ref} - y_i^\mathrm{nn}}
+  {y_i^\mathrm{ref}}\right|
   \end{align*}
 
 ::
@@ -89,5 +89,5 @@ Mean Squared Logarithmic Error
         .
 	.
 	.
-    Loss = 'msle'
+    Loss = 'mape'
   }
