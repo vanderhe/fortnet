@@ -18,7 +18,7 @@ module fnet_bpnn
   use fnet_nestedtypes, only : TBiasDerivs, TWeightDerivs, TDerivs, TDerivs_init
   use fnet_nestedtypes, only : TIntArray1D, TPredicts, TPredicts_init
   use fnet_network, only : TNetwork, TNetwork_init
-  use fnet_loss, only : deviation
+  use fnet_loss, only : lossGradientFunc
   use fnet_optimizers, only : TOptimizer, next
 
 #:if WITH_MPI
@@ -307,7 +307,8 @@ contains
 
     lpSystem: do iSys = iStart, iEnd
       call this%sysTrain(prog%features%features(iSys)%array, prog%data%zTargets(iSys)%array,&
-          & prog%data%localAtToGlobalSp(iSys)%array, prog%data%tAtomicTargets, ddTmp, iPredict)
+          & prog%data%localAtToGlobalSp(iSys)%array, prog%data%tAtomicTargets, prog%train%lossgrad,&
+          & ddTmp, iPredict)
       ! collect outputs and gradients of the systems in range
       predicts%sys(iSys)%array(:,:) = iPredict
       do iGlobalSp = 1, size(this%nets)
@@ -396,7 +397,8 @@ contains
 #:endif
 
 
-  subroutine TBpnn_sysTrain(this, input, targets, localAtToGlobalSp, tAtomic, dd, predicts)
+  subroutine TBpnn_sysTrain(this, input, targets, localAtToGlobalSp, tAtomic, lossgrad, dd,&
+      & predicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -414,6 +416,9 @@ contains
     !> true, if network is trained on atomic properties
     logical, intent(in) :: tAtomic
 
+    !> procedure, pointing to the choosen loss function gradient
+    procedure(lossGradientFunc), intent(in), pointer :: lossgrad
+
     !> total weight and bias gradients of the current system
     type(TDerivs), intent(out) :: dd
 
@@ -430,8 +435,8 @@ contains
     !> temporary bias gradient storage of the current atom
     type(TBiasDerivs) :: dbTmp
 
-    !> calculated deviation, by comparison of predictions and targets
-    real(dp), allocatable :: deviation(:,:)
+    !> loss gradients w.r.t predictions and targets
+    real(dp), allocatable :: lossgrads(:,:)
 
     !> temporary output storage of sub-nn's
     real(dp), allocatable :: tmpOut(:)
@@ -454,26 +459,29 @@ contains
       predicts(:, iAtom) = tmpOut
     end do
 
-    ! calculate absolute deviation between predictions and targets
+    ! calculate lossgrads w.r.t predictions and targets
     if (.not. tAtomic) then
       globalPredicts = sum(predicts, dim=2)
-      allocate(deviation(size(predicts, dim=1), size(input, dim=2)))
+      allocate(lossgrads(size(predicts, dim=1), size(input, dim=2)))
       do iAtom = 1, size(input, dim=2)
-        deviation(:, iAtom) = globalPredicts - targets(:, 1)
+        ! lossgrads(:, iAtom) = globalPredicts - targets(:, 1)
+        lossgrads(:, iAtom) = reshape(lossgrad(reshape(globalPredicts, [size(globalPredicts), 1]),&
+            & targets), [size(globalPredicts)])
       end do
       deallocate(predicts)
       allocate(predicts(size(targets, dim=1), 1))
       predicts(:, 1) = globalPredicts
     else
-      allocate(deviation, source=predicts)
-      deviation(:,:) = predicts - targets
+      allocate(lossgrads, source=predicts)
+      ! lossgrads(:,:) = predicts - targets
+      lossgrads(:,:) = lossgrad(predicts, targets)
     end if
 
     ! collect gradients and normalize them by atom number
     do iAtom = 1, size(input, dim=2)
       iGlobalSp = localAtToGlobalSp(iAtom)
       this%nets(iGlobalSp)%layers = tmpLayer%struc(iAtom)%layers
-      call this%nets(iGlobalSp)%bprop(deviation(:, iAtom), dwTmp, dbTmp)
+      call this%nets(iGlobalSp)%bprop(lossgrads(:, iAtom), dwTmp, dbTmp)
       do iLayer = 1, size(this%dims)
         dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
             & dwTmp%dw(iLayer)%array / real(size(input, dim=2), dp)

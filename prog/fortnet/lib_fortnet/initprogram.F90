@@ -41,7 +41,8 @@ module fnet_initprogram
   use fnet_nestedtypes, only : TIntArray1D, TRealArray1D, TRealArray2D, TEnv
   use fnet_nestedtypes, only : TWrapSteepDesc, TWrapConjGrad, TWrapLbfgs, TWrapFire
   use fnet_workarounds, only : myFindloc
-  use fnet_loss, only : lossFunc, maLoss, msLoss, mslLoss, rmsLoss
+  use fnet_loss, only : lossFunc, maLoss, mapLoss, msLoss, rmsLoss
+  use fnet_loss, only : lossGradientFunc, maGradients, mapGradients, msGradients, rmsGradients
 
 #:if WITH_MPI
   use fnet_mpifx
@@ -143,6 +144,9 @@ module fnet_initprogram
 
     !> procedure, pointing to the choosen loss function
     procedure(lossFunc), pointer, nopass :: loss => null()
+
+    !> procedure, pointing to the choosen loss function gradient
+    procedure(lossGradientFunc), pointer, nopass :: lossgrad => null()
 
     !> gradient threshold where to stop the training, if provided
     real(dp) :: threshold
@@ -968,7 +972,7 @@ contains
     call getChildValue(node, 'NPrintout', train%nPrintOut, 10)
     call getChildValue(node, 'NSaveNet', train%nSaveNet, 100)
 
-    call getChildValue(node, 'Loss', strBuffer, 'rms')
+    call getChildValue(node, 'Loss', strBuffer, 'mse')
     call train%setLossFunc(tolower(trim(unquote(char(strBuffer)))))
 
   end subroutine readTraining
@@ -1723,23 +1727,28 @@ contains
 
       case('rms')
         this%loss => rmsLoss
+        this%lossgrad => rmsGradients
         this%lossType = 'rms'
 
       case('mae')
         this%loss => maLoss
+        this%lossgrad => maGradients
         this%lossType = 'mae'
+
+      case('mape')
+        this%loss => mapLoss
+        this%lossgrad => mapGradients
+        this%lossType = 'mape'
 
       case('mse')
         this%loss => msLoss
+        this%lossgrad => msGradients
         this%lossType = 'mse'
 
-      case('msle')
-        this%loss => mslLoss
-        this%lossType = 'msle'
-
       case default
-        this%loss => rmsLoss
-        this%lossType = 'rms'
+        this%loss => msLoss
+        this%lossgrad => msGradients
+        this%lossType = 'mse'
 
     end select
 
@@ -1850,7 +1859,7 @@ contains
     if (tolower(this%option%mode) == 'train') then
       associate (descriptor => this%train%lossType)
         @:ASSERT(descriptor == 'mse' .or. descriptor == 'rms' .or. descriptor == 'mae'&
-            & .or. descriptor == 'msle')
+            & .or. descriptor == 'mape')
       end associate
     end if
 

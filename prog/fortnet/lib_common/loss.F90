@@ -16,12 +16,13 @@ module fnet_loss
 
   private
 
-  public :: lossFunc
+  public :: lossFunc, lossGradientFunc
   public :: minError, maxError
-  public :: deviation, maLoss, msLoss, mslLoss, rmsLoss
+  public :: deviation, maLoss, mapLoss, msLoss, rmsLoss
+  public :: maGradients, mapGradients, msGradients, rmsGradients
 
 
-  interface
+  abstract interface
 
     pure function lossFunc(predicts, targets, weights) result(loss)
 
@@ -44,11 +45,28 @@ module fnet_loss
 
     end function lossFunc
 
+
+    pure function lossGradientFunc(predicts, targets) result(grads)
+
+      use dftbp_accuracy, only: dp
+
+      implicit none
+
+      !> neural network predictions
+      real(dp), intent(in) :: predicts(:,:)
+
+      !> target reference data
+      real(dp), intent(in) :: targets(:,:)
+
+      !> loss gradients w.r.t predictions and targets
+      real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
+
+    end function lossGradientFunc
+
   end interface
 
 
 contains
-
 
   !> simple deviation between predictions and targets
   pure function deviation(predicts, targets) result(dev)
@@ -60,11 +78,79 @@ contains
     real(dp), intent(in) :: targets(:)
 
     !> deviation of predictions, in comparison to targets
-    real(dp), allocatable :: dev(:)
+    real(dp) :: dev(size(targets))
 
-    dev = predicts - targets
+    dev(:) = predicts - targets
 
   end function deviation
+
+
+  !> mean absolute error derivation w.r.t predictions and targets
+  pure function maGradients(predicts, targets) result(grads)
+
+    !> neural network predictions
+    real(dp), intent(in) :: predicts(:,:)
+
+    !> target reference data
+    real(dp), intent(in) :: targets(:,:)
+
+    !> loss gradients w.r.t predictions and targets
+    real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
+
+    grads(:,:) = (predicts - targets) / abs(predicts - targets)
+
+  end function maGradients
+
+
+  !> mean absolute percentage error derivation w.r.t predictions and targets
+  pure function mapGradients(predicts, targets) result(grads)
+
+    !> neural network predictions
+    real(dp), intent(in) :: predicts(:,:)
+
+    !> target reference data
+    real(dp), intent(in) :: targets(:,:)
+
+    !> loss gradients w.r.t predictions and targets
+    real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
+
+    grads(:,:) = 100.0_dp * (predicts - targets) / (targets**2 * abs(predicts / targets - 1.0_dp))
+
+  end function mapGradients
+
+
+  !> mean squared error derivation w.r.t predictions and targets
+  pure function msGradients(predicts, targets) result(grads)
+
+    !> neural network predictions
+    real(dp), intent(in) :: predicts(:,:)
+
+    !> target reference data
+    real(dp), intent(in) :: targets(:,:)
+
+    !> loss gradients w.r.t predictions and targets
+    real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
+
+    grads(:,:) = 2.0_dp * (predicts - targets)
+
+  end function msGradients
+
+
+  !> root mean squared error derivation w.r.t predictions and targets
+  pure function rmsGradients(predicts, targets) result(grads)
+
+    !> neural network predictions
+    real(dp), intent(in) :: predicts(:,:)
+
+    !> target reference data
+    real(dp), intent(in) :: targets(:,:)
+
+    !> loss gradients w.r.t predictions and targets
+    real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
+
+    grads(:,:) = (predicts - targets) / (sqrt((predicts - targets)**2))
+
+  end function rmsGradients
 
 
   !> mean absolute loss function
@@ -82,6 +168,23 @@ contains
     loss = sum(abs(targets - predicts)) / real(size(predicts), dp)
 
   end function simpleMaLoss
+
+
+  !> mean absolute percentage loss function
+  pure function simpleMapLoss(predicts, targets) result(loss)
+
+    !> neural network predictions
+    real(dp), intent(in) :: predicts(:)
+
+    !> target reference data
+    real(dp), intent(in) :: targets(:)
+
+    !> summed mean absolute percentage loss of predictions, in comparison to targets
+    real(dp) :: loss
+
+    loss = 100.0_dp * sum(abs((targets - predicts) / targets)) / real(size(predicts), dp)
+
+  end function simpleMapLoss
 
 
   !> mean squared loss function
@@ -181,6 +284,54 @@ contains
     loss = loss / real(nValues, dp)
 
   end function maLoss
+
+
+  !> mean absolute percentage loss function
+  pure function mapLoss(predicts, targets, weights) result(loss)
+
+    !> neural network predictions
+    type(TPredicts), intent(in) :: predicts
+
+    !> target reference data
+    type(TRealArray2D), intent(in) :: targets(:)
+
+    !> optional weighting of individual datapoints
+    integer, intent(in), optional :: weights(:)
+
+    !> summed mean absolute percentage loss of predictions, in comparison to targets
+    real(dp) :: loss
+
+    !> temporary loss storage
+    real(dp) :: tmpLoss
+
+    !> weighting of individual datapoints
+    integer, allocatable :: weighting(:)
+
+    !> auxiliary variables
+    integer :: iSys, iAtom, nValues
+
+    allocate(weighting(size(predicts%sys)))
+
+    if (present(weights)) then
+      weighting(:) = weights
+    else
+      weighting(:) = 1
+    end if
+
+    loss = 0.0_dp
+    nValues = 0
+
+    do iSys = 1, size(predicts%sys)
+      do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+        tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+        nValues = nValues + weighting(iSys)
+      end do
+    end do
+
+    loss = loss / real(nValues, dp)
+
+  end function mapLoss
 
 
   !> mean squared loss function

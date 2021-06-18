@@ -170,13 +170,13 @@ contains
   end subroutine TNetwork_fprop
 
 
-  subroutine TNetwork_bprop(this, loss, dw, db)
+  subroutine TNetwork_bprop(this, lossgrad, dw, db)
 
     !> representation of a neural network
     class(TNetwork), intent(inout) :: this
 
-    !> loss, by comparison of predictions and targets
-    real(dp), intent(in) :: loss(:)
+    !> loss gradient, with respect to predictions and targets
+    real(dp), intent(in) :: lossgrad(:)
 
     !> weight gradients
     type(TWeightDerivs), intent(out) :: dw
@@ -195,7 +195,7 @@ contains
 
     nArrays = size(this%dims)
 
-    db%db(nArrays)%array = loss * this%layers(nArrays)%transferDeriv(this%layers(nArrays)%aarg)
+    db%db(nArrays)%array = lossgrad * this%layers(nArrays)%transferDeriv(this%layers(nArrays)%aarg)
     dw%dw(nArrays - 1)%array = matmul(reshape(this%layers(nArrays - 1)%aa,&
         & [this%dims(nArrays - 1), 1]), reshape(db%db(nArrays)%array, [1, this%dims(nArrays)]))
 
