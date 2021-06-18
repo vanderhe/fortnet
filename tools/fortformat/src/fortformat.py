@@ -487,7 +487,7 @@ def xml_append_geometry(root, data, frac):
     tmptag.text = ' '.join(data['uniquespecies'])
 
     tmptag = ET.SubElement(geotag, 'fractional')
-    if frac:
+    if frac and data['periodic']:
         tmptag.text = 'Yes'
     else:
         tmptag.text = 'No'
@@ -506,15 +506,13 @@ def xml_append_geometry(root, data, frac):
     tmptag = ET.SubElement(geotag, 'periodic')
     if data['periodic']:
         tmptag.text = 'Yes'
+        tmptag = ET.SubElement(geotag, 'latticevectors')
+        tmp = []
+        for ilatt in range(3):
+            tmp.append((3 * FLOATFMT).format((*data['basis'][ilatt, :])))
+            tmptag.text = NL + NL.join(tmp) + NL
     else:
         tmptag.text = 'No'
-
-    tmptag = ET.SubElement(geotag, 'latticevectors')
-
-    tmp = []
-    for ilatt in range(3):
-        tmp.append((3 * FLOATFMT).format((*data['basis'][ilatt, :])))
-    tmptag.text = NL + NL.join(tmp) + NL
 
     tmptag = ET.SubElement(geotag, 'coordinateorigin')
     tmptag.text = NL + (3 * FLOATFMT).format(*np.array((0.0, 0.0, 0.0))) + NL
