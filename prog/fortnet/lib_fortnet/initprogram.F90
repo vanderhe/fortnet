@@ -385,7 +385,7 @@ module fnet_initprogram
 
 
   !> program version
-  character(len=*), parameter :: version =  '0.1'
+  character(len=*), parameter :: version = '0.2'
 
   !> copyright year
   integer, parameter :: copyrightYear = 2021

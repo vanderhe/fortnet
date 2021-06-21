@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name='fortformat',
-    version='0.1',
+    version='0.2',
     description='Basic Fortnet Input Format Class',
     author='T. W. van der Heide',
     url='https://github.com/vanderhe/fortnet',
