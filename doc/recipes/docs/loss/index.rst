@@ -80,8 +80,8 @@ Mean Absolute Percentage Error
 .. math::
 
   \begin{align*}
-  C = \frac{100}{N}\sum_{i=1}^N \Bigg|\frac{y_i^\mathrm{ref} - y_i^\mathrm{nn}}
-  {y_i^\mathrm{ref}}\Bigg|
+  C = \frac{100}{N}\sum_{i=1}^N \frac{|y_i^\mathrm{ref} - y_i^\mathrm{nn}|}
+  {|y_i^\mathrm{ref}|}
   \end{align*}
 
 ::
