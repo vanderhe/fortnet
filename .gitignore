@@ -1,5 +1,6 @@
 *~
 *.bak
+*.sav
 *.pyc
 _gitmsg.saved.txt
 build

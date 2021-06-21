@@ -18,7 +18,6 @@ with:
 * running Fortnet,
 * analysing the results.
 
-
 Providing the Input
 ===================
 
@@ -163,14 +162,14 @@ current example of silicon unitcells the output will look similar to this::
     </atomic>
     <ntargets>1
     </ntargets>
-    <datapoint1> 67.889390359708301 67.890976152089621
+    <datapoint1> -8.9410369860070151 -8.9410608099999997
     </datapoint1>
-    <datapoint2> 66.892775628163193 66.891929951387567
+    <datapoint2> -9.6728586329604553 -9.6726054599999998
     </datapoint2>
           .
 	  .
 	  .
-    <datapoint25> 61.033038205156245 61.032172773337422
+    <datapoint25> -6.1023454811228177 -6.1019103399999999
     </datapoint25>
    </output>
   </fnetout>

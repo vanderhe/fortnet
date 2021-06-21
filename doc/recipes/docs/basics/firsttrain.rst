@@ -187,6 +187,16 @@ enables a dataset to be generated easily. To see how you get from the output
 files of your simulation package of choice to a Fortnet compatible dataset,
 please consult the :ref:`Generating a Dataset <sec-fnetdata>` section.
 
+Another useful feature is that the loss function of an external validation
+dataset, that is not included in the optimization prozess, can be monitored
+during training. To utilize this so-called validation-monitoring, e.g. for early
+stopping purposes, provide an additional pathfile via the ``Validset`` entry::
+
+  Data {
+       .
+    Validset = 'validation_data'
+  }
+
 In this case a file named `training_data` is present in the same folder as the
 ``fortnet_in.hsd`` input::
 
@@ -291,13 +301,13 @@ In the following, the standard output, gets broken down and explained piece by
 piece, in the order as it appears on the screen, starting with the header::
 
   |==============================================================================|
-  |  Fortnet - A BPNN Implementation, Version 0.1                                |
+  |  Fortnet - A BPNN Implementation, Version 0.2                                |
   |                                                                              |
   |  Copyright (C) 2020 - 2021  T. W. van der Heide                              |
   |==============================================================================|
 
-  date: 27.03.2021
-  time: 20:57:03, +0100
+  date: 21.06.2021
+  time: 09:13:06, +0200
 
 As you may have seen, nothing spectacular is happening here. Nevertheless, the
 version number as well as date and time of the binary execution can be important
@@ -316,7 +326,7 @@ file and carries out some basic consistency checks on the obtained parameters.
 Additionally the input as Fortnet sees and interprets it gets stored in the
 ``fortnet_pin.hsd`` file.
 
-You will also see a list of informationen from the HSD input, as printed below::
+You will also see a list of information from the HSD input, as printed below::
 
   Initialisation
 
@@ -328,7 +338,10 @@ You will also see a list of informationen from the HSD input, as printed below::
 
   Sub-NN Details
 
+  inputs: 9
   hidden layers: 2 2
+  outputs: 1
+
   activation: tanh
 
   --------------------------------------------------------------------------------
@@ -338,21 +351,29 @@ You will also see a list of informationen from the HSD input, as printed below::
   cutoff: 4.0000 Angstrom
   nr. of radial functions: 5
   nr. of angular functions: 4
+
+  species identifier: 
+  Si: 1.000000
+
+  atom id index: /
+
   Standardization: T
 
   --------------------------------------------------------------------------------
 
   Dataset Information
 
-  found: 25 geometries
+  found: 25 geometries (25 unique ones)
   in pathfile: training_data
-  targets per parameter: .6410
+  total sub-nn parameters: 29
+  targets per parameter: .8621
 
   --------------------------------------------------------------------------------
 
 The entry ``targets per parameter`` is of particular importance. Based on this
 ratio you can roughly deduce whether the selected network size is suitable
-regarding the dataset that was provided.
+regarding the dataset that was provided. It is calculated in terms of unique
+datapoints, by solely considering the unweighted geometry-target pairs.
 
 Up to this stage of binary execution, the input was parsed and the dataset read.
 The ``Calculating ACSF`` statement tells us, that Fortnet has started to map the
@@ -362,20 +383,31 @@ appears, this process is complete and the training process starts::
   Calculating ACSF...done
   Starting training...
 
-       iTrain               Loss          Gradients
+       iTrain           MSE-Loss          Gradients
   --------------------------------------------------------------------
-	1000        0.318759E-02       0.466689E-03
-	2000        0.237408E-02       0.397025E-03
-	3000        0.196746E-02       0.908079E-04
-	4000        0.148653E-02       0.260620E-03
-	5000        0.115861E-02       0.250412E-03
+	1000        0.186609E-04       0.145044E+00
+	2000        0.770420E-05       0.668376E-03
+	3000        0.405024E-05       0.307614E-03
+	4000        0.240987E-05       0.134383E-03
+	5000        0.119669E-05       0.836493E-04
   --------------------------------------------------------------------
 
   Training finished (max. Iterations reached)
 
-While the training process is running, the course of the loss function and the
-total gradient of the network parameters are printed regularly, depending on the
-``NPrintout`` setting of the ``Training`` block.
+  --------------------------------------------------------------------
+
+  Loss Analysis (global min.)
+
+  iTrain: 5000, Loss: 1.196695E-06
+
+  --------------------------------------------------------------------
+
+While the training process is running, the trajectory of the loss function and
+the total gradient of the network parameters are printed regularly, depending on
+the ``NPrintout`` setting of the ``Training`` block. In this case, the
+termination criterion is the maximum number of training iterations. After
+completion of the training, the iteration with the lowest loss value is written
+out. 
 
 Output Files
 ------------
