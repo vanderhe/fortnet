@@ -7,18 +7,23 @@
 
 #:include 'common.fypp'
 
+!> Implements Atom-centered Symmetry Functions to generate input features.
 module fnet_acsf
+
+  use h5lt
+  use hdf5
 
   use dftbp_accuracy, only: dp
   use dftbp_message, only : error
   use dftbp_constants, only: pi
-  use dftbp_globalenv, only : stdOut
+  use dftbp_charmanip, only : i2c, tolower
   use dftbp_typegeometry, only : TGeometry
   use dftbp_dynneighlist, only : TDynNeighList, TDynNeighList_init
   use dftbp_dynneighlist, only : TNeighIterator, TNeighIterator_init
 
-  use fnet_nestedtypes, only : TIntArray1D, TRealArray1D, TRealArray2D, TEnv
-  use fnet_workarounds, only : myFindloc
+  use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TEnv
+  use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
+  use fnet_hdf5fx, only : h5ltfx_read_dataset_double_f, h5ltfxmake_dataset_double_f
 
 #:if WITH_MPI
   use fnet_mpifx
@@ -29,54 +34,59 @@ module fnet_acsf
 
   private
 
-  public :: TAcsf, TAcsf_init, TAcsfParams_init, TMultiAcsfVals
+  public :: TAcsf, TAcsf_init, TMultiAcsfVals
+  public :: TGFunction, TGFunction_init, TGFunctions
 
 
-  type :: TG2Params
+  type :: TGFunction
 
-    !> width of Gaussians
-    real(dp) :: eta
+    !> type of function
+    character(len=2) :: type
 
-    !> centers of Gaussians
-    real(dp), allocatable :: rs(:)
+    !> cutoff radius, defining the sphere to search for neighboring atoms
+    real(dp) :: rCut
 
-  end type TG2Params
-
-
-  type :: TG3Params
-
-    !> kappa scaling for G3 function
+    !> kappa scaling
     real(dp) :: kappa
 
-  end type TG3Params
+    !> center of Gaussian
+    real(dp) :: rs
 
-
-  type :: TG4Params
-
-    !> width of Gaussians
+    !> width of Gaussian
     real(dp) :: eta
 
     !> lambda parameter of angular part
-    real(dp), allocatable :: lambda(:)
+    real(dp) :: lambda
 
-    !> parameter specifying angular resolution
-    real(dp), allocatable :: xi(:)
+    !> parameter of angular resolution
+    real(dp) :: xi
 
-  end type TG4Params
+    !> dataset index for atomIDs
+    integer :: atomId
+
+    !> atomic number for the species-resolved scheme
+    integer :: atomicNumbers(2)
+
+    !> true, if the instance is a radial function (G1, G2, G3)
+    logical :: tRadial
+
+    !> true, if the instance is an angular function (G4, G5)
+    logical :: tAngular
+
+  end type TGFunction
 
 
-  type :: TAcsfParams
+  type :: TGFunctions
 
-    !> parameters of G2 functions
-    type(TG2Params) :: g2
+    !> wrapper around multiple G-functions
+    type(TGFunction), allocatable :: func(:)
 
-    !> parameters of G3 functions
-    type(TG3Params) :: g3
+  contains
 
-    !> parameters of G4 functions
-    type(TG4Params) :: g4
+    procedure :: append => TGFunctions_append
+    procedure :: fromAutoScheme => TGFunctions_fromAutoScheme
 
-  end type TAcsfParams
+  end type TGFunctions
 
 
   type :: TMultiAcsfVals
@@ -89,23 +99,8 @@ module fnet_acsf
 
   type :: TAcsf
 
-    !> number of radial symmetry functions
-    integer :: nRadial
-
-    !> number of angular symmetry functions
-    integer :: nAngular
-
-    !> cutoff radius
-    real(dp) :: rcut
-
-    !> species dependent scaling parameters for cutoff function
-    real(dp), allocatable :: speciesIds(:)
-
-    !> real valued atom identifier, expected shape: [nDatapoints]
-    type(TRealArray1D), allocatable :: atomIds(:)
-
-    !> container for all ACSF function parameters
-    type(TAcsfParams) :: param
+    !> functions emerging from an automatic generation scheme
+    type(TGFunctions) :: gFunctions
 
     !> wrapper around multiple ACSF value instances
     type(TMultiAcsfVals) :: vals
@@ -124,6 +119,10 @@ module fnet_acsf
     procedure :: fromFile => TAcsf_fromFile
     procedure :: toFile => TAcsf_toFile
 
+  #:if WITH_MPI
+    procedure :: syncConfig => TAcsf_syncConfig
+  #:endif
+
   end type TAcsf
 
   !> Chunk size to use when obtaining neighbours dynamically via an iterator
@@ -133,38 +132,17 @@ module fnet_acsf
 
 contains
 
-
-  subroutine TAcsf_init(this, nRadial, nAngular, rcut, speciesIds, kk, tZscore)
+  !> Initialises an ACSF instance.
+  pure subroutine TAcsf_init(this, functions, tZscore)
 
     !> representation of ACSF mappings
-    type(TAcsf), intent(inout) :: this
+    type(TAcsf), intent(out) :: this
 
-    !> number of radial symmetry functions
-    integer, intent(in) :: nRadial
-
-    !> number of angular symmetry functions
-    integer, intent(in) :: nAngular
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> species dependent scaling parameters for cutoff function
-    real(dp), intent(in) :: speciesIds(:)
-
-    !> optional kappa parameter for G3 function
-    real(dp), intent(in), optional :: kk
+    !> wrapper around multiple G-functions
+    type(TGFunctions), intent(in) :: functions
 
     !> true, if z-score standardization should be applied
     logical, intent(in), optional :: tZscore
-
-    !> if present, equals given kappa value; otherwise 1.0
-    real(dp) :: kappa
-
-    if (present(kk)) then
-      kappa = kk
-    else
-      kappa = 1.0_dp
-    end if
 
     if (present(tZscore)) then
       this%tZscore = tZscore
@@ -172,137 +150,124 @@ contains
       this%tZscore = .false.
     end if
 
-    this%nRadial = nRadial
-    this%nAngular = nAngular
-    this%rcut = rcut
-    this%speciesIds = speciesIds
+    this%gFunctions = functions
 
   end subroutine TAcsf_init
 
 
-  subroutine TAcsf_toFile(this, fname, globalSpNames)
+  !> Initialises a single ACSF G-function (G1, G2, G3, G4 or G5).
+  subroutine TGFunction_init(this, type, rCut, kappa, rs, eta, lambda, xi, atomId)
 
-    !> representation of ACSF mappings
-    class(TAcsf), intent(in) :: this
+    !> representation of an ACSF function
+    type(TGFunction), intent(out) :: this
 
-    !> filename or path to save acsf parameters to
-    character(len=*), intent(in) :: fname
+    !> type of G-function (G1, G2, G3, G4, G5)
+    character(len=2), intent(in) :: type
 
-    !> contains (unique) species of all dataset geometries
-    character(len=*), intent(in) :: globalSpNames(:)
+    !> cutoff radius
+    real(dp), intent(in) :: rCut
 
-    !> unique fileunit
-    integer :: fd
+    !> kappa scaling
+    real(dp), intent(in), optional :: kappa
 
-    !> auxiliary variables
-    integer :: iAcsf, iSp
+    !> center of Gaussian
+    real(dp), intent(in), optional :: rs
 
-    open(newunit=fd, file=fname, form='formatted', status='replace', action='write')
+    !> width of Gaussian
+    real(dp), intent(in), optional :: eta
 
-    write(fd, '(ES26.16E3)') this%rCut
+    !> lambda parameter of angular part
+    real(dp), intent(in), optional :: lambda
 
-    write(fd, '(I26,ES26.16E3)') this%nRadial, this%param%g2%eta
-    do iAcsf = 1, this%nRadial
-      write(fd, '(ES26.16E3)') this%param%g2%rs(iAcsf)
-    end do
+    !> parameter of angular resolution
+    real(dp), intent(in), optional :: xi
 
-    write(fd, '(I26,ES26.16E3)') this%nAngular, this%param%g4%eta
-    do iAcsf = 1, this%nAngular
-      write(fd, '(2ES26.16E3)') this%param%g4%xi(iAcsf), this%param%g4%lambda(iAcsf)
-    end do
+    !> optional atom identifier index
+    integer, intent(in), optional :: atomId
 
-    write(fd, '(I26)') size(this%speciesIds)
-    do iSp = 1, size(this%speciesIds)
-      write(fd, '(A,ES26.16E3)') trim(globalSpNames(iSp)), this%speciesIds(iSp)
-    end do
+    !> error messages
+    character(len=:), allocatable :: msg1, msg2
 
-    if (this%tZscore) then
-      write(fd, '(I26)') 1
-      do iAcsf = 1, this%nRadial + this%nAngular
-        write(fd, '(2ES26.16E3)') this%zPrec(iAcsf, 1), this%zPrec(iAcsf, 2)
-      end do
+    msg1 = 'Superflous argument(s) for selected function type provided.'
+    msg2 = 'Missing argument(s) for selected function type.'
+
+    this%type = tolower(type)
+    this%rCut = rCut
+
+    if (present(atomId)) then
+      this%atomId = atomId
     else
-      write(fd, '(I26)') 0
+      this%atomId = 0
     end if
 
-    close(fd)
+    ! provide dummy values for now
+    this%kappa = 0.0_dp
+    this%rs = 0.0_dp
+    this%eta = 0.0_dp
+    this%lambda = 0.0_dp
+    this%xi = 0.0_dp
+    this%atomicNumbers(:) = [0, 0]
+    this%tRadial = .false.
+    this%tAngular = .false.
 
-  end subroutine TAcsf_toFile
+    select case (this%type)
 
-
-  subroutine TAcsf_fromFile(this, fname, globalSpNames)
-
-    !> representation of ACSF mappings
-    class(TAcsf), intent(out) :: this
-
-    !> filename or path to save acsf parameters to
-    character(len=*), intent(in) :: fname
-
-    !> contains (unique) species of all dataset geometries
-    character(len=*), intent(in) :: globalSpNames(:)
-
-    !> unique fileunit
-    integer :: fd
-
-    !> temporary storage container
-    character(len=50) :: speciesNameTmp
-    real(dp) :: speciesIdTmp
-
-    !> auxiliary variables
-    integer :: isZscore, nSpecies
-
-    !> auxiliary variables
-    integer :: iAcsf, iSp
-
-    open(newunit=fd, file=fname, form='formatted', status='old', action='read')
-
-    read(fd, *) this%rCut
-
-    read(fd, *) this%nRadial, this%param%g2%eta
-    allocate(this%param%g2%rs(this%nRadial))
-    do iAcsf = 1, this%nRadial
-      read(fd, *) this%param%g2%rs(iAcsf)
-    end do
-
-    read(fd, *) this%nAngular, this%param%g4%eta
-    allocate(this%param%g4%xi(this%nAngular))
-    allocate(this%param%g4%lambda(this%nAngular))
-    do iAcsf = 1, this%nAngular
-      read(fd, *) this%param%g4%xi(iAcsf), this%param%g4%lambda(iAcsf)
-    end do
-
-    read(fd, *) nSpecies
-    allocate(this%speciesIds(nSpecies))
-    do iSp = 1, size(this%speciesIds)
-      read(fd, *) speciesNameTmp, speciesIdTmp
-      if (.not. (myFindloc(globalSpNames, speciesNameTmp) == 0)) then
-        this%speciesIds(myFindloc(globalSpNames, speciesNameTmp)) = speciesIdTmp
-      else
-        call error('Species in acsf output file do not match with dataset.')
+    case ('g1')
+      if (present(kappa) .or. present(rs) .or. present(eta) .or. present(lambda) .or. present(xi))&
+          & then
+        call error(msg1)
       end if
-    end do
+      this%tRadial = .true.
+      this%tAngular = .false.
+    case ('g2')
+      if (.not. (present(rs) .and. present(eta))) then
+        call error(msg2)
+      elseif (present(kappa) .or. present(lambda) .or. present(xi)) then
+        call error(msg1)
+      elseif (present(rs) .and. present(eta)) then
+        this%rs = rs
+        this%eta = eta
+      end if
+      this%tRadial = .true.
+      this%tAngular = .false.
+    case ('g3')
+      if (.not. present(kappa)) then
+        call error(msg2)
+      elseif (present(rs) .or. present(eta) .or. present(lambda) .or. present(xi)) then
+        call error(msg1)
+      elseif (present(kappa)) then
+        this%kappa = kappa
+      end if
+      this%tRadial = .true.
+      this%tAngular = .false.
+    case ('g4', 'g5')
+      if (.not. (present(eta) .or. present(lambda) .or. present(xi))) then
+        call error(msg2)
+      elseif (present(kappa) .or. present(rs)) then
+        call error(msg1)
+      elseif (present(eta) .or. present(lambda) .or. present(xi)) then
+        this%eta = eta
+        this%lambda = lambda
+        this%xi = xi
+      end if
+      this%tRadial = .false.
+      this%tAngular = .true.
+    case default
+      call error('Invalid function type, aborting initialization.')
 
-    read(fd, *) isZscore
+    end select
 
-    if (isZscore == 0) then
-      this%tZscore = .false.
-    else
-      this%tZscore = .true.
-      allocate(this%zPrec(this%nRadial + this%nAngular, 2))
-      do iAcsf = 1, this%nRadial + this%nAngular
-        read(fd, *) this%zPrec(iAcsf, 1), this%zPrec(iAcsf, 2)
-      end do
-    end if
-
-    close(fd)
-
-  end subroutine TAcsf_fromFile
+  end subroutine TGFunction_init
 
 
-  subroutine TAcsfParams_init(this, nRadial, nAngular, rcut, kappa)
+  !> Initialises multiple G-functions according to an automatic parameter generation scheme.
+  subroutine TGFunctions_fromAutoScheme(this, rCut, nRadial, nAngular, atomId)
 
-    !> representation of ACSF parameters
-    type(TAcsfParams), intent(inout) :: this
+    !> representation of ACSF functions
+    class(TGFunctions), intent(out) :: this
+
+    !> cutoff radius
+    real(dp), intent(in) :: rCut
 
     !> number of radial symmetry functions
     integer, intent(in) :: nRadial
@@ -310,41 +275,50 @@ contains
     !> number of angular symmetry functions
     integer, intent(in) :: nAngular
 
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> optional kappa parameter for G3 function
-    real(dp), intent(in), optional :: kappa
+    !> optional atom identifier index
+    integer, intent(in), optional :: atomId
 
     !> stepsize for center parameter
     real(dp) :: rsStep
+
+    !> width parameter for G2 and G5 function
+    real(dp) :: g2eta, g5eta
+
+    !> peak positions for G2 function
+    real(dp), allocatable :: g2rs(:)
+
+    !> lambda parameters for G5 function
+    real(dp), allocatable :: g5lambda(:)
+
+    !> xi parameters for G5 function
+    real(dp), allocatable :: g5xi(:)
 
     !> auxiliary variable
     real(dp) :: xi
 
     !> auxiliary variables
-    integer :: ii, jj, ind
+    integer :: ii, jj, ind, iRadial, iAngular, identifier
 
-    rsStep = rcut / (nRadial - 1)
-    this%g2%eta = 5.0_dp * log(10.0_dp) / (2.0_dp * rsStep)**2
+    if (present(atomId)) then
+      identifier = atomId
+    else
+      identifier = 0
+    end if
 
-    allocate(this%g2%rs(nRadial))
-    this%g2%rs(1) = 0.0_dp
+    rsStep = rCut / (nRadial - 1)
+    g2eta = 5.0_dp * log(10.0_dp) / (2.0_dp * rsStep)**2
+
+    allocate(g2rs(nRadial))
+    g2rs(1) = 0.0_dp
 
     if (nRadial > 1) then
-      this%g2%rs(2:) = [(ii * rsStep, ii = 1, nRadial - 1)]
+      g2rs(2:) = [(ii * rsStep, ii = 1, nRadial - 1)]
     end if
 
-    if (present(kappa)) then
-      this%g3%kappa = kappa
-    else
-      this%g3%kappa = 1.0_dp
-    end if
+    g5eta = 2.0_dp * log(10.0_dp) / (rCut)**2
 
-    this%g4%eta = 2.0_dp * log(10.0_dp) / (rcut)**2
-
-    allocate(this%g4%lambda(nAngular))
-    allocate(this%g4%xi(nAngular))
+    allocate(g5lambda(nAngular))
+    allocate(g5xi(nAngular))
 
     ind = 1
 
@@ -355,17 +329,58 @@ contains
         xi = 1.0_dp + ii * 30.0_dp / (nAngular - 2.0_dp)
       end if
       do jj = 1, -1, -2
-        this%g4%lambda(ind) = jj
-        this%g4%xi(ind) = xi
+        g5lambda(ind) = jj
+        g5xi(ind) = xi
         if (ind >= nAngular) exit
         ind = ind + 1
       end do
     end do
 
-  end subroutine TAcsfParams_init
+    allocate(this%func(nRadial + nAngular))
+
+    do iRadial = 1, nRadial
+      call TGFunction_init(this%func(iRadial), 'G2', rCut, eta=g2eta, rs=g2rs(iRadial),&
+          & atomId=identifier)
+    end do
+
+    do iAngular = 1, nAngular
+      call TGFunction_init(this%func(iAngular + nRadial), 'G5', rCut, xi=g5xi(iAngular), eta=g5eta,&
+          & lambda=g5lambda(iAngular), atomId=identifier)
+    end do
+
+  end subroutine TGFunctions_fromAutoScheme
 
 
-  subroutine TMultiAcsfVals_init(this, geos, nAcsfVals)
+  !> Appends G-functions to the current instance.
+  pure subroutine TGFunctions_append(this, functions)
+
+    !> representation of ACSF functions
+    class(TGFunctions), intent(inout) :: this
+
+    !> representation of ACSF functions to append
+    type(TGFunctions), intent(in) :: functions
+
+    !> temporary storage
+    type(TGFunctions) :: tmp
+
+    if (.not. allocated(functions%func)) then
+      return
+    end if
+
+    if (allocated(this%func)) then
+      call move_alloc(this%func, tmp%func)
+      allocate(this%func(size(tmp%func) + size(functions%func)))
+      this%func(1:size(tmp%func)) = tmp%func
+      this%func(size(tmp%func)+1:) = functions%func
+    else
+      this%func = functions%func
+    end if
+
+  end subroutine TGFunctions_append
+
+
+  !> Initialises a wrapper around multiple ACSF value instances.
+  pure subroutine TMultiAcsfVals_init(this, geos, nAcsfVals)
 
     !> wrapper instance around multiple ACSF value types
     type(TMultiAcsfVals), intent(out) :: this
@@ -389,6 +404,7 @@ contains
   end subroutine TMultiAcsfVals_init
 
 
+  !> Calculates the means and variances for z-score preconditioning.
   subroutine TAcsf_getMeansAndVariances(this, weights)
 
     !> representation of ACSF mappings
@@ -403,7 +419,7 @@ contains
     if (allocated(this%zPrec)) then
       call error('Container for acsf means and variances is already allocated.')
     else
-      allocate(this%zPrec(this%nRadial + this%nAngular, 2))
+      allocate(this%zPrec(size(this%gFunctions%func), 2))
       this%zPrec(:,:) = 0.0_dp      
     end if
 
@@ -433,6 +449,7 @@ contains
   end subroutine TAcsf_getMeansAndVariances
 
 
+  !> Applies a z-score preconditioning to the ACSF features.
   subroutine TAcsf_applyZscore(this)
 
     !> representation of ACSF mappings
@@ -461,7 +478,8 @@ contains
   end subroutine TAcsf_applyZscore
 
 
-  subroutine TAcsf_calculate(this, geos, env, localAtToGlobalSp, atomIds, weights, zPrec)
+  !> Calculates ACSF mappings for given geometries.
+  subroutine TAcsf_calculate(this, geos, env, localAtToAtNum, extFeaturesInp, weights, zPrec)
 
     !> representation of ACSF mappings
     class(TAcsf), intent(inout) :: this
@@ -472,11 +490,11 @@ contains
     !> if compiled with mpi enabled, contains mpi communicator
     type(TEnv), intent(in) :: env
 
-    !> index mapping local atom --> global species index
-    type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
+    !> index mapping local atom --> atomic number
+    type(TIntArray1D), intent(in) :: localAtToAtNum(:)
 
     !> optional atom dependent scaling parameters for cutoff function
-    type(TRealArray1D), intent(in), optional :: atomIds(:)
+    type(TRealArray2D), intent(in), optional :: extFeaturesInp(:)
 
     !> optional weighting of each corresponding datapoint
     integer, intent(in), optional :: weights(:)
@@ -484,17 +502,11 @@ contains
     !> storage container of means and variances to calculate z-score
     real(dp), intent(in), optional :: zPrec(:,:)
 
-    !> instance of dynamic neighbour list
-    type(TDynNeighList), target :: neighList
-
-    !> pointer to dynamic neighbour list
-    type(TDynNeighList), pointer :: pNeighList
+    !> atom dependent scaling parameters for cutoff function
+    type(TRealArray2D), allocatable :: extFeatures(:)
 
     !> temporary storage of ACSF values of each node
     type(TMultiAcsfVals) :: tmpVals
-
-    !> atom dependent scaling parameters for cutoff function
-    type(TRealArray1D), allocatable :: atomIdentifier(:)
 
     !> weighting of each corresponding datapoint
     integer, allocatable :: weighting(:)
@@ -505,17 +517,7 @@ contains
     !> auxiliary variables
     integer :: iSys, iStart, iEnd
 
-    allocate(atomIdentifier(size(geos)))
     allocate(weighting(size(geos)))
-
-    if (present(atomIds)) then
-      atomIdentifier(:) = atomIds
-    else
-      do iSys = 1, size(geos)
-        allocate(atomIdentifier(iSys)%array(geos(iSys)%nAtom))
-        atomIdentifier(iSys)%array(:) = 1.0_dp
-      end do
-    end if
 
     if (present(weights)) then
       weighting(:) = weights
@@ -525,6 +527,13 @@ contains
 
     if (present(zPrec)) then
       this%zPrec = zPrec
+    end if
+
+    ! prevent for accessing an unallocated array
+    if (present(extFeaturesInp)) then
+      extFeatures = extFeaturesInp
+    else
+      allocate(extFeatures(size(geos)))
     end if
 
   #:if WITH_MPI
@@ -537,20 +546,13 @@ contains
     iEnd = size(geos)
   #:endif
 
-    call TMultiAcsfVals_init(tmpVals, geos, this%nRadial + this%nAngular)
-    call TMultiAcsfVals_init(this%vals, geos, this%nRadial + this%nAngular)
+    call TMultiAcsfVals_init(tmpVals, geos, size(this%gFunctions%func))
+    call TMultiAcsfVals_init(this%vals, geos, size(this%gFunctions%func))
 
     lpSystem: do iSys = iStart, iEnd
-
-      call TDynNeighList_init(neighList, this%rcut, geos(iSys)%nAtom, geos(iSys)%tPeriodic)
-      call neighList%updateCoords(geos(iSys)%coords, localAtToGlobalSp(iSys)%array)
-      if (geos(iSys)%tPeriodic) then
-        call neighList%updateLatVecs(geos(iSys)%latVecs, geos(iSys)%recVecs2p)
-      end if
-      pNeighList => neighList
-      call iAtomAcsf(tmpVals%vals(iSys), geos(iSys), pNeighList, this%param, this%nRadial,&
-          & this%nAngular, this%rcut, this%speciesIds, atomIdentifier(iSys)%array)
-
+      if (.not. allocated(extFeatures(iSys)%array)) allocate(extFeatures(iSys)%array(0,0))
+      call iGeoAcsf(tmpVals%vals(iSys), geos(iSys), this%gFunctions%func,&
+          & localAtToAtNum(iSys)%array, extFeatures(iSys)%array)
     end do lpSystem
 
   #:if WITH_MPI
@@ -579,7 +581,84 @@ contains
   end subroutine TAcsf_calculate
 
 
-  subroutine iAtomAcsf(this, geo, pNeighList, param, nRadial, nAngular, rcut, speciesIds, atomIds)
+  !> Reduces a geometry to a subset of species as well as a given single atom.
+  pure subroutine reduceGeometrySpecies(geo, iAtom, speciesIn, speciesOut, reducedGeo, iAtomOut,&
+      & tKeep)
+
+    !> geometry to reduce to a subset of species
+    type(TGeometry), intent(in) :: geo
+
+    !> index of an additional atom to keep
+    integer, intent(in) :: iAtom
+
+    !> species indices of current geometry
+    integer, intent(in) :: speciesIn(:)
+
+    !> desired species indices of output geometry
+    integer, intent(in) :: speciesOut(:)
+
+    !> reduced geometry
+    type(TGeometry), intent(out) :: reducedGeo
+
+    !> index of single atom after reduction
+    integer, intent(out) :: iAtomOut
+
+    !> mask to determine which atoms to keep (does also contain iAtom)
+    integer, intent(out), allocatable, optional :: tKeep(:)
+
+    !> temporary mask to determine which atoms to keep
+    integer, allocatable :: tmp(:)
+
+    !> auxiliary variables
+    integer :: iAtom1, iAtom2, ind
+
+    allocate(tmp(geo%nAtom))
+    ind = 0
+
+    outer: do iAtom1 = 1, geo%nAtom
+      if (iAtom1 == iAtom) then
+        ind = ind + 1
+        tmp(ind) = iAtom1
+        iAtomOut = ind
+        cycle outer
+      end if
+      inner: do iAtom2 = 1, size(speciesOut)
+        if (speciesIn(iAtom1) == speciesOut(iAtom2)) then
+          ind = ind + 1
+          tmp(ind) = iAtom1
+          exit inner
+        end if
+      end do inner
+    end do outer
+
+    allocate(tKeep(ind))
+    tKeep(:) = tmp(1:ind)
+
+    reducedGeo = geo
+
+    reducedGeo%coords = geo%coords(:, tKeep)
+    reducedGeo%nAtom = size(reducedGeo%coords, dim=2)
+    reducedGeo%species = geo%species(tKeep)
+    call getNumberOfUniqueInt(reducedGeo%species, reducedGeo%nSpecies)
+
+    ! remove atom to later build the neighborlist for
+    ! ind = 0
+    ! call move_alloc(tKeep, tmp)
+    ! allocate(tKeep(size(tmp) - 1))
+    ! do iAtom1 = 1, size(tmp)
+    !   if (iAtom1 /= iAtomOut) then
+    !     ind = ind + 1
+    !     tKeep(ind) = tmp(iAtom)
+    !   else
+    !     cycle
+    !   end if
+    ! end do
+
+  end subroutine reduceGeometrySpecies
+
+
+  !> Calculates ACSF mappings for a single geometry.
+  subroutine iGeoAcsf(this, geo, gFunctions, localAtToAtNumIn, extFeatures)
 
     !> symmetry function value instance of geometry
     type(TRealArray2D), intent(inout) :: this
@@ -587,26 +666,161 @@ contains
     !> system geometry container
     type(TGeometry), intent(in) :: geo
 
-    !> Pointer to dynamic neighbour list
-    type(TDynNeighList), intent(in), pointer :: pNeighList
+    !> list of multi G-functions
+    type(TGFunction), intent(in) :: gFunctions(:)
 
-    !> container for all ACSF function parameters
-    type(TAcsfParams), intent(in) :: param
-
-    !> number of radial symmetry functions
-    integer, intent(in) :: nRadial
-
-    !> number of angular symmetry functions
-    integer, intent(in) :: nAngular
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> species dependent scaling parameters for G1 function
-    real(dp), intent(in) :: speciesIds(:)
+    !> index mapping local atom --> atomic number
+    integer, intent(in) :: localAtToAtNumIn(:)
 
     !> atom dependent scaling parameters for cutoff function
-    real(dp), intent(in) :: atomIds(:)
+    real(dp), intent(in) :: extFeatures(:,:)
+
+    !> true, if a species-resolved neighborlist is desired
+    logical :: tSpeciesResolved
+
+    !> geometries reduced to atoms of a single species
+    type(TGeometry) :: geo1, geo2
+
+    !> atomic prefactors of central atom
+    real(dp) :: atomId1, atomId2
+
+    !> atomic prefactors of neighboring atoms
+    real(dp), allocatable :: atomIds1(:), atomIds2(:)
+
+    !> neighbor coordinates and squared distances
+    real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
+
+    !> neighbor atom indices
+    integer, allocatable :: atomIndices1(:), atomIndices2(:)
+
+    !> masks to determine which atoms to keep while reducing the geometry
+    integer, allocatable :: tKeep1(:), tKeep2(:)
+
+    !> auxiliary variables
+    integer :: iAtom, iAcsf, iAtomOut1, iAtomOut2
+
+    do iAtom = 1, geo%nAtom
+      do iAcsf = 1, size(gFunctions)
+        if ((gFunctions(iAcsf)%atomicNumbers(1) == 0)&
+            & .and. (gFunctions(iAcsf)%atomicNumbers(2) == 0)) then
+          tSpeciesResolved = .false.
+        else
+          tSpeciesResolved = .true.
+        end if
+        if (.not. tSpeciesResolved) then
+          geo1 = geo
+          geo2 = geo1
+          iAtomOut1 = iAtom
+          iAtomOut2 = iAtomOut1
+          if (gFunctions(iAcsf)%atomId > 0) then
+            atomId1 = extFeatures(gFunctions(iAcsf)%atomId, iAtom)
+            atomId2 = atomId1
+            atomIds1 = extFeatures(gFunctions(iAcsf)%atomId, :)
+            atomIds2 = atomIds1
+          else
+            atomId1 = 1.0_dp
+            if (allocated(atomIds1)) deallocate(atomIds1)
+            allocate(atomIds1(geo1%nAtom))
+            atomIds1(:) = 1.0_dp
+            atomId2 = 1.0_dp
+            if (allocated(atomIds2)) deallocate(atomIds2)
+            allocate(atomIds2(geo2%nAtom))
+            atomIds2(:) = 1.0_dp
+          end if
+          call buildNeighborlist(geo1, gFunctions(iAcsf)%rCut, iAtom, neighDists1, neighCoords1,&
+              & atomIndices1)
+          neighDists2 = neighDists1
+          neighCoords2 = neighCoords1
+          atomIndices2 = atomIndices1
+          atomIds1 = atomIds1(atomIndices1)
+          atomIds2 = atomIds1
+        else
+          ! reduce geometry to a given species
+          call reduceGeometrySpecies(geo, iAtom, localAtToAtNumIn,&
+              & [gFunctions(iAcsf)%atomicNumbers(1)], geo1, iAtomOut1, tKeep=tKeep1)
+          if (gFunctions(iAcsf)%atomId > 0) then
+            atomId1 = extFeatures(gFunctions(iAcsf)%atomId, iAtomOut1)
+            atomIds1 = extFeatures(gFunctions(iAcsf)%atomId, tKeep1)
+          else
+            atomId1 = 1.0_dp
+            if (allocated(atomIds1)) deallocate(atomIds1)
+            allocate(atomIds1(geo1%nAtom))
+            atomIds1(:) = 1.0_dp
+          end if
+          call buildNeighborlist(geo1, gFunctions(iAcsf)%rCut, iAtomOut1, neighDists1,&
+              & neighCoords1, atomIndices1)
+          atomIds1 = atomIds1(atomIndices1)
+        end if
+        ! for angular functions species tupels, i.e. pairs of atomic numbers are required
+        if (gFunctions(iAcsf)%tAngular .and. tSpeciesResolved) then
+          call reduceGeometrySpecies(geo, iAtom, localAtToAtNumIn,&
+              & [gFunctions(iAcsf)%atomicNumbers(2)], geo2, iAtomOut2, tKeep=tKeep2)
+          if (gFunctions(iAcsf)%atomId > 0) then
+            atomId2 = extFeatures(gFunctions(iAcsf)%atomId, iAtomOut2)
+            atomIds2 = extFeatures(gFunctions(iAcsf)%atomId, tKeep2)
+          else
+            atomId2 = 1.0_dp
+            if (allocated(atomIds2)) deallocate(atomIds2)
+            allocate(atomIds2(geo2%nAtom))
+            atomIds2(:) = 1.0_dp
+          end if
+          call buildNeighborlist(geo2, gFunctions(iAcsf)%rCut, iAtomOut2, neighDists2,&
+              & neighCoords2, atomIndices2)
+          atomIds2 = atomIds2(atomIndices2)
+        end if
+
+        select case (gFunctions(iAcsf)%type)
+        case ('g1')
+          this%array(iAcsf, iAtom) = g1(neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%rCut)
+        case ('g2')
+          this%array(iAcsf, iAtom) = g2(neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%eta,&
+              & gFunctions(iAcsf)%rs, gFunctions(iAcsf)%rCut)
+        case ('g3')
+          this%array(iAcsf, iAtom) = g3(neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%kappa,&
+              & gFunctions(iAcsf)%rCut)
+        case ('g4')
+          this%array(iAcsf, iAtom) = g4(geo1%coords(:, iAtomOut1), neighCoords1, neighCoords2,&
+              & neighDists1, neighDists2, atomId1, atomIds1, atomId2, atomIds2,&
+              & gFunctions(iAcsf)%xi, gFunctions(iAcsf)%lambda, gFunctions(iAcsf)%eta,&
+              & gFunctions(iAcsf)%rCut)
+        case ('g5')
+          this%array(iAcsf, iAtom) = g5(geo1%coords(:, iAtomOut1), neighCoords1, neighCoords2,&
+              & neighDists1, neighDists2, atomId1, atomIds1, atomId2, atomIds2,&
+              & gFunctions(iAcsf)%xi, gFunctions(iAcsf)%lambda, gFunctions(iAcsf)%eta,&
+              & gFunctions(iAcsf)%rCut)
+        case default
+          call error('Invalid function type, aborting ACSF calculation.')
+        end select
+
+      end do
+    end do
+
+  end subroutine iGeoAcsf
+
+
+  !> Builds the neighborlist of a given geometry and returns neighbor coordinates and distances.
+  subroutine buildNeighborlist(geo, rCut, iAtom, allNeighDists, allNeighCoords, allAtomIndices)
+
+    !> system geometry container
+    type(TGeometry), intent(in) :: geo
+
+    !> cutoff defining the neighborlist sphere
+    real(dp), intent(in) :: rCut
+
+    !> atom index to build neighbor list for
+    integer, intent(in) :: iAtom
+
+    !> neighbor coordinates and distances of all iterations
+    real(dp), intent(out), allocatable :: allNeighDists(:), allNeighCoords(:,:)
+
+    !> neighbor atom indices of all iterations
+    integer, intent(out), allocatable :: allAtomIndices(:)
+
+    !> instance of dynamic neighbour list
+    type(TDynNeighList), target :: neighList
+
+    !> pointer to dynamic neighbour list
+    type(TDynNeighList), pointer :: pNeighList
 
     !> instance of dynamic neighbour list iterator
     type(TNeighIterator) :: neighIter
@@ -614,83 +828,49 @@ contains
     !> obtained neighbor coordinates and distances
     real(dp) :: neighDists(iterChunkSize), neighCoords(3, iterChunkSize)
 
-    !> obtained neighbor species indices
-    integer :: speciesIndices(iterChunkSize)
-
     !> obtained neighbor atom indices
     integer :: atomIndices(iterChunkSize)
 
-    !> neighbor coordinates, distances and species/atom ID's of all iterator stepsizes
-    real(dp), allocatable :: allNeighDists(:), allNeighCoords(:,:), tmpCoords(:,:)
-    real(dp), allocatable :: allSpeciesIds(:), allAtomIds(:)
-
-    !> neighbor species/atom indices of all iterator stepsizes
-    integer, allocatable :: allSpeciesIndices(:), allAtomIndices(:)
+    !> temporary coordinate storage
+    real(dp), allocatable :: tmpCoords(:,:)
 
     !> auxiliary variables
-    integer :: iAtom, iAcsf, iSp, iAtomInd, nNeigh, nTotNeigh
+    integer :: nNeigh, nTotNeigh
 
-    do iAtom = 1, geo%nAtom
+    call TDynNeighList_init(neighList, rCut, geo%nAtom, geo%tPeriodic)
+    call neighList%updateCoords(geo%coords)
 
-      allocate(tmpCoords(3, 0))
-      allocate(allNeighDists(0))
-      allocate(allSpeciesIndices(0))
-      allocate(allAtomIndices(0))
+    if (geo%tPeriodic) then
+      call neighList%updateLatVecs(geo%latVecs, geo%recVecs2p)
+    end if
+    pNeighList => neighList
 
-      call TNeighIterator_init(neighIter, pNeighList, iAtom, includeSelf=.false.)
+    allocate(tmpCoords(3, 0))
+    allocate(allNeighDists(0))
+    allocate(allAtomIndices(0))
 
-      nNeigh = iterChunkSize
+    call TNeighIterator_init(neighIter, pNeighList, iAtom, includeSelf=.false.)
 
-      do while (nNeigh == iterChunkSize)
-        call neighIter%getNextNeighbours(nNeigh, coords=neighCoords, dists=neighDists,&
-            & speciesIndices=speciesIndices, atomIndices=atomIndices)
-        nTotNeigh = size(tmpCoords, dim=2) + nNeigh
-        allocate(allNeighCoords(3, nTotNeigh))
-        allNeighDists = [allNeighDists, neighDists(1:nNeigh)]
-        allSpeciesIndices = [allSpeciesIndices, speciesIndices(1:nNeigh)]
-        allAtomIndices = [allAtomIndices, atomIndices(1:nNeigh)]
-        allNeighCoords(:, 1:nTotNeigh - nNeigh) = tmpCoords
-        allNeighCoords(:, nTotNeigh - nNeigh + 1:nTotNeigh) = neighCoords(:, 1:nNeigh)
-        call move_alloc(allNeighCoords, tmpCoords)
-      end do
+    nNeigh = iterChunkSize
 
-      allNeighCoords = tmpCoords
-
-      allocate(allSpeciesIds(size(allSpeciesIndices)))
-      allocate(allAtomIds(size(allAtomIndices)))
-
-      do iSp = 1, size(allSpeciesIds)
-        allSpeciesIds(iSp) = speciesIds(allSpeciesIndices(iSp))
-      end do
-
-      do iAtomInd = 1, size(allAtomIds)
-        allAtomIds(iAtomInd) = atomIds(allAtomIndices(iAtomInd))
-      end do
-
-      do iAcsf = 1, nRadial
-        this%array(iAcsf, iAtom) = g2(allNeighDists, allSpeciesIds, allAtomIds, param%g2%eta,&
-            & param%g2%rs(iAcsf), rcut)
-      end do
-
-      do iAcsf = 1 + nRadial, nRadial + nAngular
-        this%array(iAcsf, iAtom) = g4(geo%coords(:, iAtom), allNeighCoords, allNeighDists,&
-            & allSpeciesIds, allAtomIds, param%g4%xi(iAcsf - nRadial),&
-            & param%g4%lambda(iAcsf - nRadial), param%g4%eta, rcut)
-      end do
-
-      deallocate(tmpCoords)
-      deallocate(allNeighDists)
-      deallocate(allNeighCoords)
-      deallocate(allSpeciesIds)
-      deallocate(allAtomIds)
-      deallocate(allSpeciesIndices)
-      deallocate(allAtomIndices)
-
+    do while (nNeigh == iterChunkSize)
+      call neighIter%getNextNeighbours(nNeigh, coords=neighCoords, dists=neighDists,&
+          & atomIndices=atomIndices)
+      nTotNeigh = size(tmpCoords, dim=2) + nNeigh
+      allocate(allNeighCoords(3, nTotNeigh))
+      allNeighDists = [allNeighDists, neighDists(1:nNeigh)]
+      allAtomIndices = [allAtomIndices, atomIndices(1:nNeigh)]
+      allNeighCoords(:, 1:nTotNeigh - nNeigh) = tmpCoords
+      allNeighCoords(:, nTotNeigh - nNeigh + 1:nTotNeigh) = neighCoords(:, 1:nNeigh)
+      call move_alloc(allNeighCoords, tmpCoords)
     end do
 
-  end subroutine iAtomAcsf
+    allNeighCoords = tmpCoords
+
+  end subroutine buildNeighborlist
 
 
+  !> Calculates the distance between two atoms of a geometry.
   pure function distance(geo, iAt1, iAt2)
 
     !> system geometry container
@@ -707,6 +887,7 @@ contains
   end function distance
 
 
+  !> Calculates the angle defined by three different atomic centers.
   pure function theta(atomCoords, neighCoords1, neighCoords2, neighDist1, neighDist2)
 
     !> coordinates of reference atom
@@ -721,22 +902,23 @@ contains
     !> obtained angle betweeen the three atoms
     real(dp) :: theta
 
-    theta = acos(dot_product((neighCoords1(:) - atomCoords(:)), (neighCoords2(:) - atomCoords(:)))&
+    theta = acos(dot_product((neighCoords1 - atomCoords), (neighCoords2 - atomCoords))&
         & / (neighDist1 * neighDist2 + 1e-13_dp))
 
   end function theta
 
 
-  pure function cutoff(rr, speciesId, atomId, rcut) result(res)
+  !> Calculates the cutoff function for a given interatomic distance.
+  pure function cutoff(rr, atomId1, atomId2, rcut) result(res)
 
     !> atom distance (in cutoff range)
     real(dp), intent(in) :: rr
 
-    !> species ID of neighbor
-    real(dp), intent(in) :: speciesId
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId1
 
     !> atom ID of neighbor
-    real(dp), intent(in) :: atomId
+    real(dp), intent(in) :: atomId2
 
     !> cutoff radius
     real(dp), intent(in) :: rcut
@@ -747,19 +929,20 @@ contains
     if (rr > rcut) then
       res = 0.0_dp
     else
-      res = 0.5_dp * speciesId * atomId * (cos(pi * rr / rcut) + 1.0_dp)
+      res = 0.5_dp * atomId1 * atomId2 * (cos(pi * rr / rcut) + 1.0_dp)
     end if
 
   end function cutoff
 
 
-  pure function cutoff_vec(rr, speciesIds, atomIds, rcut) result(res)
+  !> Calculates the cutoff function for an 1d array of interatomic distances.
+  pure function cutoff1d(rr, atomId, atomIds, rcut) result(res)
 
-    !> array of atom distances (in cutoff range)
+    !> array of atom distances
     real(dp), intent(in) :: rr(:)
 
-    !> species ID's of all neighbors
-    real(dp), intent(in) :: speciesIds(:)
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId
 
     !> atom ID's of all neighbors
     real(dp), intent(in) :: atomIds(:)
@@ -771,21 +954,22 @@ contains
     real(dp) :: res(size(rr))
 
     where (rr > rcut)
-      res = 0.0_dp
+      res(:) = 0.0_dp
     elsewhere
-      res = 0.5_dp * speciesIds * atomIds * (cos(pi * rr / rcut) + 1.0_dp)
+      res(:) = 0.5_dp * atomId * atomIds * (cos(pi * rr / rcut) + 1.0_dp)
     end where
 
-  end function cutoff_vec
+  end function cutoff1d
 
 
-  pure function g1(rr, speciesIds, atomIds, rcut)
+  !> Calculates the G1 function.
+  pure function g1(rr, atomId, atomIds, rcut)
 
     !> array of atom distances in cutoff range
     real(dp), intent(in) :: rr(:)
 
-    !> species ID's of all neighbors
-    real(dp), intent(in) :: speciesIds(:)
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId
 
     !> atom ID's of all neighbors
     real(dp), intent(in) :: atomIds(:)
@@ -796,18 +980,23 @@ contains
     !> corresponding symmetry function values
     real(dp) :: g1
 
-    g1 = sum(cutoff_vec(rr, speciesIds, atomIds, rcut))
+    if (size(rr) == 0) then
+      g1 = 0.0_dp
+    else
+      g1 = sum(cutoff1d(rr, atomId, atomIds, rcut))
+    end if
 
   end function g1
 
 
-  pure function g2(rr, speciesIds, atomIds, eta, rs, rcut)
+  !> Calculates the G2 function.
+  pure function g2(rr, atomId, atomIds, eta, rs, rcut)
 
     !> array of atom distances in cutoff range
     real(dp), intent(in) :: rr(:)
 
-    !> species ID's of all neighbors
-    real(dp), intent(in) :: speciesIds(:)
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId
 
     !> atom ID's of all neighbors
     real(dp), intent(in) :: atomIds(:)
@@ -824,18 +1013,23 @@ contains
     !> corresponding symmetry function values
     real(dp) :: g2
 
-    g2 = sum(exp(- eta * (rr - rs)**2) * cutoff_vec(rr, speciesIds, atomIds, rcut))
+    if (size(rr) == 0) then
+      g2 = 0.0_dp
+    else
+      g2 = sum(exp(- eta * (rr - rs)**2) * cutoff1d(rr, atomId, atomIds, rcut))
+    end if
 
   end function g2
 
 
-  pure function g3(rr, speciesIds, atomIds, kappa, rcut)
+  !> Calculates the G3 function.
+  pure function g3(rr, atomId, atomIds, kappa, rcut)
 
     !> array of atom distances in cutoff range
     real(dp), intent(in) :: rr(:)
 
-    !> species ID's of all neighbors
-    real(dp), intent(in) :: speciesIds(:)
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId
 
     !> atom ID's of all neighbors
     real(dp), intent(in) :: atomIds(:)
@@ -849,27 +1043,98 @@ contains
     !> corresponding symmetry function values
     real(dp) :: g3
 
-    g3 = sum(cos(kappa * rr) * cutoff_vec(rr, speciesIds, atomIds, rcut))
+    if (size(rr) == 0) then
+      g3 = 0.0_dp
+    else
+      g3 = sum(cos(kappa * rr) * cutoff1d(rr, atomId, atomIds, rcut))
+    end if
 
   end function g3
 
 
-  pure function g4(atomCoords, neighCoords, neighDists, speciesIds, atomIds, xi, lambda, eta, rcut)
+  !> Calculates the G4 function.
+  pure function g4(atomCoords, neighCoords1, neighCoords2, neighDists1, neighDists2, atomId1,&
+      & atomIds1, atomId2, atomIds2, xi, lambda, eta, rcut)
 
     !> coordinates of reference atom
     real(dp), intent(in) :: atomCoords(:)
 
-    !> coordinates of neighboring atoms
-    real(dp), intent(in) :: neighCoords(:,:)
+    !> coordinates of neighboring atoms of two species
+    real(dp), intent(in) :: neighCoords1(:,:), neighCoords2(:,:)
 
     !> distances of reference atom to neighboring atoms
-    real(dp), intent(in) :: neighDists(:)
+    real(dp), intent(in) :: neighDists1(:), neighDists2(:)
 
-    !> species ID's of all neighbors
-    real(dp), intent(in) :: speciesIds(:)
+    !> atom ID of center atoms
+    real(dp), intent(in) :: atomId1, atomId2
 
     !> atom ID's of all neighbors
-    real(dp), intent(in) :: atomIds(:)
+    real(dp), intent(in) :: atomIds1(:), atomIds2(:)
+
+    !> parameter specifying angular resolution
+    real(dp), intent(in) :: xi
+
+    !> lambda parameter of angular part, recommended values: [+1, -1]
+    real(dp), intent(in) :: lambda
+
+    !> width of Gaussian part
+    real(dp), intent(in) :: eta
+
+    !> cutoff radius
+    real(dp), intent(in) :: rcut
+
+    ! distance between atom j of species 1 and atom k of species 2
+    real(dp) :: distjk
+
+    !> corresponding symmetry function values
+    real(dp) :: g4
+
+    !> auxiliary variables
+    integer :: jj, kk
+
+    g4 = 0.0_dp
+
+    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
+
+      do jj = 1, size(neighCoords1, dim=2)
+        do kk = 1, size(neighCoords2, dim=2)
+          ! calculate distance between atom j of species 1 and atom k of species 2
+          distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
+          ! calculate G4 function contribution
+          g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
+              & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
+              & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2))&
+              & * cutoff(neighDists1(jj), atomId1, atomIds1(jj), rcut) * cutoff(neighDists2(kk),&
+              & atomId2, atomIds2(kk), rcut) * cutoff(neighDists2(kk), atomIds1(jj), atomIds2(kk),&
+              & rcut)
+        end do
+      end do
+
+      g4 = g4 * 2.0_dp**(1.0_dp - xi)
+
+    end if
+
+  end function g4
+
+
+  !> Calculates the G5 function.
+  pure function g5(atomCoords, neighCoords1, neighCoords2, neighDists1, neighDists2, atomId1,&
+      & atomIds1, atomId2, atomIds2, xi, lambda, eta, rcut)
+
+    !> coordinates of reference atom
+    real(dp), intent(in) :: atomCoords(:)
+
+    !> coordinates of neighboring atoms of two species
+    real(dp), intent(in) :: neighCoords1(:,:), neighCoords2(:,:)
+
+    !> distances of reference atom to neighboring atoms
+    real(dp), intent(in) :: neighDists1(:), neighDists2(:)
+
+    !> atom ID of center atoms
+    real(dp), intent(in) :: atomId1, atomId2
+
+    !> atom ID's of all neighbors
+    real(dp), intent(in) :: atomIds1(:), atomIds2(:)
 
     !> parameter specifying angular resolution
     real(dp), intent(in) :: xi
@@ -884,24 +1149,478 @@ contains
     real(dp), intent(in) :: rcut
 
     !> corresponding symmetry function values
-    real(dp) :: g4
+    real(dp) :: g5
 
     !> auxiliary variables
     integer :: jj, kk
 
-    g4 = 0.0_dp
+    g5 = 0.0_dp
 
-    do jj = 1, size(neighCoords, dim=2)
-      do kk = 1, size(neighCoords, dim=2)
-        g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords(:, jj), neighCoords(:, kk),&
-            & neighDists(jj), neighDists(kk))))**xi * exp(- eta * (neighDists(jj)**2 +&
-            & neighDists(kk)**2)) * cutoff(neighDists(jj), speciesIds(jj), atomIds(jj), rcut) *&
-            & cutoff(neighDists(kk), speciesIds(kk), atomIds(kk), rcut)
+    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
+
+      do jj = 1, size(neighCoords1, dim=2)
+        do kk = 1, size(neighCoords2, dim=2)
+          g5 = g5 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
+              & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
+              & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2)) * cutoff(neighDists1(jj),&
+              & atomId1, atomIds1(jj), rcut) * cutoff(neighDists2(kk), atomId2, atomIds2(kk), rcut)
+        end do
       end do
+
+      g5 = g5 * 2.0_dp**(1.0_dp - xi)
+
+    end if
+
+  end function g5
+
+
+#:if WITH_MPI
+
+  !> Synchronizes the ACSF derived type, apart from raw values.
+  subroutine TAcsf_syncConfig(this, comm)
+
+    !> representation of ACSF mappings
+    class(TAcsf), intent(inout) :: this
+
+    !> mpi communicator with some additional information
+    type(mpifx_comm), intent(in) :: comm
+
+    !> auxiliary variables
+    integer :: iFunc, dims0d
+
+    call mpifx_bcast(comm, this%tZscore)
+
+    if (comm%lead) then
+      dims0d = size(this%gFunctions%func)
+    end if
+    call mpifx_bcast(comm, dims0d)
+
+    if (.not. comm%lead) then
+      if (allocated(this%gFunctions%func)) deallocate(this%gFunctions%func)
+      allocate(this%gFunctions%func(dims0d))
+    end if
+
+    ! synchronize G-function parameters
+    do iFunc = 1, size(this%gFunctions%func)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%type)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%tRadial)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%tAngular)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%rCut)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%kappa)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%rs)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%eta)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%lambda)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%xi)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%atomId)
+      call mpifx_bcast(comm, this%gFunctions%func(iFunc)%atomicNumbers)
     end do
 
-    g4 = g4 * 2.0_dp**(1.0_dp - xi)
+    if (this%tZscore) then
+      if (comm%lead) then
+        dims0d = size(this%zPrec, dim=1)
+      end if
+      call mpifx_bcast(comm, dims0d)
+      if (.not. comm%lead) then
+        if (allocated(this%zPrec)) deallocate(this%zPrec)
+        allocate(this%zPrec(dims0d, 2))
+      end if
+      call mpifx_bcast(comm, this%zPrec)
+    end if
 
-  end function g4
+  end subroutine TAcsf_syncConfig
+
+#:endif
+
+
+  !> Writes the ACSF configuration to a HDF5 netstat file.
+  subroutine TAcsf_toFile(this, fname)
+
+    !> representation of ACSF mappings
+    class(TAcsf), intent(in) :: this
+
+    !> filename or path to write to
+    character(len=*), intent(in) :: fname
+
+    !> various specifier flags
+    integer(hid_t) :: file_id, netstat_id, mapping_id, func_id, precond_id
+
+    !> name of current G-function
+    character(len=:), allocatable :: funcname
+
+    !> number of symmetry mappings
+    integer :: nFunctions
+
+    !> auxiliary variable
+    integer(size_t) :: dim
+
+    !> auxiliary variables
+    integer :: iFunc, iErr, tmp, tExist
+
+    ! open the hdf5 interface
+    call h5open_f(iErr)
+
+    ! open the netstat file
+    call h5fopen_f(fname, H5F_ACC_RDWR_F, file_id, iErr)
+
+    ! open the netstat group
+    call h5gopen_f(file_id, 'netstat', netstat_id, iErr)
+
+    ! check if a mapping entry is already present
+    tExist = h5ltfind_dataset_f(netstat_id, 'mapping')
+
+    if (tExist == 1) then
+      call h5ldelete_f(netstat_id, 'mapping', iErr)
+    end if
+
+    ! create the mapping group
+    call h5gcreate_f(netstat_id, 'mapping', mapping_id, iErr)
+
+    ! set the type attribute to acsf
+    call h5ltset_attribute_string_f(mapping_id, './', 'type', 'acsf', iErr)
+
+    nFunctions = size(this%gFunctions%func)
+
+    ! set the total number of mapping functions
+    dim = 1
+    call h5ltset_attribute_int_f(mapping_id, './', 'nfunctions', [nFunctions], dim, iErr)
+
+    do iFunc = 1, nFunctions
+      funcname = 'function' // i2c(iFunc)
+
+      ! create the function group
+      call h5gcreate_f(mapping_id, funcname, func_id, iErr)
+
+      ! set the G-function type
+      call h5ltset_attribute_string_f(func_id, './', 'type', this%gFunctions%func(iFunc)%type, iErr)
+
+      ! set the dataset index for atomID
+      dim = 1
+      call h5ltset_attribute_int_f(func_id, './', 'atomid', [this%gFunctions%func(iFunc)%atomId],&
+          & dim, iErr)
+
+      ! set the cutoff radius
+      dim = 1
+      call h5ltset_attribute_double_f(func_id, './', 'cutoff', [this%gFunctions%func(iFunc)%rCut],&
+          & dim, iErr)
+
+      ! set the atomic numbers for the species-resolved scheme
+      dim = 2
+      call h5ltset_attribute_int_f(func_id, './', 'atomicnumbers',&
+          & this%gFunctions%func(iFunc)%atomicNumbers, dim, iErr)
+
+      ! specify whether this is a radial function
+      dim = 1
+      if (this%gFunctions%func(iFunc)%tRadial) then
+        tmp = 1
+      else
+        tmp = 0
+      end if
+      call h5ltset_attribute_int_f(func_id, './', 'tradial', [tmp], dim, iErr)
+
+      ! specify whether this is an angular function
+      dim = 1
+      if (this%gFunctions%func(iFunc)%tAngular) then
+        tmp = 1
+      else
+        tmp = 0
+      end if
+      call h5ltset_attribute_int_f(func_id, './', 'tangular', [tmp], dim, iErr)
+
+      ! write G-function dependent parameters
+      select case (this%gFunctions%func(iFunc)%type)
+      case ('g2')
+        dim = 1
+        call h5ltset_attribute_double_f(func_id, './', 'eta', [this%gFunctions%func(iFunc)%eta],&
+            & dim, iErr)
+        call h5ltset_attribute_double_f(func_id, './', 'rs', [this%gFunctions%func(iFunc)%rs],&
+            & dim, iErr)
+      case ('g3')
+        dim = 1
+        call h5ltset_attribute_double_f(func_id, './', 'kappa',&
+            & [this%gFunctions%func(iFunc)%kappa], dim, iErr)
+      case ('g4', 'g5')
+        dim = 1
+        call h5ltset_attribute_double_f(func_id, './', 'xi', [this%gFunctions%func(iFunc)%xi],&
+            & dim, iErr)
+        call h5ltset_attribute_double_f(func_id, './', 'lambda',&
+            & [this%gFunctions%func(iFunc)%lambda], dim, iErr)
+        call h5ltset_attribute_double_f(func_id, './', 'eta', [this%gFunctions%func(iFunc)%eta],&
+            & dim, iErr)
+      end select
+
+      ! close the function group
+      call h5gclose_f(func_id, iErr)
+
+    end do
+
+    if (this%tZscore) then
+
+      ! create the preconditioning group
+      call h5gcreate_f(mapping_id, 'preconditioning', precond_id, iErr)
+
+      ! set the type attribute to z-score
+      call h5ltset_attribute_string_f(precond_id, './', 'type', 'zscore', iErr)
+
+      ! write means
+      call h5ltfxmake_dataset_double_f(precond_id, 'means', this%zPrec(:, 1))
+
+      ! write variances
+      call h5ltfxmake_dataset_double_f(precond_id, 'variances', this%zPrec(:, 2))
+
+      ! close the preconditioning group
+      call h5gclose_f(precond_id, iErr)
+
+    end if
+
+    ! close the mapping group
+    call h5gclose_f(mapping_id, iErr)
+
+    ! close the netstat group
+    call h5gclose_f(netstat_id, iErr)
+
+    ! close the netstat file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
+
+  end subroutine TAcsf_toFile
+
+
+  !> Reads the ACSF configuration from a HDF5 netstat file.
+  subroutine TAcsf_fromFile(this, fname, tReduce, tStandardize, nRadial, nAngular)
+
+    !> representation of ACSF mappings
+    class(TAcsf), intent(out) :: this
+
+    !> filename or path to read from
+    character(len=*), intent(in) :: fname
+
+    !> true, if the species-resolved features should get summed up
+    logical, intent(out), optional :: tReduce
+
+    !> true, if standardization of features is desired
+    logical, intent(out), optional :: tStandardize
+
+    !> number of radial and angular mappings
+    integer, intent(out), optional :: nRadial, nAngular
+
+    !> various specifier flags
+    integer(hid_t) :: file_id, netstat_id, mapping_id, func_id, precond_id
+
+    !> name of current G-function
+    character(len=:), allocatable :: funcname
+
+    !> temporary storage container
+    integer, allocatable :: acsfAtomicNumbers(:), tmpAtomicNumbers(:)
+
+    !> auxiliary variables
+    character(len=100) :: tmpStr
+    real(dp) :: tmpReal(1)
+    real(dp), allocatable :: tmpRealArray1d(:)
+    integer :: iFunc, iErr, tExist, tmpInt(1)
+
+    ! open the hdf5 interface
+    call h5open_f(iErr)
+
+    ! open the netstat file
+    call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
+
+    ! open the netstat group
+    call h5gopen_f(file_id, 'netstat', netstat_id, iErr)
+
+    ! check if a mapping entry is present
+    tExist = h5ltfind_dataset_f(netstat_id, 'mapping')
+
+    if (.not. (tExist == 1)) then
+      call error('Error while reading ACSF from file. Mapping group absent.')
+    end if
+
+    ! open the mapping group
+    call h5gopen_f(netstat_id, 'mapping', mapping_id, iErr)
+
+    ! check the mapping type
+    call h5ltget_attribute_string_f(mapping_id, './', 'type', tmpStr, iErr)
+    if (.not. (tolower(trim(tmpStr)) == 'acsf')) then
+      call error('Error while reading ACSF from netstat file. Invalid mapping type '&
+          & // tolower(trim(tmpStr)) // '.')
+    end if
+
+    ! read the total number of mapping functions
+    call h5ltget_attribute_int_f(mapping_id, './', 'nfunctions', tmpInt, iErr)
+    if (tmpInt(1) <= 0) then
+      call error('Error while reading ACSF from netstat file. Non-positive number of ACSF '&
+          & // 'functions obtained.')
+    else
+      allocate(this%gFunctions%func(tmpInt(1)))
+    end if
+
+    do iFunc = 1, size(this%gFunctions%func)
+      funcname = 'function' // i2c(iFunc)
+
+      ! open the function group
+      call h5gopen_f(mapping_id, funcname, func_id, iErr)
+
+      ! read the G-function type
+      call h5ltget_attribute_string_f(func_id, './', 'type', tmpStr, iErr)
+      if (.not. ((tolower(trim(tmpStr)) == 'g1') .or. (tolower(trim(tmpStr)) == 'g2')&
+          & .or. (tolower(trim(tmpStr)) == 'g3') .or. (tolower(trim(tmpStr)) == 'g4')&
+          & .or. (tolower(trim(tmpStr)) == 'g5'))) then
+        call error('Error while reading ACSF from netstat file. Invalid G-Function type '&
+            & // tolower(trim(tmpStr)) // '.')
+      end if
+      this%gFunctions%func(iFunc)%type = tolower(trim(tmpStr))
+
+      ! read the dataset index for atomID
+      call h5ltget_attribute_int_f(func_id, './', 'atomid', tmpInt, iErr)
+      if (tmpInt(1) < 0) then
+        call error('Error while reading ACSF from netstat file. Negative atomId obtained.')
+      end if
+      this%gFunctions%func(iFunc)%atomId = tmpInt(1)
+
+      ! read the cutoff radius
+      call h5ltget_attribute_double_f(func_id, './', 'cutoff', tmpReal, iErr)
+      if (tmpReal(1) <= 0.0_dp) then
+        call error('Error while reading ACSF from netstat file. Invalid cutoff obtained.')
+      end if
+      this%gFunctions%func(iFunc)%rCut = tmpReal(1)
+
+      ! read the atomic numbers for the species-resolved scheme
+      call h5ltget_attribute_int_f(func_id, './', 'atomicnumbers',&
+          & this%gFunctions%func(iFunc)%atomicNumbers, iErr)
+      if ((this%gFunctions%func(iFunc)%atomicNumbers(1) < 0)&
+          & .or. (this%gFunctions%func(iFunc)%atomicNumbers(2) < 0)) then
+        call error('Error while reading ACSF from netstat file. Invalid atomic numbers obtained.')
+      end if
+
+      ! inquire whether this is a radial function
+      call h5ltget_attribute_int_f(func_id, './', 'tradial', tmpInt, iErr)
+      if (tmpInt(1) == 0) then
+        this%gFunctions%func(iFunc)%tRadial = .false.
+      elseif (tmpInt(1) == 1) then
+        this%gFunctions%func(iFunc)%tRadial = .true.
+      else
+        call error('Error while reading ACSF from netstat file. Invalid tRadial entry.')
+      end if
+
+      ! inquire whether this is an angular function
+      call h5ltget_attribute_int_f(func_id, './', 'tangular', tmpInt, iErr)
+      if (tmpInt(1) == 0) then
+        this%gFunctions%func(iFunc)%tAngular = .false.
+      elseif (tmpInt(1) == 1) then
+        this%gFunctions%func(iFunc)%tAngular = .true.
+      else
+        call error('Error while reading ACSF from netstat file. Invalid tAngular entry.')
+      end if
+
+      ! check consistency of tRadial and tAngular entries
+      if (this%gFunctions%func(iFunc)%tRadial .eqv. this%gFunctions%func(iFunc)%tAngular) then
+        call error('Error while reading ACSF from netstat file. Conflicting entries tRadial '&
+            & // 'and tAngular.')
+      end if
+
+      ! provide dummy values for now
+      this%gFunctions%func(iFunc)%kappa = 0.0_dp
+      this%gFunctions%func(iFunc)%rs = 0.0_dp
+      this%gFunctions%func(iFunc)%eta = 0.0_dp
+      this%gFunctions%func(iFunc)%lambda = 0.0_dp
+      this%gFunctions%func(iFunc)%xi = 0.0_dp
+
+      ! read G-function dependent parameters
+      select case (this%gFunctions%func(iFunc)%type)
+      case ('g2')
+        call h5ltget_attribute_double_f(func_id, './', 'eta', tmpReal, iErr)
+        this%gFunctions%func(iFunc)%eta = tmpReal(1)
+        call h5ltget_attribute_double_f(func_id, './', 'rs', tmpReal, iErr)
+        this%gFunctions%func(iFunc)%rs = tmpReal(1)
+      case ('g3')
+        call h5ltget_attribute_double_f(func_id, './', 'kappa', tmpReal, iErr)
+        this%gFunctions%func(iFunc)%kappa = tmpReal(1)
+      case ('g4', 'g5')
+        call h5ltget_attribute_double_f(func_id, './', 'xi', tmpReal, iErr)
+        this%gFunctions%func(iFunc)%xi = tmpReal(1)
+        call h5ltget_attribute_double_f(func_id, './', 'lambda', tmpReal, iErr)
+        this%gFunctions%func(iFunc)%lambda = tmpReal(1)
+        call h5ltget_attribute_double_f(func_id, './', 'eta', tmpReal, iErr)
+        this%gFunctions%func(iFunc)%eta = tmpReal(1)
+      end select
+
+      ! close the function group
+      call h5gclose_f(func_id, iErr)
+
+    end do
+
+    ! inquire preconditioning configuration
+    tExist = h5ltfind_dataset_f(mapping_id, 'preconditioning')
+
+    if (tExist == 0) then
+      this%tZscore = .false.
+    else
+      this%tZscore = .true.
+    end if
+
+    if (this%tZscore) then
+
+      ! open the preconditioning group
+      call h5gopen_f(mapping_id, 'preconditioning', precond_id, iErr)
+
+      ! read the preconditioning type
+      call h5ltget_attribute_string_f(precond_id, './', 'type', tmpStr, iErr)
+      if (.not. (tolower(trim(tmpStr)) == 'zscore')) then
+        call error('Error while reading ACSF from netstat file. Invalid preconditioning type '&
+            & // tolower(trim(tmpStr)) // '.')
+      end if
+
+      if (allocated(this%zPrec)) deallocate(this%zPrec)
+      allocate(this%zPrec(size(this%gFunctions%func), 2))
+
+      ! read means and variances
+      call h5ltfx_read_dataset_double_f(precond_id, 'means', tmpRealArray1d)
+      this%zPrec(:, 1) = tmpRealArray1d
+      call h5ltfx_read_dataset_double_f(precond_id, 'variances', tmpRealArray1d)
+      this%zPrec(:, 2) = tmpRealArray1d
+
+      ! close the preconditioning group
+      call h5gclose_f(precond_id, iErr)
+
+    end if
+
+    ! close the mapping group
+    call h5gclose_f(mapping_id, iErr)    
+
+    ! close the netstat group
+    call h5gclose_f(netstat_id, iErr)
+
+    ! close the netstat file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
+
+    nRadial = 0
+    nAngular = 0
+    allocate(tmpAtomicNumbers(0))
+    ! determine if the ACSF configuration is species-resolved
+    do iFunc = 1, size(this%gFunctions%func)
+      if (this%gFunctions%func(iFunc)%tRadial) then
+        nRadial = nRadial + 1
+        tmpAtomicNumbers = [tmpAtomicNumbers, [this%gFunctions%func(iFunc)%atomicNumbers(1)]]
+      else
+        nAngular = nAngular + 1
+        tmpAtomicNumbers = [tmpAtomicNumbers, this%gFunctions%func(iFunc)%atomicNumbers]
+      end if
+    end do
+
+    ! reduce the ACSF atomic numbers to unique ones
+    call getUniqueInt(tmpAtomicNumbers, acsfAtomicNumbers)
+
+    if (all(acsfAtomicNumbers == 0)) then
+      tReduce = .true.
+    else
+      tReduce = .false.
+    end if
+    tStandardize = this%tZscore
+
+  end subroutine TAcsf_fromFile
 
 end module fnet_acsf

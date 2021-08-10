@@ -7,7 +7,7 @@
 
 #:include 'common.fypp'
 
-!> General interface for the optimization algorithms
+!> Defines a general interface to the optimization algorithms.
 module fnet_optimizers
 
   use dftbp_accuracy, only : dp
@@ -25,7 +25,7 @@ module fnet_optimizers
   public :: init, reset, next
   public :: optimizerTypes
 
-  !> interface type for the various optimization algorithms
+  !> Interface type for the various optimization algorithms.
   type TOptimizer
 
     private
@@ -48,7 +48,7 @@ module fnet_optimizers
   end type TOptimizer
 
 
-  !> initialises an optimizer
+  !> Initialises an optimizer instance.
   interface init
 
     module procedure TOptimizer_initTSteepDesc
@@ -59,19 +59,19 @@ module fnet_optimizers
   end interface
 
 
-  !> resets the optimizer
+  !> Resets the optimizer.
   interface reset
     module procedure TOptimizer_reset
   end interface
 
 
-  !> delivers the next point in the minimization
+  !> Delivers the next point in the minimization.
   interface next
     module procedure TOptimizer_next
   end interface
 
 
-  !> assign an integer ID to each optimizer
+  !> Assigns an integer ID to each optimizer.
   type :: TOptimizerTypesEnum
 
     integer :: none = 0
@@ -87,7 +87,7 @@ module fnet_optimizers
 
 contains
 
-  !> creates a general optimizer with a steepest descent instance
+  !> Creates a general optimizer with a steepest descent instance.
   subroutine TOptimizer_initTSteepDesc(pSteepDesc, this)
 
     !> an already initialized steepest descent instance
@@ -102,7 +102,7 @@ contains
   end subroutine TOptimizer_initTSteepDesc
 
 
-  !> creates a general optimizer with a conjugate gradient instance
+  !> Creates a general optimizer with a conjugate gradient instance.
   subroutine TOptimizer_initTConjGrad(pConjGrad, this)
 
     !> an already initialized conjugate gradient instance
@@ -117,7 +117,7 @@ contains
   end subroutine TOptimizer_initTConjGrad
 
 
-  !> creates a general optimizer with a limited memory bfgs instance
+  !> Creates a general optimizer with a limited memory bfgs instance.
   subroutine TOptimizer_initTLbfgs(pLbfgs, this)
 
     !> an already initialized lbfgs instance
@@ -132,7 +132,7 @@ contains
   end subroutine TOptimizer_initTLbfgs
 
 
-  !> creates a general optimizer with a fire instance
+  !> Creates a general optimizer with a fire instance.
   subroutine TOptimizer_initTFire(pFire, this)
 
     !> an already initialized fire instance
@@ -147,7 +147,7 @@ contains
   end subroutine TOptimizer_initTFire
 
 
-  !> resets a general optimizer
+  !> Resets a general optimizer.
   subroutine TOptimizer_reset(this, initialVals)
 
     !> general optimizer instance
@@ -179,8 +179,8 @@ contains
   end subroutine TOptimizer_reset
 
 
-  !> delivers the next optimized values
-  !> function value and gradients of the initial values must get passed at first invocation
+  !> Delivers the next optimized values.
+  !> Function value and gradients of the initial values must get passed at first invocation.
   subroutine TOptimizer_next(this, funcVal, grads, outputVals, tConverged)
 
     !> general optimizer instance

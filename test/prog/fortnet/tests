@@ -4,82 +4,80 @@
 
 #:include 'common.fypp'
 
-input/atomids
-
-input/contiguous/atomicTargets
-input/contiguous/globalTargets
-
-input/contiguousmix
-
-input/extfeatures/contiguous
-input/extfeatures/empty
-input/extfeatures/fullrange
-input/extfeatures/noncontiguous
-input/extfeatures/predict
-input/extfeatures/rangeselected
-input/extfeatures/selected
-input/extfeatures/validate
-
-input/speciesids/hubbard
-input/speciesids/ones
-input/speciesids/predict
-input/speciesids/validate
-
-input/weighting/acsfPrec/contiguous
-input/weighting/acsfPrec/noncontiguous
-input/weighting/noPrec/contiguous
-input/weighting/noPrec/noncontiguous
-input/weighting/targetPrec/contiguous
-input/weighting/targetPrec/noncontiguous
-input/weighting/validate
-input/weighting/predict
-
 loss/mae
 loss/mape
 loss/mse
 loss/rms
 
-optimizer/singlespecies/conjgrads
-optimizer/singlespecies/fire
-optimizer/singlespecies/lbfgs
-optimizer/singlespecies/steepestdesc
+#! input/atomids
 
-optimizer/multispecies/conjgrads
-optimizer/multispecies/fire
-optimizer/multispecies/lbfgs
-optimizer/multispecies/steepestdesc
+#! input/contiguous/atomicTargets
+#! input/contiguous/globalTargets
 
-training/singlespecies/globalTargets
-training/singlespecies/atomicTargets
-training/multispecies/globalTargets
-training/multispecies/atomicTargets
+#! input/extfeatures/contiguous
+#! input/extfeatures/empty
+#! input/extfeatures/fullrange
+#! input/extfeatures/noncontiguous
+#! input/extfeatures/predict
+#! input/extfeatures/rangeselected
+#! input/extfeatures/selected
+#! input/extfeatures/validate
 
-validation/singlespecies/globalTargets
-validation/singlespecies/atomicTargets
-validation/multispecies/globalTargets
-validation/multispecies/atomicTargets
+#! input/speciesids/hubbard
+#! input/speciesids/ones
+#! input/speciesids/predict
+#! input/speciesids/validate
 
-prediction/singlespecies/globalTargets
-prediction/singlespecies/atomicTargets
-prediction/multispecies/globalTargets
-prediction/multispecies/atomicTargets
+#! input/weighting/acsfPrec/contiguous
+#! input/weighting/acsfPrec/noncontiguous
+#! input/weighting/noPrec/contiguous
+#! input/weighting/noPrec/noncontiguous
+#! input/weighting/targetPrec/contiguous
+#! input/weighting/targetPrec/noncontiguous
+#! input/weighting/validate
+#! input/weighting/predict
 
-restart/singlespecies/globalTargets/conjgrads
-restart/singlespecies/globalTargets/fire
-restart/singlespecies/globalTargets/lbfgs
-restart/singlespecies/globalTargets/steepestdesc
+#! optimizer/singlespecies/conjgrads
+#! optimizer/singlespecies/fire
+#! optimizer/singlespecies/lbfgs
+#! optimizer/singlespecies/steepestdesc
 
-restart/singlespecies/atomicTargets/conjgrads
-restart/singlespecies/atomicTargets/fire
-restart/singlespecies/atomicTargets/lbfgs
-restart/singlespecies/atomicTargets/steepestdesc
+#! optimizer/multispecies/conjgrads
+#! optimizer/multispecies/fire
+#! optimizer/multispecies/lbfgs
+#! optimizer/multispecies/steepestdesc
 
-restart/multispecies/globalTargets/conjgrads
-restart/multispecies/globalTargets/fire
-restart/multispecies/globalTargets/lbfgs
-restart/multispecies/globalTargets/steepestdesc
+#! training/singlespecies/globalTargets
+#! training/singlespecies/atomicTargets
+#! training/multispecies/globalTargets
+#! training/multispecies/atomicTargets
 
-restart/multispecies/atomicTargets/conjgrads
-restart/multispecies/atomicTargets/fire
-restart/multispecies/atomicTargets/lbfgs
-restart/multispecies/atomicTargets/steepestdesc
+#! validation/singlespecies/globalTargets
+#! validation/singlespecies/atomicTargets
+#! validation/multispecies/globalTargets
+#! validation/multispecies/atomicTargets
+
+#! prediction/singlespecies/globalTargets
+#! prediction/singlespecies/atomicTargets
+#! prediction/multispecies/globalTargets
+#! prediction/multispecies/atomicTargets
+
+#! restart/singlespecies/globalTargets/conjgrads
+#! restart/singlespecies/globalTargets/fire
+#! restart/singlespecies/globalTargets/lbfgs
+#! restart/singlespecies/globalTargets/steepestdesc
+
+#! restart/singlespecies/atomicTargets/conjgrads
+#! restart/singlespecies/atomicTargets/fire
+#! restart/singlespecies/atomicTargets/lbfgs
+#! restart/singlespecies/atomicTargets/steepestdesc
+
+#! restart/multispecies/globalTargets/conjgrads
+#! restart/multispecies/globalTargets/fire
+#! restart/multispecies/globalTargets/lbfgs
+#! restart/multispecies/globalTargets/steepestdesc
+
+#! restart/multispecies/atomicTargets/conjgrads
+#! restart/multispecies/atomicTargets/fire
+#! restart/multispecies/atomicTargets/lbfgs
+#! restart/multispecies/atomicTargets/steepestdesc

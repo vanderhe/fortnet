@@ -137,7 +137,6 @@ contains
     integer, allocatable :: tmpSpecies(:)
     real(dp), allocatable :: tmpCoords(:,:)
 
-
     this%nAtom = iEnd - iStart + 1
     allocate(tmpSpecies(this%nAtom))
     tmpSpecies = this%species(iStart:iEnd)

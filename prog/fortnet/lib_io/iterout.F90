@@ -7,15 +7,12 @@
 
 #:include 'common.fypp'
 
+!> Provides utilities to write out more detailed information about the loss course.
 module fnet_iterout
 
-  ! use dftbp_xmlf90
-  ! use dftbp_hsdutils, only : writeChildValue
-  use dftbp_message, only : error
   use dftbp_accuracy, only: dp
+  use dftbp_message, only : error
   use dftbp_charmanip, only : i2c
-
-  ! use fnet_nestedtypes, only : TRealArray2D, TPredicts
 
   implicit none
 
@@ -26,14 +23,14 @@ module fnet_iterout
 
 contains
 
-  !> Write obtained results to fnetout.xml file
-  subroutine writeIterTrajToFile(fname, loss, validLoss, gradients)
+  !> Writes obtained loss/v-loss/gradients to file.
+  subroutine writeIterTrajToFile(fname, trainLoss, validLoss, gradients)
 
     !> filename (will be iterout.dat)
     character(len=*), intent(in) :: fname
 
     !> loss trajectory during training
-    real(dp), intent(in), optional, target :: loss(:)
+    real(dp), intent(in), optional, target :: trainLoss(:)
 
     !> validation loss trajectory during training
     real(dp), intent(in), optional, target :: validLoss(:)
@@ -53,8 +50,8 @@ contains
     !> auxiliary variables
     integer :: iLine, nLines, nColumns
 
-    if (present(loss)) then
-      nLines = size(loss)
+    if (present(trainLoss)) then
+      nLines = size(trainLoss)
     elseif (present(validLoss)) then
       nLines = size(validLoss)
     elseif (present(gradients)) then
@@ -68,7 +65,7 @@ contains
     nColumns = 0
     allocate(pData(nColumns, nLines))
 
-    if (present(loss)) then
+    if (present(trainLoss)) then
       nColumns = nColumns + 1
     end if
 
@@ -83,8 +80,8 @@ contains
     allocate(pData(nColumns, nLines))
     nColumns = 1
 
-    if (present(loss)) then
-      pData(nColumns, 1:nLines) = loss
+    if (present(trainLoss)) then
+      pData(nColumns, 1:nLines) = trainLoss
       nColumns = nColumns + 1
     end if
 

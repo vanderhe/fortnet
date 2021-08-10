@@ -28,6 +28,7 @@ set(sources-fpp
   ${curdir}/mpifx.F90
   ${curdir}/ranlux.F90
   ${curdir}/simplealgebra.F90
+  ${curdir}/sorting.F90
   ${curdir}/steepdesc.F90
   ${curdir}/tokenreader.F90
   ${curdir}/typegeometry.F90
