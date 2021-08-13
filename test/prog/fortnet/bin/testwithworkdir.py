@@ -198,6 +198,8 @@ class Netfile:
                             self._fname + \
                             "'. Unrecognized mapping type obtained."
                         raise NetfileError(msg)
+                else:
+                    self.data['mapping']['preconditioning']['type'] = None
 
             if self.data['mapping']['type'] is not None:
                 for ifunc in range(self.data['mapping']['nfunctions']):

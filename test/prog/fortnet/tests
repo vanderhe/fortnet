@@ -4,80 +4,220 @@
 
 #:include 'common.fypp'
 
-loss/mae
-loss/mape
-loss/mse
-loss/rms
+input/acsf/auto
+input/acsf/autoandmanual
+input/acsf/manual
+input/acsf/multiauto
 
-#! input/atomids
+input/activation/gaussian
+input/activation/heaviside
+input/activation/linear
+input/activation/relu
+input/activation/sigmoid
+input/activation/tanh
 
-#! input/contiguous/atomicTargets
-#! input/contiguous/globalTargets
+input/atomids/speciesResolved
+input/atomids/speciesUnresolved
 
-#! input/extfeatures/contiguous
-#! input/extfeatures/empty
-#! input/extfeatures/fullrange
-#! input/extfeatures/noncontiguous
-#! input/extfeatures/predict
-#! input/extfeatures/rangeselected
-#! input/extfeatures/selected
-#! input/extfeatures/validate
+input/extfeatures/prediction/empty
+input/extfeatures/prediction/noempty
 
-#! input/speciesids/hubbard
-#! input/speciesids/ones
-#! input/speciesids/predict
-#! input/speciesids/validate
+input/extfeatures/restart/empty
+input/extfeatures/restart/noempty
 
-#! input/weighting/acsfPrec/contiguous
-#! input/weighting/acsfPrec/noncontiguous
-#! input/weighting/noPrec/contiguous
-#! input/weighting/noPrec/noncontiguous
-#! input/weighting/targetPrec/contiguous
-#! input/weighting/targetPrec/noncontiguous
-#! input/weighting/validate
-#! input/weighting/predict
+input/extfeatures/training/empty
+input/extfeatures/training/fullrange
+input/extfeatures/training/rangeselected
+input/extfeatures/training/selected
 
-#! optimizer/singlespecies/conjgrads
-#! optimizer/singlespecies/fire
-#! optimizer/singlespecies/lbfgs
-#! optimizer/singlespecies/steepestdesc
+input/extfeatures/validation/empty
+input/extfeatures/validation/noempty
 
-#! optimizer/multispecies/conjgrads
-#! optimizer/multispecies/fire
-#! optimizer/multispecies/lbfgs
-#! optimizer/multispecies/steepestdesc
+input/itertraj/
 
-#! training/singlespecies/globalTargets
-#! training/singlespecies/atomicTargets
-#! training/multispecies/globalTargets
-#! training/multispecies/atomicTargets
+input/loss/mae
+input/loss/mape
+input/loss/mse
+input/loss/rms
 
-#! validation/singlespecies/globalTargets
-#! validation/singlespecies/atomicTargets
-#! validation/multispecies/globalTargets
-#! validation/multispecies/atomicTargets
+input/mixedfeatures/prediction
+input/mixedfeatures/restart
+input/mixedfeatures/training
+input/mixedfeatures/validation
 
-#! prediction/singlespecies/globalTargets
-#! prediction/singlespecies/atomicTargets
-#! prediction/multispecies/globalTargets
-#! prediction/multispecies/atomicTargets
+input/shuffle/restart/multispecies/atomicTargets
+input/shuffle/restart/multispecies/globalTargets
+input/shuffle/restart/singlespecies/atomicTargets
+input/shuffle/restart/singlespecies/globalTargets
 
-#! restart/singlespecies/globalTargets/conjgrads
-#! restart/singlespecies/globalTargets/fire
-#! restart/singlespecies/globalTargets/lbfgs
-#! restart/singlespecies/globalTargets/steepestdesc
+input/shuffle/training/multispecies/atomicTargets
+input/shuffle/training/multispecies/globalTargets
+input/shuffle/training/singlespecies/atomicTargets
+input/shuffle/training/singlespecies/globalTargets
 
-#! restart/singlespecies/atomicTargets/conjgrads
-#! restart/singlespecies/atomicTargets/fire
-#! restart/singlespecies/atomicTargets/lbfgs
-#! restart/singlespecies/atomicTargets/steepestdesc
+input/special/deep
+input/special/large
 
-#! restart/multispecies/globalTargets/conjgrads
-#! restart/multispecies/globalTargets/fire
-#! restart/multispecies/globalTargets/lbfgs
-#! restart/multispecies/globalTargets/steepestdesc
+input/weighting/restart/multispecies/atomicTargets/acsfPrec
+input/weighting/restart/multispecies/atomicTargets/noPrec
+input/weighting/restart/multispecies/globalTargets/acsfPrec
+input/weighting/restart/multispecies/globalTargets/noPrec
 
-#! restart/multispecies/atomicTargets/conjgrads
-#! restart/multispecies/atomicTargets/fire
-#! restart/multispecies/atomicTargets/lbfgs
-#! restart/multispecies/atomicTargets/steepestdesc
+input/weighting/restart/singlespecies/atomicTargets/acsfPrec
+input/weighting/restart/singlespecies/atomicTargets/noPrec
+input/weighting/restart/singlespecies/globalTargets/acsfPrec
+input/weighting/restart/singlespecies/globalTargets/noPrec
+
+input/weighting/training/multispecies/atomicTargets/acsfPrec
+input/weighting/training/multispecies/atomicTargets/noPrec
+input/weighting/training/multispecies/globalTargets/acsfPrec
+input/weighting/training/multispecies/globalTargets/noPrec
+
+input/weighting/training/singlespecies/atomicTargets/acsfPrec
+input/weighting/training/singlespecies/atomicTargets/noPrec
+input/weighting/training/singlespecies/globalTargets/acsfPrec
+input/weighting/training/singlespecies/globalTargets/noPrec
+
+prediction/multispecies/atomicTargets/optimizer/conjgrads
+prediction/multispecies/atomicTargets/optimizer/fire
+prediction/multispecies/atomicTargets/optimizer/lbfgs
+prediction/multispecies/atomicTargets/optimizer/steepestdesc
+
+prediction/multispecies/globalTargets/optimizer/conjgrads
+prediction/multispecies/globalTargets/optimizer/fire
+prediction/multispecies/globalTargets/optimizer/lbfgs
+prediction/multispecies/globalTargets/optimizer/steepestdesc
+
+prediction/singlespecies/atomicTargets/optimizer/conjgrads
+prediction/singlespecies/atomicTargets/optimizer/fire
+prediction/singlespecies/atomicTargets/optimizer/lbfgs
+prediction/singlespecies/atomicTargets/optimizer/steepestdesc
+
+prediction/singlespecies/globalTargets/optimizer/conjgrads
+prediction/singlespecies/globalTargets/optimizer/fire
+prediction/singlespecies/globalTargets/optimizer/lbfgs
+prediction/singlespecies/globalTargets/optimizer/steepestdesc
+
+prediction/multispecies/atomicTargets/acsffeatures/noPrec
+prediction/multispecies/atomicTargets/acsffeatures/speciesResolved
+prediction/multispecies/atomicTargets/acsffeatures/speciesUnresolved
+
+prediction/multispecies/globalTargets/acsffeatures/noPrec
+prediction/multispecies/globalTargets/acsffeatures/speciesResolved
+prediction/multispecies/globalTargets/acsffeatures/speciesUnresolved
+
+prediction/singlespecies/atomicTargets/acsffeatures/noPrec
+prediction/singlespecies/atomicTargets/acsffeatures/speciesResolved
+prediction/singlespecies/atomicTargets/acsffeatures/speciesUnresolved
+
+prediction/singlespecies/globalTargets/acsffeatures/noPrec
+prediction/singlespecies/globalTargets/acsffeatures/speciesResolved
+prediction/singlespecies/globalTargets/acsffeatures/speciesUnresolved
+
+restart/multispecies/atomicTargets/optimizer/conjgrads
+restart/multispecies/atomicTargets/optimizer/fire
+restart/multispecies/atomicTargets/optimizer/lbfgs
+restart/multispecies/atomicTargets/optimizer/steepestdesc
+
+restart/multispecies/globalTargets/optimizer/conjgrads
+restart/multispecies/globalTargets/optimizer/fire
+restart/multispecies/globalTargets/optimizer/lbfgs
+restart/multispecies/globalTargets/optimizer/steepestdesc
+
+restart/singlespecies/atomicTargets/optimizer/conjgrads
+restart/singlespecies/atomicTargets/optimizer/fire
+restart/singlespecies/atomicTargets/optimizer/lbfgs
+restart/singlespecies/atomicTargets/optimizer/steepestdesc
+
+restart/singlespecies/globalTargets/optimizer/conjgrads
+restart/singlespecies/globalTargets/optimizer/fire
+restart/singlespecies/globalTargets/optimizer/lbfgs
+restart/singlespecies/globalTargets/optimizer/steepestdesc
+
+restart/multispecies/atomicTargets/acsffeatures/noPrec
+restart/multispecies/atomicTargets/acsffeatures/speciesResolved
+restart/multispecies/atomicTargets/acsffeatures/speciesUnresolved
+
+restart/multispecies/globalTargets/acsffeatures/noPrec
+restart/multispecies/globalTargets/acsffeatures/speciesResolved
+restart/multispecies/globalTargets/acsffeatures/speciesUnresolved
+
+restart/singlespecies/atomicTargets/acsffeatures/noPrec
+restart/singlespecies/atomicTargets/acsffeatures/speciesResolved
+restart/singlespecies/atomicTargets/acsffeatures/speciesUnresolved
+
+restart/singlespecies/globalTargets/acsffeatures/noPrec
+restart/singlespecies/globalTargets/acsffeatures/speciesResolved
+restart/singlespecies/globalTargets/acsffeatures/speciesUnresolved
+
+training/multispecies/atomicTargets/optimizer/conjgrads
+training/multispecies/atomicTargets/optimizer/fire
+training/multispecies/atomicTargets/optimizer/lbfgs
+training/multispecies/atomicTargets/optimizer/steepestdesc
+
+training/multispecies/globalTargets/optimizer/conjgrads
+training/multispecies/globalTargets/optimizer/fire
+training/multispecies/globalTargets/optimizer/lbfgs
+training/multispecies/globalTargets/optimizer/steepestdesc
+
+training/singlespecies/atomicTargets/optimizer/conjgrads
+training/singlespecies/atomicTargets/optimizer/fire
+training/singlespecies/atomicTargets/optimizer/lbfgs
+training/singlespecies/atomicTargets/optimizer/steepestdesc
+
+training/singlespecies/globalTargets/optimizer/conjgrads
+training/singlespecies/globalTargets/optimizer/fire
+training/singlespecies/globalTargets/optimizer/lbfgs
+training/singlespecies/globalTargets/optimizer/steepestdesc
+
+training/multispecies/atomicTargets/acsffeatures/noPrec
+training/multispecies/atomicTargets/acsffeatures/speciesResolved
+training/multispecies/atomicTargets/acsffeatures/speciesUnresolved
+
+training/multispecies/globalTargets/acsffeatures/noPrec
+training/multispecies/globalTargets/acsffeatures/speciesResolved
+training/multispecies/globalTargets/acsffeatures/speciesUnresolved
+
+training/singlespecies/atomicTargets/acsffeatures/noPrec
+training/singlespecies/atomicTargets/acsffeatures/speciesResolved
+training/singlespecies/atomicTargets/acsffeatures/speciesUnresolved
+
+training/singlespecies/globalTargets/acsffeatures/noPrec
+training/singlespecies/globalTargets/acsffeatures/speciesResolved
+training/singlespecies/globalTargets/acsffeatures/speciesUnresolved
+
+validation/multispecies/atomicTargets/optimizer/conjgrads
+validation/multispecies/atomicTargets/optimizer/fire
+validation/multispecies/atomicTargets/optimizer/lbfgs
+validation/multispecies/atomicTargets/optimizer/steepestdesc
+
+validation/multispecies/globalTargets/optimizer/conjgrads
+validation/multispecies/globalTargets/optimizer/fire
+validation/multispecies/globalTargets/optimizer/lbfgs
+validation/multispecies/globalTargets/optimizer/steepestdesc
+
+validation/singlespecies/atomicTargets/optimizer/conjgrads
+validation/singlespecies/atomicTargets/optimizer/fire
+validation/singlespecies/atomicTargets/optimizer/lbfgs
+validation/singlespecies/atomicTargets/optimizer/steepestdesc
+
+validation/singlespecies/globalTargets/optimizer/conjgrads
+validation/singlespecies/globalTargets/optimizer/fire
+validation/singlespecies/globalTargets/optimizer/lbfgs
+validation/singlespecies/globalTargets/optimizer/steepestdesc
+
+validation/multispecies/atomicTargets/acsffeatures/noPrec
+validation/multispecies/atomicTargets/acsffeatures/speciesResolved
+validation/multispecies/atomicTargets/acsffeatures/speciesUnresolved
+
+validation/multispecies/globalTargets/acsffeatures/noPrec
+validation/multispecies/globalTargets/acsffeatures/speciesResolved
+validation/multispecies/globalTargets/acsffeatures/speciesUnresolved
+
+validation/singlespecies/atomicTargets/acsffeatures/noPrec
+validation/singlespecies/atomicTargets/acsffeatures/speciesResolved
+validation/singlespecies/atomicTargets/acsffeatures/speciesUnresolved
+
+validation/singlespecies/globalTargets/acsffeatures/noPrec
+validation/singlespecies/globalTargets/acsffeatures/speciesResolved
+validation/singlespecies/globalTargets/acsffeatures/speciesUnresolved

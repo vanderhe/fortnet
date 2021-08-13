@@ -837,7 +837,7 @@ contains
     real(dp) :: rCut, kappa, rs, eta, lambda, xi
 
     !> node containing the information
-    type(fnode), pointer :: mappingnode, extnode, child, tmp
+    type(fnode), pointer :: mappingnode, extnode, child, tmp, indChild
 
     !> multiple nodes of same name
     type(fnodeList), pointer :: children
@@ -856,20 +856,26 @@ contains
     if (associated(extnode)) then
       call getChildValue(node, 'External', tmp)
       call getNodeName(tmp, strBuffer1)
-      select case (tolower(trim(char(strBuffer1))))
-      case ('fromdataset')
-        call getChildValue(tmp, 'Indices', strBuffer1, child=child, multiple=.true.)
-        call convRangeToInt(char(strBuffer1), extnode, this%ext%indices, nTotExtFeatures)
-        call setChildValue(child, '', this%ext%indices, replace=.true.)
-        this%ext%nExtFeatures = size(this%ext%indices)
-        if (this%ext%nExtFeatures > 0) then
-          this%tExtFeatures = .true.
-        else
-          this%tExtFeatures = .false.
-        end if
-      case default
-        call detailedError(extnode, 'Invalid external feature type.')
-      end select
+      call getChild(tmp, 'Indices', child=indChild, requested=.false.)
+      if (associated(indChild)) then
+        select case (tolower(trim(char(strBuffer1))))
+        case ('fromdataset')
+          call getChildValue(tmp, 'Indices', strBuffer1, child=child, multiple=.true.)
+          call convRangeToInt(char(strBuffer1), extnode, this%ext%indices, nTotExtFeatures)
+          call setChildValue(child, '', this%ext%indices, replace=.true.)
+          this%ext%nExtFeatures = size(this%ext%indices)
+          if (this%ext%nExtFeatures > 0) then
+            this%tExtFeatures = .true.
+          else
+            this%tExtFeatures = .false.
+          end if
+        case default
+          call detailedError(extnode, 'Invalid external feature type.')
+        end select
+      else
+        this%tExtFeatures = .false.
+        this%ext%nExtFeatures = 0
+      end if
     else
       this%tExtFeatures = .false.
       this%ext%nExtFeatures = 0
@@ -988,6 +994,11 @@ contains
     !> atomic numbers of BPNN sub-nn species
     integer, intent(in) :: atomicNumbers(:)
 
+    ! prevent for calculating non-existent combinations of atomic numbers
+    if (size(atomicNumbers) == 1) then
+      features%mapping%tReduce = .true.
+    end if
+
     if (features%tMappingFeatures) then
       call processAcsfFunctions(features%mapping%functions, atomicNumbers,&
           & features%mapping%tReduce, features%mapping%nRadial, features%mapping%nAngular)
@@ -1035,7 +1046,7 @@ contains
       end if
     end do
 
-    if (.not. tReduce) then
+    if ((.not. tReduce) .and. (size(atomicNumbers) > 1)) then
 
       nSpecies = size(atomicNumbers)
 
