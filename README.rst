@@ -33,11 +33,11 @@ Download the latest stable source code from `GitHub
 
   git clone https://github.com/vanderhe/fortnet.git
 
-You need CMake (>= 3.16) to build Fortnet. If your environment offers no CMake
-or only an older one, you can easily install the latest CMake via Python's
-``pip`` command::
+You need CMake (>= 3.16) to build and h5py to test Fortnet. If your environment
+offers no CMake/h5py or only older versions, you can easily install the latest
+software via Python's ``pip`` command::
 
-  pip install cmake
+  pip install cmake h5py
 
 Start CMake by passing your compiler as environment variable ``FC`` and the
 location where the code should be installed and the build directory

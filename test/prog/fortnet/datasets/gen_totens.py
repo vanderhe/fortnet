@@ -43,7 +43,7 @@ def main():
         weights[ii] = ii + 1
         energies[ii, 0] = get_free_energy(os.path.join(inpath, 'OUTCAR'))
 
-    fnetdata = Fortformat(atoms=atoms, targets=energies, atomic=False)
+    fnetdata = Fnetdata(atoms=atoms, targets=energies, atomic=False)
     fnetdata.weights = weights
     fnetdata.dump('fnetdata.hdf5')
 

@@ -89,8 +89,8 @@ def main():
         weights[ii] = ii + 1
         energies[ii, 0] = repen
 
-    fnetdata = Fortformat(atoms=strucs, targets=energies,
-                          atomic=False)
+    fnetdata = Fnetdata(atoms=strucs, targets=energies,
+                        atomic=False)
     fnetdata.weights = weights
     fnetdata.dump('fnetdata.hdf5')
 
@@ -151,8 +151,8 @@ main()
 #     populations += populations_64
 #     populations += populations_63
 
-#     fnetdata = Fortformat(strucs, 'fnetdata.xml', targets=energies,
-#                           features=populations, atomic=False, frac=True)
+#     fnetdata = Fnetdata(strucs, 'fnetdata.xml', targets=energies,
+#                         features=populations, atomic=False, frac=True)
 #     fnetdata.dump()
 
 

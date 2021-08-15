@@ -55,6 +55,10 @@ optimizers listed above. The table below lists these entries:
      - Float
      - 1e+04
      - Max. displacement in parameters
+   * - Shuffle
+     - Logical
+     - No
+     - Randomly shuffle order of gradient calculations
 
 Optimizer Specific Settings
 ===========================
@@ -75,6 +79,7 @@ Exemplary HSD ``Training`` block of the ``fortnet_in.hsd`` user input::
     MinDisplacement = 1e-10
     MaxDisplacement = 5e-02
     LearningRate = 0.01
+    Shuffle = No
   }
 
 Optimizer specific settings:
@@ -104,6 +109,7 @@ Exemplary HSD ``Training`` block of the ``fortnet_in.hsd`` user input::
     NSaveNet = 100
     MinDisplacement = 1e-10
     MaxDisplacement = 5e-02
+    Shuffle = No
   }
 
 Currently, there are no specific parameters for the conjugate gradient method.
@@ -120,6 +126,7 @@ Exemplary HSD ``Training`` block of the ``fortnet_in.hsd`` user input::
     NSaveNet = 100
     MinDisplacement = 1e-10
     MaxDisplacement = 5e-02
+    Shuffle = No
   }
 
 Currently, there are no specific parameters for the conjugate gradient method.
@@ -139,6 +146,7 @@ Exemplary HSD ``Training`` block of the ``fortnet_in.hsd`` user input::
     MaxForQNDisplacement = No
     LineMin = Yes
     Memory = 1000
+    Shuffle = No
   }
 
 Optimizer specific settings:

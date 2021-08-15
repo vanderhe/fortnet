@@ -30,7 +30,7 @@ Hyperbolic Tangent
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'tanh'
+    Activation = tanh
   }
 
 .. figure:: ../_figures/transfer/tanh.svg
@@ -44,7 +44,7 @@ Sigmoid
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'sigmoid'
+    Activation = sigmoid
   }
 
 .. figure:: ../_figures/transfer/sigmoid.svg
@@ -58,7 +58,7 @@ Gaussian
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'gaussian'
+    Activation = gaussian
   }
 
 .. figure:: ../_figures/transfer/gaussian.svg
@@ -72,7 +72,7 @@ ReLU
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'relu'
+    Activation = relu
   }
 
 .. figure:: ../_figures/transfer/relu.svg
@@ -86,7 +86,7 @@ Heaviside
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'heaviside'
+    Activation = heaviside
   }
 
 .. figure:: ../_figures/transfer/heaviside.svg
@@ -100,7 +100,7 @@ Linear
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'linear'
+    Activation = linear
   }
 
 .. figure:: ../_figures/transfer/linear.svg

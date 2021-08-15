@@ -28,14 +28,19 @@ follows::
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'tanh'
+    Activation = tanh
   }
 
-  Mapping = ACSF {
-    NRadial = 5
-    NAngular = 4
-    RCut = 4.0
-    Standardization = Yes
+  Features {
+    Mapping = ACSF {
+      Reduce = Yes
+      Standardization = Yes
+      Function = Auto {
+	RCut = 4.0
+	NRadial = 5
+	NAngular = 4
+      }
+    }
   }
 
   Training = LBFGS {
@@ -47,21 +52,16 @@ follows::
     MaxDisplacement = 5e-02
     LineMin = Yes
     Memory = 1000
-    Loss = 'mse'
+    Loss = mse
   }
 
   Data {
-    Dataset = 'training_data'
-    Standardization = No
-    NetstatFiles = Type2FileNames {
-      Prefix = "./"
-      Suffix = ".net"
-      LowerCaseTypeName = No
-    }
+    Dataset = fnetdata.hdf5
+    NetstatFile = 'fortnet.hdf5'
   }
 
   Options {
-    Mode = 'train'
+    Mode = train
     ReadNetStats = No
     RandomSeed = 123456
   }
@@ -81,7 +81,7 @@ Network
 
   Network = BPNN {
     Hidden = 2 2
-    Activation = 'tanh'
+    Activation = tanh
   }
 
 The ``Network`` block specifies the neural network architecture to use.
@@ -96,16 +96,21 @@ entry. In this case, let's use the hyperbolic tangent. For complete list of
 activation functions, please consult the corresponding
 :ref:`section <sec-transfer>`.
 
-Mapping
--------
+Features
+--------
 
 ::
 
-  Mapping = ACSF {
-    NRadial = 5
-    NAngular = 4
-    RCut = 4.0
-    Standardization = Yes
+  Features {
+    Mapping = ACSF {
+      Reduce = Yes
+      Standardization = Yes
+      Function = Auto {
+	RCut = 4.0
+	NRadial = 5
+	NAngular = 4
+      }
+    }
   }
 
 Fortnet tries to infer physical or chemical properties of your systems based on
@@ -114,17 +119,24 @@ values are unsuitable as network inputs, for several reasons, they have to get
 mapped to translational, rotational and commutation (same type) invariant
 values. One famous set of functions that fulfills this purpose are the so-called
 Atom-centered symmetry functions (ACSF) by J. Behler :cite:`acsf`. Fortnet
-currently implements radial :math:`G_2` and angular :math:`G_5` functions, as
-denoted in the original ACSF paper. Their respective parameters are calculated
-automatically by Fortnet, so that a decent coverage of the sphere defined by
-the cutoff radius is guaranteed. Therefore, only the number of radial
-(``NRadial``) and angular (``NAngular``), as well as the cutoff radius
-(``RCut``), needs to be specified. The unit of the cutoff radius is Angstrom.
-Due to the nature of the ACSF it is likely to get input values of very different
-magnitudes of order. To compensate for this and achieve an improvement in
-convergency and overall stability, it is possible to apply a simple z-score
-standardization in the background, before feeding the network. This behavior is
-controlled via the ``Standardization`` option.
+currently implements radial :math:`G_1, G_2, G_3` and angular :math:`G_4, G_5`
+functions, as denoted in the original ACSF paper. In this case Fortnet's
+automatic parameter generation scheme is used to achieve a decent coverage of
+the cutoff sphere by utilizing :math:`G_2` and :math:`G_5` functions. Therefore,
+only the number of radial (``NRadial``) and angular (``NAngular``), as well as
+the cutoff radius (``RCut``), needs to be specified. The unit of the cutoff
+radius is Angstrom. Due to the nature of the ACSF it is likely to get input
+values of very different orders of magnitude. To compensate for this and achieve
+an improvement in convergency and overall stability, it is possible to apply a
+simple z-score standardization in the background, before feeding the network.
+This behavior is controlled via the ``Standardization`` option. The ``Reduce``
+entry determines whether the ACSF functions should be element resolved or
+unresolved. In the latter case (``Reduce`` = Yes) the calculated neighbor lists
+would contain all the atoms regardless of their type which leads to a
+significant reduction of the input features. However, this would require the
+weighting of individual summands with :ref:`atomic prefactors <sec-acsf_atomid>`
+since otherwise contradictory input features would arise. Since the dataset at
+hand only contains silicon atoms, this parameter may be ignored for now.
 
 
 Training
@@ -133,14 +145,14 @@ Training
 
   Training = LBFGS {
     Threshold = 1e-08
-    NIterations = 10000
-    NPrintout = 10
-    NSaveNet = 100
+    NIterations = 5000
+    NPrintout = 1000
+    NSaveNet = 1000
     MinDisplacement = 1e-10
     MaxDisplacement = 5e-02
     LineMin = Yes
     Memory = 1000
-    Loss = 'mse'
+    Loss = mse
   }
 
 To successively optimize the weight and bias network parameters during the
@@ -164,28 +176,22 @@ Data
 ::
 
   Data {
-    Dataset = 'training_data'
-    Standardization = No
-    NetstatFiles = Type2FileNames {
-      Prefix = "./"
-      Suffix = ".net"
-      LowerCaseTypeName = No
-    }
+    Dataset = fnetdata.hdf5
+    NetstatFile = fortnet.hdf5
   }
 
 Since the provision of high quality data is key when dealing with neural
 networks in general, let's have a look at the data block and how to hand over a
 dataset. Most important, the ``Dataset`` entry must be a string pointing to a
-file that contains all the paths to the so called ``fnetdata.xml`` files. Each
-of those files defines a datapoint that consists of a geometry and target
-values to optimize the network for. A fundamental design decision of Fortnet is
-not to provide native support for the output files of popular simulation
-packages directly. Instead, a separate input format is used and a corresponding
-Python class is provided which, based on the Atomic Simulation Environment
-(`ASE <https://wiki.fysik.dtu.dk/ase/>`_) that is also implemented in Python,
-enables a dataset to be generated easily. To see how you get from the output
-files of your simulation package of choice to a Fortnet compatible dataset,
-please consult the :ref:`Generating a Dataset <sec-fnetdata>` section.
+compatible HDF5 dataset file (in this case ``fnetdata.hdf5``). A fundamental
+design decision of Fortnet is not to provide native support for the output files
+of popular simulation packages directly. Instead, a separate input format is
+used and a corresponding Python class is provided which, based on the
+Atomic Simulation Environment (`ASE <https://wiki.fysik.dtu.dk/ase/>`_) that is
+also implemented in Python, enables a dataset to be generated easily. To see how
+you get from the output files of your simulation package of choice to a Fortnet
+compatible dataset, please consult the
+:ref:`Fnetdata: Generating a Dataset <sec-fnetdata>` section.
 
 Another useful feature is that the loss function of an external validation
 dataset, that is not included in the optimization prozess, can be monitored
@@ -194,42 +200,17 @@ stopping purposes, provide an additional pathfile via the ``Validset`` entry::
 
   Data {
        .
-    Validset = 'validation_data'
+    Validset = fnetvdata.hdf5
   }
 
-In this case a file named `training_data` is present in the same folder as the
-``fortnet_in.hsd`` input::
+In this case a dataset file named `fnetdata.hdf5` is present in the same folder
+as the ``fortnet_in.hsd`` input. Feel free to have a look at its content by
+using your HDF5 viewer of choice.
 
-  20
-  ./dataset/point_01
-  ./dataset/point_02
-  ./dataset/point_03
-       .
-       .
-       .
-
-The first line contains an integer that specifies the number of ``fnetdata.xml``
-paths the current file contains. Following that, the relative (or absolute)
-paths to the directories containing the ``fnetdata.xml`` files get listed. Note
-that there is no '/' at the end of each path because Fortnet will append the
-`/fnetdata.xml` for you. Analogous to the ``Mapping`` block there is an option
-(``Standardization``) to perform a simple z-score standardization on the target
-values.
-
-In addition, the ``Data`` block also handles the naming scheme of the files
-containing all the properties of a single sub-nn of the BPNN, called `netstat`
-files in the Fortnet world. The most convenient method, especially for datasets
-with multiple atom types, is to use the `Type2FileNames` option. In this case
-the only necessary entries are the pre- and suffix of the files and wether to
-use lower case characters only (optional, default: No). The parser will then
-build appropriate filenames (`./Si.net`, `./C.net`, ...) based on the atom types
-found in the dataset at hand. Although not recommended, the output paths and
-filenames can also be specified manually, i.e. if different folders are
-desired::
-
-  NetstatFiles {
-    Si = '/home/user/Silicon.net'
-  }
+In addition, the ``Data`` block also handles the filename of the so-called
+`netstat` files of the Fortnet world. They define the whole network status and
+will be needed for a later restart of the training process or predictions based
+on the created potential.
 
 
 Options
@@ -237,7 +218,7 @@ Options
 ::
 
   Options {
-    Mode = 'train'
+    Mode = train
     ReadNetStats = No
     RandomSeed = 123456
   }
@@ -246,7 +227,7 @@ The basic program behavior gets defined in the ``Option`` block of the input,
 starting with the running mode of Fortnet. There are three valid options:
 `train`, `validate`, `predict`. As in this example, the `train` mode will
 optimize the network with respect to the targets provided by the dataset. A
-resumption of the training process based on existing `netstat` files would be
+resumption of the training process based on existing `netstat` file would be
 requested by setting the ``ReadNetStats`` entry to `Yes`. To validate the
 resulting networks or to predict structures with unknown properties, the
 other two modes are used and explained in the
@@ -257,7 +238,9 @@ application. To meet this requirement, Fortnet provides a ``RandomSeed`` entry.
 By setting a seed you define the initial state of the luxury random number
 generator :cite:`ranlux1,ranlux2,ranlux3` that is working in the background and
 is responsible for the outcome of the initialization of the sub-nn's and
-therefore the training process in general.
+therefore the training process in general. This is an optional entry and
+randomly generated if not set by the user. Since Fortnet prints out the random
+seed of the current run you may need this for later reproduction of results.
 
 .. warning::
    A few warning words about the reproducibility: In theory all the results you
@@ -301,13 +284,13 @@ In the following, the standard output, gets broken down and explained piece by
 piece, in the order as it appears on the screen, starting with the header::
 
   |==============================================================================|
-  |  Fortnet - A BPNN Implementation, Version 0.2                                |
+  |  Fortnet - A BPNN Implementation, Version 0.3                                |
   |                                                                              |
   |  Copyright (C) 2020 - 2021  T. W. van der Heide                              |
   |==============================================================================|
 
-  date: 21.06.2021
-  time: 09:13:06, +0200
+  date: 15.08.2021
+  time: 13:13:08, +0200
 
 As you may have seen, nothing spectacular is happening here. Nevertheless, the
 version number as well as date and time of the binary execution can be important
@@ -348,23 +331,35 @@ You will also see a list of information from the HSD input, as printed below::
 
   ACSF Mappings
 
-  cutoff: 4.0000 Angstrom
+  species-resolved: F
+
   nr. of radial functions: 5
   nr. of angular functions: 4
 
-  species identifier: 
-  Si: 1.000000
-
-  atom id index: /
-
-  Standardization: T
-
+  g2: rc = 7.558904, rs = .000000, eta = .805987,
+      atomId = 0
+  g2: rc = 7.558904, rs = 1.889726, eta = .805987,
+      atomId = 0
+  g2: rc = 7.558904, rs = 3.779452, eta = .805987,
+      atomId = 0
+  g2: rc = 7.558904, rs = 5.669178, eta = .805987,
+      atomId = 0
+  g2: rc = 7.558904, rs = 7.558904, eta = .805987,
+      atomId = 0
+  g5: rc = 7.558904, lambda = 1.000000, eta = .080599, xi = 1.000000
+      atomId = 0
+  g5: rc = 7.558904, lambda = -1.000000, eta = .080599, xi = 1.000000
+      atomId = 0
+  g5: rc = 7.558904, lambda = 1.000000, eta = .080599, xi = 16.000000
+      atomId = 0
+  g5: rc = 7.558904, lambda = -1.000000, eta = .080599, xi = 16.000000
+      atomId = 0
   --------------------------------------------------------------------------------
 
   Dataset Information
 
-  found: 25 geometries (25 unique ones)
-  in pathfile: training_data
+  found: 25 datapoints (25 unique ones)
+  in file: fnetdata.hdf5
   total sub-nn parameters: 29
   targets per parameter: .8621
 
@@ -385,11 +380,11 @@ appears, this process is complete and the training process starts::
 
        iTrain           MSE-Loss          Gradients
   --------------------------------------------------------------------
-	1000        0.186609E-04       0.145044E+00
-	2000        0.770420E-05       0.668376E-03
-	3000        0.405024E-05       0.307614E-03
-	4000        0.240987E-05       0.134383E-03
-	5000        0.119669E-05       0.836493E-04
+	1000        0.187303E-04       0.548379E-03
+	2000        0.224850E-04       0.121142E-02
+	3000        0.411225E-05       0.315495E-03
+	4000        0.118531E-05       0.820748E-03
+	5000        0.142334E-06       0.205431E-03
   --------------------------------------------------------------------
 
   Training finished (max. Iterations reached)
@@ -398,7 +393,7 @@ appears, this process is complete and the training process starts::
 
   Loss Analysis (global min.)
 
-  iTrain: 5000, Loss: 1.196695E-06
+  iTrain: 5000, Loss: 1.423336E-07
 
   --------------------------------------------------------------------
 
@@ -413,13 +408,13 @@ Output Files
 ------------
 Depending on the setting of the program behavior in the input file (i.e. running
 mode), different output files are created. Running the current example there
-will be two files written to disk, appart from the redirected standard output:
-`acsf.out`, `Si.net`. The average user does not have to look into either of
-these files. They only contain information about the ACSF mappings and the
-status of the silicon network, which are necessary for a later resumption of the
-training process or for predictions based on the resulting network potential.
+will be a single file written to disk, appart from the redirected standard
+output: `fortnet.hdf5`. The average user does not have to look into this file.
+It solely contains information regarding the program state, which are necessary
+for a later resumption of the training process or for predictions based on the
+resulting network potential.
 
-In fact, the relevant output ``fnetout.xml`` is only created in validation or
+In fact, the relevant output ``fnetout.hdf5`` is only created in validation or
 prediction mode and introduced in the :ref:`next section <sec-firstpredict>`.
 
 If the total trajectory of the loss function and total gradient is of interest,

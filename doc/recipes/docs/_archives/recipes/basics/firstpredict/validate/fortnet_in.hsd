@@ -1,14 +1,9 @@
 Data {
-  Dataset = 'training_data'
-  Standardization = No
-  NetstatFiles = Type2FileNames {
-    Prefix = "./"
-    Suffix = ".net"
-    LowerCaseTypeName = No
-  }
+  Dataset = fnetdata.hdf5
+  NetstatFile = fortnet.hdf5
 }
 
 Options {
   ReadNetStats = Yes
-  Mode = 'validate'
+  Mode = validate
 }

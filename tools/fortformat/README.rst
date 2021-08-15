@@ -3,11 +3,11 @@ FORTFORMAT: Basic Fortnet IO Format Classes
 *******************************************
 
 These basic Python classes implement the Fortnet input and output file format.
-The Fortformat class enables to create compatible HDF5 datasets, whereas the
+The Fnetdata class enables to create compatible HDF5 datasets, whereas the
 Fnetout class extracts certain properties of the HDF5 output for later analysis.
 The corresponding Python classes are referred to as:
 
-Fortformat
+Fnetdata
   Basic Fortnet input format Python class.
 
 Fnetout

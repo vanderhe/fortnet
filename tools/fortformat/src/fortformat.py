@@ -10,7 +10,7 @@
 Basic Fortnet IO Format Classes
 
 These basic Python classes implement the Fortnet input and output file format.
-The Fortformat class enables to create compatible HDF5 datasets, whereas the
+The Fnetdata class enables to create compatible HDF5 datasets, whereas the
 Fnetout class extracts certain properties of the HDF5 output for later analysis.
 '''
 
@@ -26,12 +26,12 @@ BOHR__AA = 0.529177249
 AA__BOHR = 1.0 / BOHR__AA
 
 
-class Fortformat:
+class Fnetdata:
     '''Basic Fortnet Input Format Class.'''
 
 
     def __init__(self, atoms=None, features=None, targets=None, atomic=False):
-        '''Initializes a Fortformat object.
+        '''Initializes a Fnetdata object.
 
         Args:
 
@@ -60,7 +60,7 @@ class Fortformat:
 
         if not self._withatoms and not self._withfeatures:
             msg = 'Neither geometries nor features provided.'
-            raise FortformatError(msg)
+            raise FnetdataError(msg)
 
         self._nsystems, self._ntotatoms, self._atoms, \
             self._nfeatures, self._features = \
@@ -110,7 +110,7 @@ class Fortformat:
                     periodic = False
                 else:
                     msg = 'Currently, only uniform pbc are supported.'
-                    raise FortformatError(msg)
+                    raise FnetdataError(msg)
 
                 tmp['periodic'] = periodic
 
@@ -242,7 +242,7 @@ class Fortformat:
 
         if not isinstance(fname, str):
             msg = 'Invalid dataset filename, string expected.'
-            raise FortformatError(msg)
+            raise FnetdataError(msg)
 
         data, unique_global_zz = self._process_data()
 
@@ -271,11 +271,11 @@ class Fortformat:
 
         if weights.ndim != 1:
             msg = 'Invalid weights found, 1-dimensional list or array expected.'
-            raise FortformatError(msg)
+            raise FnetdataError(msg)
 
         if not issubclass(weights.dtype.type, np.integer) or any(weights < 1):
             msg = 'Invalid weight(s) found, choose positive integers.'
-            raise FortformatError(msg)
+            raise FnetdataError(msg)
 
         self._weights = weights
 
@@ -344,19 +344,19 @@ def _checkfeatureconsistency(atoms=None, features=None):
 
     if features is not None and not isinstance(features, list):
         msg = 'Expected external features as list.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if atoms is not None and not isinstance(atoms, list):
         msg = 'Expected geometry features as list.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if features is not None and len(features) == 0:
         msg = 'Empty list of external features provided.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if atoms is not None and len(atoms) == 0:
         msg = 'Empty list of geometry features provided.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     # either geometries or external features must be present
     if atoms is not None:
@@ -376,7 +376,7 @@ def _checkfeatureconsistency(atoms=None, features=None):
         for isys in range(nsystems):
             ntotatoms += len(atoms[isys])
             if not len(atoms[isys]) == features[isys].shape[0]:
-                raise FortformatError(msg)
+                raise FnetdataError(msg)
 
         nfeatures = features[0].shape[1]
     else:
@@ -409,21 +409,21 @@ def _checktargetconsistency(targets, nsystems, atomic):
 
     if atomic and len(targets) == 0:
         msg = 'Empty list of targets provided.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if not atomic and sum(targets.shape) < 2:
         msg = 'Empty list of targets provided.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if not atomic and targets.ndim != 2:
         msg = 'Invalid number of target dimensions, ' + \
             'specify (nDatapoints, nTargets).'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if atomic and nsystems != len(targets) or \
     not atomic and nsystems != targets.shape[0]:
         msg = 'Number of features and targets does not match.'
-        raise FortformatError(msg)
+        raise FnetdataError(msg)
 
     if atomic:
         ntargets = targets[0].shape[1]
@@ -695,8 +695,8 @@ class Fnetout:
         return targets
 
 
-class FortformatError(Exception):
-    '''Exception thrown by the Fortformat class.'''
+class FnetdataError(Exception):
+    '''Exception thrown by the Fnetdata class.'''
 
 
 class FnetoutError(Exception):
