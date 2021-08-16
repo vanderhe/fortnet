@@ -12,7 +12,6 @@ env:
   CMAKE_OPTIONS: >-
     -DCMAKE_BUILD_TYPE=Debug
     -DFYPP_FLAGS='-DTRAVIS'
-    -DWITH_UNIT_TESTS=true
 
 jobs:
   gcc-build:
@@ -22,8 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-20.04]
         mpi: [nompi, openmpi]
-        exclude:
-          - mpi: openmpi
+        config: [Debug]
 
     steps:
     - name: Checkout code
@@ -44,7 +42,15 @@ jobs:
     - name: Set Compiler (Linux)
       if: contains(matrix.os, 'ubuntu')
       run: |
+        sudo apt-get update
         echo "FC=gfortran" >> $GITHUB_ENV
+        echo "CC=gcc" >> $GITHUB_ENV
+
+    - name: Install HDF5
+      if: contains(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get update
+        sudo apt-get install hdf5-tools libhdf5-dev libhdf5-103
 
     - name: Install OpenMPI (Linux)
       if: contains(matrix.os, 'ubuntu') && contains(matrix.mpi, 'openmpi')
@@ -54,7 +60,7 @@ jobs:
         echo "CMAKE_OPTIONS=${CMAKE_OPTIONS}" >> $GITHUB_ENV
 
     - name: Install cmake
-      run: pip3 install cmake ninja fypp numpy
+      run: pip3 install cmake ninja fypp numpy h5py
 
     - name: Configure build
       run: >-
@@ -83,8 +89,10 @@ jobs:
       matrix:
         os: [ubuntu-20.04]
         fc: [ifort]
+        cc: [icc]
     env:
       FC: ${{ matrix.fc }}
+      CC: ${{ matrix.cc }}
       WITH_MPI: false
       APT_PACKAGES: >-
         intel-oneapi-compiler-fortran
@@ -93,6 +101,7 @@ jobs:
       CMAKE_OPTIONS: >-
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DFYPP_FLAGS='-DTRAVIS'
+        -DTOOLCHAIN=intel
 
     steps:
     - name: Checkout code
@@ -120,8 +129,21 @@ jobs:
         source /opt/intel/oneapi/setvars.sh
         printenv >> $GITHUB_ENV
 
+    - name: Install HDF5
+      if: contains(matrix.os, 'ubuntu')
+      run: |
+        wget https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.1/src/CMake-hdf5-1.12.1.tar.gz
+        tar xfz CMake-hdf5-1.12.1.tar.gz
+        cd CMake-hdf5-1.12.1/hdf5-1.12.1/
+        CC=gcc CXX=icpc FC=ifort F9X=ifort ./configure --prefix=${PWD}/hdf5 --enable-fortran --with-default-api-version=v110 --enable-shared
+        make -j -l2
+        make install
+        export HDF5_ROOT=${PWD}/hdf5
+        cd ../../
+        printenv >> $GITHUB_ENV
+
     - name: Install cmake
-      run: pip3 install cmake ninja fypp numpy
+      run: pip3 install cmake ninja fypp numpy h5py
 
     - name: Configure build
       run: >-

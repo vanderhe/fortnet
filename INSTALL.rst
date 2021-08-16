@@ -14,6 +14,9 @@ In order to compile Fortnet, you need the following software components:
 
 * A Fortran 2003 compliant compiler
 
+* Compatible serial HDF5 with Fortran API and High-Level routines
+  (version 1.10.x or newer)
+
 * GNU make
 
 * CMake (version 3.16 or newer)
@@ -27,7 +30,7 @@ Requirements for testing Fortnet
 In order to execute the code tests and validate them against precalculated
 results, you will additionally need:
 
-* Python (version >= 3.2) with NumPy
+* Python (version >= 3.2) with numPy and h5py
 
 
 Tested build environments
@@ -36,30 +39,30 @@ Tested build environments
 Fortnet is built and tested for both serial and MPI environments on the
 following architectures:
 
-+---------------+----------------------+-------------+-----+
-| Architecture  | Compiler             | MPI         |Notes|
-+===============+======================+=============+=====+
-| x86_64 /      | GNU Fortran  7.4.0 / | OpenMPI 2.1 |  /  |
-| Linux         | GNU Fortran  7.5.0   |             |     |
-+---------------+----------------------+-------------+-----+
-| x86_64 /      | GNU Fortran  8.3.0 / | OpenMPI 4.0 |  /  |
-| Linux         | GNU Fortran  8.4.0   |             |     |
-+---------------+----------------------+-------------+-----+
-| x86_64 /      | GNU Fortran  9.3.0   | OpenMPI 4.0 |  /  |
-| Linux         |                      |             |     |
-+---------------+----------------------+-------------+-----+
-| x86_64 /      | GNU Fortran 10.1.0 / | OpenMPI 4.0 |  /  |
-| Linux         | GNU Fortran 10.2.0   |             |     |
-+---------------+----------------------+-------------+-----+
-| x86_64 /      | Intel Fortran 18.0.5 | MPICH 3.2   |  /  |
-| Linux         |                      |             |     |
-+---------------+----------------------+-------------+-----+
-| x86_64 /      | Intel Fortran 19.0.5 | MPICH 3.3   |  /  |
-| Linux         |                      |             |     |
-+---------------+----------------------+-------------+-----+
-| x86_64 /      | Intel Fortran 20.2.1 | IMPI 2021.1 |  /  |
-| Linux         |                      |             |     |
-+---------------+----------------------+-------------+-----+
++---------------+----------------------+-------------+-------------+-----+
+| Architecture  | Compiler             | MPI         | Serial HDF5 |Notes|
++===============+======================+=============+=============+=====+
+| x86_64 /      | GNU Fortran  7.4.0 / | OpenMPI 2.1 | 1.10.4      |  /  |
+| Linux         | GNU Fortran  7.5.0   |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
+| x86_64 /      | GNU Fortran  8.3.0 / | OpenMPI 4.0 | 1.10.4      |  /  |
+| Linux         | GNU Fortran  8.4.0   |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
+| x86_64 /      | GNU Fortran  9.3.0   | OpenMPI 4.0 | 1.10.4      |  /  |
+| Linux         |                      |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
+| x86_64 /      | GNU Fortran 10.1.0 / | OpenMPI 4.0 | 1.10.4      |  /  |
+| Linux         | GNU Fortran 10.2.0   |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
+| x86_64 /      | Intel Fortran 18.0.5 | MPICH 3.2   | 1.12.1      |  /  |
+| Linux         |                      |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
+| x86_64 /      | Intel Fortran 19.0.5 | MPICH 3.3   | 1.12.1      |  /  |
+| Linux         |                      |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
+| x86_64 /      | Intel Fortran 20.2.1 | IMPI 2021.1 | 1.12.1      |  /  |
+| Linux         |                      |             |             |     |
++---------------+----------------------+-------------+-------------+-----+
 
 
 Obtaining the source
@@ -126,9 +129,9 @@ In order to build Fortnet carry out the following steps:
 
     cmake --build _build -- VERBOSE=1
 
-* Note: By default the code is compiled with distributed memory parallelism (MPI)
-  enabled. In case you want to disable it, override the corresponding variable
-  ``WITH_MPI`` as shown above.
+* Note: By default the code is compiled with distributed memory parallelism
+  (MPI) enabled. In case you want to disable it, override the corresponding
+  variable ``WITH_MPI`` as shown above.
 
 
 Testing Fortnet
@@ -251,3 +254,22 @@ Troubleshooting
   make sure it uses the right compilers, e.g. ::
 
     FC=mpifort cmake [...]
+
+* **CMake does not find HDF5**
+
+  You have to make sure that an HDF5 installation is present, that matches your
+  compiler. The rudimentary steps to compile HDF5 from source could look similar
+  to this (assumind you already installed an Intel compiler)::
+
+    wget https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.1/src/CMake-hdf5-1.12.1.tar.gz
+    tar xfz CMake-hdf5-1.12.1.tar.gz
+    cd CMake-hdf5-1.12.1/hdf5-1.12.1/
+    CC=icc CXX=icpc FC=ifort F9X=ifort ./configure --prefix=${PWD}/hdf5 --enable-fortran --with-default-api-version=v110 --enable-shared
+    make -j -l2
+    make install
+
+  For self-compiled HDF5 instances, CMake should be guided with the help of the
+  environment variable ``HDF5_ROOT`` to make sure it searches at the right
+  location, e.g. ::
+
+    export HDF5_ROOT=/home/user/CMake-hdf5-1.12.1/hdf5-1.12.1/hdf5

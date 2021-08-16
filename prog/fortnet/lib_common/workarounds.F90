@@ -18,9 +18,9 @@ module fnet_workarounds
 
 contains
 
-  ! workaround: GCC7 and GCC8 lack findloc as partially implement F08 standard
+  ! workaround: GCC7 and GCC8 lack findloc as partially implemented F08 standard
   ! besides that, it seems to be buggy for some intel compilers as well
-  function myFindloc(chars, selector) result(iPos)
+  pure function myFindloc(chars, selector) result(iPos)
 
     !> character array to be searched
     character(len=*), intent(in) :: chars(:)

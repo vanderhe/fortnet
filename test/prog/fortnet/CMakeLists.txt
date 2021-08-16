@@ -27,6 +27,11 @@ foreach(line IN LISTS fortnet_tests_raw)
   endif()
 endforeach()
 
+# copy datasets to build folder
+execute_process(
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+  ${srcdir}/datasets ${builddir}/datasets)
+
 foreach(test IN LISTS tests)
   add_test(
     NAME fortnet_${test}

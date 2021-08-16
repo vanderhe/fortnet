@@ -16,6 +16,8 @@ fnet_load_toolchain_settings()
 fnet_setup_global_compiler_flags()
 fnet_get_release_name(RELEASE)
 
+find_package(HDF5 REQUIRED COMPONENTS Fortran_HL)
+
 find_package(MPI QUIET)
 if(WITH_MPI AND NOT MPI_FORTRAN_FOUND)
   message(FATAL_ERROR "Compiler ${CMAKE_Fortran_COMPILER} is not MPI capable but is specified for "

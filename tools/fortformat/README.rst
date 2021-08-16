@@ -1,14 +1,17 @@
-********************************************
-FORTFORMAT: Basic Fortnet Input Format Class
-********************************************
+*******************************************
+FORTFORMAT: Basic Fortnet IO Format Classes
+*******************************************
 
-This Python package provides a basic class which implements the associated
-Fortnet input file format. The input features and targets, stored in lists
-of Numpy arrays, conveniently get dumped to disk as simple text files. The
-corresponding Python class is named:
+These basic Python classes implement the Fortnet input and output file format.
+The Fnetdata class enables to create compatible HDF5 datasets, whereas the
+Fnetout class extracts certain properties of the HDF5 output for later analysis.
+The corresponding Python classes are referred to as:
 
-Fortformat
+Fnetdata
   Basic Fortnet input format Python class.
+
+Fnetout
+  Basic Fortnet output format Python class.
 
 
 Installation

@@ -28,18 +28,13 @@ The input file must be called `fortnet_in.hsd`.  The input file used in this
 example looks as follows::
 
   Data {
-    Dataset = 'training_data'
-    Standardization = No
-    NetstatFiles = Type2FileNames {
-      Prefix = "./"
-      Suffix = ".net"
-      LowerCaseTypeName = No
-    }
+    Dataset = fnetdata.hdf5
+    NetstatFile = fortnet.hdf5
   }
 
   Options {
     ReadNetStats = Yes
-    Mode = 'validate'
+    Mode = validate
   }
 
 The order of the specified blocks in the HSD input is arbitrary. You are free to
@@ -55,13 +50,8 @@ Data
 ::
 
   Data {
-    Dataset = 'training_data'
-    Standardization = No
-    NetstatFiles = Type2FileNames {
-      Prefix = "./"
-      Suffix = ".net"
-      LowerCaseTypeName = No
-    }
+    Dataset = fnetdata.hdf5
+    NetstatFile = fortnet.hdf5
   }
 
 The ``Data`` block looks exactly the same as for the training process, because
@@ -76,17 +66,16 @@ Options
 
   Options {
     ReadNetStats = Yes
-    Mode = 'validate'
+    Mode = validate
   }
 
 The basic program behavior gets defined in the ``Option`` block of the input,
 starting with the running mode of Fortnet. Since we want to predict structures
 based on an existing network potential, we have to set the ``ReadNetStats``
-entry to `Yes` in order to read in the netstat files as well as the `acsf.out`
-file, which contains the parameters of the ACSF used during the training
-process. Subsequently the ``Mode`` is set to `validate`, so Fortnet will do a
-prediction run and additionally list the corresponding target values in the
-``fnetout.xml`` output file for later comparison.
+entry to `Yes` in order to read in the netstat file. Subsequently the ``Mode``
+is set to `validate`, so Fortnet will do a prediction run and additionally list
+the corresponding target values in the ``fnetout.hdf5`` output file for later
+comparison.
 
 .. note::
 
@@ -132,8 +121,6 @@ section. In the ``Initialisation`` section, however, the entry
   random seed: 571070859
   read initial netstats: T
 
-  reading ACSF from file...done
-
 Also, instead of the output of the training process, you will now see the simple
 message `Start feeding...` that indicates the start of the feeding process.
 ::
@@ -145,40 +132,50 @@ When finished, a `done` will be appended and the predictions written to disk
 
 Fnetout
 -------
-The ``fnetout.xml`` file is the most important output of Fortnet as it contains
+The ``fnetout.hdf5`` file is the most important output of Fortnet as it contains
 all the predictions made. In validation mode this file will also contain the
 target values provided by the dataset, whereas in prediction mode thoose exact
-values are generally unknown and therefore not contained in the output. For the
-current example of silicon unitcells the output will look similar to this::
+values are generally unknown and therefore not contained in the output. Again,
+feel free to open the HDF5 file with your viewer of choice. The following script
+shows how to extract the predictions and targets from the output file by using
+the ``Fortformat`` Python package that ships with Fortnet:
 
-  <?xml version="1.0" ?>
-  <fnetout>
-   <mode> "validate"
-   </mode>
-   <output>
-    <ndatapoints>25
-    </ndatapoints>
-    <atomic>No
-    </atomic>
-    <ntargets>1
-    </ntargets>
-    <datapoint1> -8.9410369860070151 -8.9410608099999997
-    </datapoint1>
-    <datapoint2> -9.6728586329604553 -9.6726054599999998
-    </datapoint2>
-          .
-	  .
-	  .
-    <datapoint25> -6.1023454811228177 -6.1019103399999999
-    </datapoint25>
-   </output>
-  </fnetout>
+.. code-block:: python
 
-The structure and essential entries are pretty self-explanatory. The important
-clarification here is, that the datapoint entries are in the following order:
-`predictions`, `targets`. In relation to the current example, it is therefore
-(viewed from the left) always the predicted total energy and the target value
-next to it on the right hand side. If the predictions and targets are being
+  #!/usr/bin/env python3
+
+  '''
+  Application example of the Fortformat package, based on an output
+  file that contains network predictions and corresponding targets.
+  '''
+
+  import numpy as np
+  import matplotlib.pyplot as plt
+  from fortformat import Fnetout
+
+  def main():
+      nndists = np.arange(2.10, 3.30 + 0.05, 0.05)
+
+      fnetout = Fnetout('fnetout.hdf5')
+      predictions = fnetout.predictions
+      targets = fnetout.targets
+
+      plt.figure(figsize=(7, 5))
+      plt.title('Comparison of Neural Network Predictions with Targets')
+      plt.xlabel(r'Nearest Neighbour Distance [$\mathrm{\AA}$]')
+      plt.ylabel('Total Energy [eV / Atom]')
+
+      plt.plot(nndists, predictions / 2.0, color='blue', label='NN')
+      plt.scatter(nndists, targets / 2.0, s=10, color='black', label='DFT')
+
+      plt.tight_layout()
+      plt.legend()
+      plt.savefig('comparison.svg', dpi=900, format='svg')
+
+  if __name__ == '__main__':
+      main()
+
+If the predictions and targets are being
 plotted, an excellent agreement will be observed:
 
 .. figure:: ../_figures/basics/firstpredict/energy-volume-scan.svg

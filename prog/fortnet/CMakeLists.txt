@@ -17,9 +17,12 @@ add_subdirectory(lib_descriptors)
 add_subdirectory(lib_dftbp)
 add_subdirectory(lib_extlibs)
 add_subdirectory(lib_fortnet)
+add_subdirectory(lib_hdf5fx)
 add_subdirectory(lib_io)
 add_subdirectory(lib_nn)
 add_subdirectory(lib_optimizers)
+add_subdirectory(lib_types)
+add_subdirectory(lib_utils)
 
 fnet_preprocess("${FYPP}" "${fypp_flags}" "F90" "f90" "${ALL-SOURCES-FPP}" all-sources-f90-preproc)
 
@@ -46,6 +49,11 @@ if(WITH_MPI)
   target_link_libraries(fortnet PUBLIC MpiFx::MpiFx)
 endif()
 
+# cmake 3.19.x and 3.20.x feature broken targets :(
+# target_link_libraries(fortnet PUBLIC hdf5::hdf5_hl_fortran hdf5::hdf5_fortran)
+
+target_link_libraries(fortnet PUBLIC ${HDF5_Fortran_HL_LIBRARIES} ${HDF5_Fortran_LIBRARIES})
+target_include_directories(fortnet PUBLIC ${HDF5_Fortran_INCLUDE_DIRS})
 target_link_libraries(fortnet PRIVATE ${OTHER_LIBRARIES})
 target_include_directories(fortnet PUBLIC ${OTHER_INCLUDE_DIRS})
 

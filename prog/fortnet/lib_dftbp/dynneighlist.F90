@@ -39,9 +39,6 @@ module dftbp_dynneighlist
     !> Coordinates of atoms (folded into unit cell, if periodic)
     real(dp), allocatable :: coords0(:,:)
 
-    !> Species indices of atoms
-    integer, allocatable :: speciesIndices(:)
-
     !> Whether system is periodic
     logical :: tPeriodic
 
@@ -134,7 +131,6 @@ contains
     this%tPeriodic = tPeriodic
 
     allocate(this%coords0(3, this%nAtom))
-    allocate(this%speciesIndices(this%nAtom))
 
     if (this%tPeriodic) then
       allocate(this%latVecs(3, 3))
@@ -169,7 +165,7 @@ contains
 
 
   !> Updates the coordiantes.
-  subroutine TDynNeighList_updateCoords(this, coords, speciesIndices)
+  subroutine TDynNeighList_updateCoords(this, coords)
 
     !> Dynamical neighbor list instance
     class(TDynNeighList), intent(inout) :: this
@@ -177,11 +173,7 @@ contains
     !> New coordinates
     real(dp), intent(in) :: coords(:,:)
 
-    !> Species indices corresponding to new coordinates
-    integer, intent(in) :: speciesIndices(:)
-
     this%coords0(:,:) = coords
-    this%speciesIndices(:) = speciesIndices
 
   end subroutine TDynNeighList_updateCoords
 
@@ -239,7 +231,7 @@ contains
 
   !> Returns the next group of neighbours.
   subroutine TNeighIterator_getNextNeighbours(this, nNeighbourSK, coords, dists, img2CentCell,&
-      & speciesIndices, atomIndices)
+      & atomIndices)
 
     !> Neighbor list iterator instance
     class(TNeighIterator), intent(inout) :: this
@@ -257,17 +249,15 @@ contains
     !> Corresponding images of the neighbours in the central cell. Shape: (nNeighbourSK)
     integer, intent(out), optional :: img2CentCell(:)
 
-    !> Corresponding species indices of neighbors. Shape: (nNeighbourSK)
-    integer, intent(out), optional :: speciesIndices(:)
-
     !> Corresponding atom indices of neighbors. Shape: (nNeighbourSK)
     integer, intent(out), optional :: atomIndices(:)
 
+    !> auxiliary variables
     real(dp) :: neighCoords(3)
     real(dp) :: coordsTmp(3, nNeighbourSK), distsTmp(nNeighbourSK)
     integer :: img2CentCellTmp(nNeighbourSK)
     real(dp) :: dist2
-    integer :: maxNeighs, iAtom2, speciesIndicesTmp(nNeighbourSK), atomIndicesTmp(nNeighbourSK)
+    integer :: maxNeighs, iAtom2, atomIndicesTmp(nNeighbourSK)
 
     maxNeighs = nNeighbourSK
     nNeighbourSK = 0
@@ -303,7 +293,6 @@ contains
       if (dist2 <= this%cutoff2) then
         nNeighbourSK = nNeighbourSK + 1
         coordsTmp(:, nNeighbourSK) = neighCoords
-        speciesIndicesTmp(nNeighbourSK) = this%neighList%speciesIndices(iAtom2)
         atomIndicesTmp(nNeighbourSK) = iAtom2
         distsTmp(nNeighbourSK) = dist2
         img2CentCellTmp(nNeighbourSK) = this%iAtom2
@@ -322,9 +311,6 @@ contains
     end if
     if (present(img2CentCell)) then
       img2CentCell(1:nNeighbourSK) = img2CentCellTmp(1:nNeighbourSK)
-    end if
-    if (present(speciesIndices)) then
-      speciesIndices(1:nNeighbourSK) = speciesIndicesTmp(1:nNeighbourSK)
     end if
     if (present(atomIndices)) then
       atomIndices(1:nNeighbourSK) = atomIndicesTmp(1:nNeighbourSK)

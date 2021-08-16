@@ -37,7 +37,7 @@ Mean Squared Error
         .
 	.
 	.
-    Loss = 'mse'
+    Loss = mse
   }
 
 Root Mean Square Error
@@ -55,7 +55,7 @@ Root Mean Square Error
         .
 	.
 	.
-    Loss = 'rms'
+    Loss = rms
   }
 
 Mean Absolute Error
@@ -72,7 +72,7 @@ Mean Absolute Error
         .
 	.
 	.
-    Loss = 'mae'
+    Loss = mae
   }
 
 Mean Absolute Percentage Error
@@ -90,5 +90,5 @@ Mean Absolute Percentage Error
         .
 	.
 	.
-    Loss = 'mape'
+    Loss = mape
   }

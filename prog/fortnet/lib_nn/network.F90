@@ -7,20 +7,16 @@
 
 #:include 'common.fypp'
 
+!> Implements a vanilla, dense, feed-forward multilayer-perceptron.
 module fnet_network
 
   use dftbp_assert
-  use dftbp_message, only : error
-  use dftbp_charmanip, only : tolower
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
 
-  use fnet_initprogram, only : TProgramvariables
-  use fnet_nestedtypes, only : TRealArray1D, TRealArray2D
   use fnet_nestedtypes, only : TBiasDerivs, TBiasDerivs_init
   use fnet_nestedtypes, only : TWeightDerivs, TWeightDerivs_init
   use fnet_layer, only : TLayer, TLayer_init
-  use fnet_loss, only : deviation
 
   implicit none
 
@@ -40,6 +36,9 @@ module fnet_network
     !> representation of the network layers
     type(TLayer), allocatable :: layers(:)
 
+    !> type of transfer function
+    character(len=:), allocatable :: transferType
+
   contains
 
     procedure :: initLayers => TNetwork_initLayers
@@ -53,13 +52,12 @@ module fnet_network
     procedure :: setTransferFunc => TNetwork_setTransferFunc
     procedure :: serializedWeightsAndBiases => TNetwork_serializedWeightsAndBiases
     procedure :: serialWeightsAndBiasesFillup => TNetwork_serialWeightsAndBiasesFillup
-    procedure :: toFile => TNetwork_toFile
-    procedure :: fromFile => TNetwork_fromFile
 
   end type TNetwork
 
 contains
 
+  !> Initialises feed-forward multilayer-perceptron instance.
   subroutine TNetwork_init(this, dims, rndGen, descriptor)
 
     !> representation of a neural network
@@ -80,8 +78,10 @@ contains
 
     if (present(descriptor)) then
       call this%setTransferFunc(descriptor)
+      this%transferType = descriptor
     else
       call this%setTransferFunc('tanh')
+      this%transferType = 'tanh'
     end if
 
     call this%countParams()
@@ -89,6 +89,7 @@ contains
   end subroutine TNetwork_init
 
 
+  !> Initialises the inherent layer structure.
   subroutine TNetwork_initLayers(this, dims, rndGen)
 
     !> representation of a neural network
@@ -119,6 +120,7 @@ contains
   end subroutine TNetwork_initLayers
 
 
+  !> Counts the weight and bias parameters of the network instance.
   subroutine TNetwork_countParams(this)
 
     !> representation of a neural network
@@ -138,6 +140,7 @@ contains
   end subroutine TNetwork_countParams
 
 
+  !> Propagates input features through the network and stores the activations (+ arguments).
   subroutine TNetwork_fprop(this, xx, state, out)
 
     !> representation of a neural network
@@ -170,6 +173,7 @@ contains
   end subroutine TNetwork_fprop
 
 
+  !> Determines the gradients in weight-bias space by a simple back-propagation algorithm.
   subroutine TNetwork_bprop(this, lossgrad, dw, db)
 
     !> representation of a neural network
@@ -209,6 +213,7 @@ contains
   end subroutine TNetwork_bprop
 
 
+  !> Extracts the activations of the last layer of the network, i.e. its output.
   subroutine TNetwork_getOutput(this, output)
 
     !> representation of a neural network
@@ -222,6 +227,7 @@ contains
   end subroutine TNetwork_getOutput
 
 
+  !> Calculates the network output for a single set of input features.
   function TNetwork_iPredict(this, xx) result(aa)
 
     !> representation of a neural network
@@ -246,6 +252,7 @@ contains
   end function TNetwork_iPredict
 
 
+  !> Calculates the network output for a batch of input features.
   function TNetwork_nPredict(this, xx) result(aa)
 
     !> representation of a neural network
@@ -269,6 +276,7 @@ contains
   end function TNetwork_nPredict
 
 
+  !> Sets the activation/transfer function for all layers of the network.
   subroutine TNetwork_setTransferFunc(this, descriptor)
 
     !> representation of a neural network
@@ -277,7 +285,7 @@ contains
     !> type of transfer function to use
     character(len=*), intent(in) :: descriptor
 
-    !> Layer identifier
+    !> auxiliary variable
     integer :: iLayer
 
     do iLayer = 1, size(this%dims)
@@ -290,6 +298,7 @@ contains
   end subroutine TNetwork_setTransferFunc
 
 
+  !> Maps the network parameters to a serialized array, suitable for the gradient-based optimizer.
   subroutine TNetwork_serializedWeightsAndBiases(this, weightsAndBiases)
 
     !> representation of a neural network
@@ -298,11 +307,8 @@ contains
     !> serialized weights and biases
     real(dp), intent(out), allocatable :: weightsAndBiases(:)
 
-    !> Layer identifier
-    integer :: iLayer
-
-    !> auxiliary variable
-    integer :: ii, ind
+    !> auxiliary variables
+    integer :: ii, iLayer, ind
 
     allocate(weightsAndBiases(this%nBiases + this%nWeights))
 
@@ -326,6 +332,7 @@ contains
   end subroutine TNetwork_SerializedWeightsAndBiases
 
 
+  !> Inserts serialized weights and biases into the network structure.
   subroutine TNetwork_serialWeightsAndBiasesFillup(this, weightsAndBiases)
 
     !> representation of a neural network
@@ -334,11 +341,8 @@ contains
     !> serialized weights and biases
     real(dp), intent(in) :: weightsAndBiases(:)
 
-    !> Layer identifier
-    integer :: iLayer
-
-    !> auxiliary variable
-    integer :: ii, ind
+    !> auxiliary variables
+    integer :: ii, iLayer, ind
 
     ind = 1
 
@@ -360,6 +364,7 @@ contains
   end subroutine TNetwork_serialWeightsAndBiasesFillup
 
 
+  !> Resets the activations of all layers and all neurons of the network.
   subroutine TNetwork_resetActivations(this)
 
     !> representation of a neural network
@@ -374,109 +379,5 @@ contains
     end do
 
   end subroutine TNetwork_resetActivations
-
-
-  subroutine TNetwork_toFile(this, prog, iSpecies)
-
-    !> representation of a neural network
-    class(TNetwork), intent(in) :: this
-
-    !> representation of program variables
-    type(TProgramVariables), intent(in) :: prog
-
-    !> global species index of sub-nn
-    integer, intent(in) :: iSpecies
-
-    !> unique fileunit
-    integer :: fd
-
-    !> auxiliary variables
-    integer :: ii, jj
-
-    open(newunit=fd, file=prog%data%netstatNames(iSpecies), form='formatted', status='replace',&
-        & action='write')
-
-    if (prog%data%tAtomicTargets) then
-      write(fd, '(2A10)') prog%arch%type, 'atomic'
-    else
-      write(fd, '(2A10)') prog%arch%type, 'global'
-    end if
-
-    write(fd, '(A)') prog%data%globalSpNames(iSpecies)
-
-    write(fd, *) size(this%dims)
-    write(fd, *) this%dims
-
-    write(fd, '(A)') prog%arch%activation
-
-    do ii = 2, size(this%dims)
-      write(fd, '(ES26.16E3)') this%layers(ii)%bb
-    end do
-    do jj = 1, size(this%dims) - 1
-      write(fd, '(ES26.16E3)') this%layers(jj)%ww
-    end do
-
-    close(fd)
-
-  end subroutine TNetwork_toFile
-
-
-  subroutine TNetwork_fromFile(this, prog, iSpecies)
-
-    !> representation of a neural network
-    class(TNetwork), intent(out) :: this
-
-    !> representation of program variables
-    type(TProgramVariables), intent(inout) :: prog
-
-    !> global species index of sub-nn
-    integer, intent(in) :: iSpecies
-
-    !> unique fileunit
-    integer :: fd
-
-    !> auxiliary variables
-    integer :: ii, jj, nLayers
-    character(len=50) :: spName, archType, targetType
-
-    open(newunit=fd, file=prog%data%netstatNames(iSpecies), form='formatted', status='old',&
-        & action='read')
-
-    read(fd, *) archType, targetType
-    prog%arch%type = tolower(trim(archType))
-    if (tolower(trim(targetType)) == 'atomic') then
-      prog%data%tAtomicTargets = .true.
-    elseif (tolower(trim(targetType)) == 'global') then
-      prog%data%tAtomicTargets = .false.
-    else
-      call error("Unrecognized target type in file '" // prog%data%netstatNames(iSpecies) // "'.")
-    end if
-
-    read(fd, *) spName
-    @:ASSERT(tolower(prog%data%globalSpNames(iSpecies)) == tolower(spName))
-
-    read(fd, *) nLayers
-    @:ASSERT(nLayers > 2)
-    if (allocated(prog%arch%allDims)) deallocate(prog%arch%allDims)
-    allocate(prog%arch%allDims(nLayers))
-    read(fd, *) prog%arch%allDims
-
-    prog%arch%hidden = prog%arch%allDims(2:size(prog%arch%allDims) - 1)
-    prog%arch%nHiddenLayer = size(prog%arch%hidden)
-
-    read(fd, *) prog%arch%activation
-
-    call TNetwork_init(this, prog%arch%allDims, descriptor=prog%arch%activation)
-
-    do ii = 2, size(this%dims)
-      read(fd, *) this%layers(ii)%bb
-    end do
-    do jj = 1, size(this%dims) - 1
-      read(fd, *) this%layers(jj)%ww
-    end do
-
-    close(fd)
-
-  end subroutine TNetwork_fromFile
 
 end module fnet_network

@@ -7,16 +7,16 @@
 
 
 '''
-Basic Fortnet Input Format Class
+Basic Fortnet IO Format Classes
 
-This basic Python class implements the Fortnet input file format. The input
-geometries, stored in a list of ASE atoms objects, and targets, stored in a
-list of Numpy arrays, conveniently get dumped to disk as simple text files.
+These basic Python classes implement the Fortnet input and output file format.
+The Fnetdata class enables to create compatible HDF5 datasets, whereas the
+Fnetout class extracts certain properties of the HDF5 output for later analysis.
 '''
 
 
 import os
-import xml.etree.ElementTree as ET
+import h5py
 import numpy as np
 
 
@@ -25,350 +25,229 @@ import numpy as np
 BOHR__AA = 0.529177249
 AA__BOHR = 1.0 / BOHR__AA
 
-NL = '\n'
-FLOATFMT = '{:24.16e}'
 
-
-class Fortformat:
+class Fnetdata:
     '''Basic Fortnet Input Format Class.'''
 
 
-    def __init__(self, atoms, paths, features=None, targets=None, atomic=False,
-                 frac=False):
-        '''Initializes a Fortformat object.
+    def __init__(self, atoms=None, features=None, targets=None, atomic=False):
+        '''Initializes a Fnetdata object.
 
         Args:
 
             atoms (list): list of ASE atoms objects, containing the geometries
                 of the training dataset to be used
-            paths (list) : string or list of strings, containing a single path
-                to a contiguous dataset file or multiple paths to single
-                fnetdata.xml files, which will contain all relevant information
             features (list): list of numpy arrays containing external atomic
                 features, used as an additional, optional input
             targets (list or 2darray): list of numpy arrays (atomic) or 2darray,
                 containing the targets of the training dataset
             atomic (bool): true, if targets are atomic properties (e.g. forces)
                 and false, if targets are system properties (e.g. total energy)
-            frac (bool): true, coordinates should be stored in units of the
-                lattice vectors (presupposes a periodic structure)
 
         '''
+
+        self._atomic = atomic
+
+        if atoms is None:
+            self._withatoms = False
+        else:
+            self._withatoms = True
 
         if features is None:
             self._withfeatures = False
         else:
             self._withfeatures = True
 
+        if not self._withatoms and not self._withfeatures:
+            msg = 'Neither geometries nor features provided.'
+            raise FnetdataError(msg)
+
+        self._nsystems, self._ntotatoms, self._atoms, \
+            self._nfeatures, self._features = \
+                _checkfeatureconsistency(atoms=atoms, features=features)
+
         if targets is None:
             self._withtargets = False
-            self._ntargets = None
+            self._ntargets = 0
         else:
             self._withtargets = True
-
-        if isinstance(paths, list):
-            self._contiguous = False
-        elif isinstance(paths, str):
-            self._contiguous = True
-        else:
-            msg = \
-                'Invalid format of paths provided. Choose either a single ' +\
-                'path for a contiguous dataset file or a list of paths for ' +\
-                'single fnetdata.xml files.'
-            raise FortformatError(msg)
-
-        self._paths = paths
-
-        self._atomic = atomic
-        self._frac = frac
-
-        self._nsystems, self._nfeatures = \
-            self._checkfeatureconsistency(atoms, features=features)
-        self._atoms = atoms
-        self._features = features
-
-        if self._withtargets:
-            self._checktargetconsistency(targets)
-
-        self._targets = targets
-
-        self._process_paths()
+            self._targets, self._ntargets = \
+                _checktargetconsistency(targets, self._nsystems, self._atomic)
 
         self._weights = np.ones((self._nsystems,), dtype=int)
-
-
-    def _process_paths(self):
-        '''In case of non-contiguous files, appends suffix if not present.'''
-
-        if not self._contiguous:
-            for isys in range(self._nsystems):
-                if not self._paths[isys].endswith('.xml'):
-                    self._paths[isys] = os.path.join(
-                        self._paths[isys], 'fnetdata.xml')
 
 
     def _process_data(self):
         '''Based on the stored data, a list of dictionaries,
            containing the processed input, will be created.
+
+        Returns:
+
+            data (list): list of data entries for each datapoint
+            unique_global_zz (1darray): unique atomic numbers of the dataset
+
         '''
 
         data = []
-        tmp = {}
+        tmp_zz = []
 
         for isys in range(self._nsystems):
 
-            periodic = self._atoms[isys].get_pbc()
-
-            if sum(periodic) == 3:
-                periodic = True
-            elif sum(periodic) == 0:
-                periodic = False
-            else:
-                msg = 'Currently, only uniform pbc are supported.'
-                raise FortformatError(msg)
-
-            tmp['periodic'] = periodic
-
-            if self._frac and periodic:
-                tmp['coords'] = self._atoms[isys].get_scaled_positions()
-            else:
-                # fnetdata.xml expects coordinates in Bohr
-                tmp['coords'] = self._atoms[isys].get_positions() * AA__BOHR
-
-            if periodic:
-                # fnetdata.xml expects lattice vectors in Bohr
-                tmp['basis'] = self._atoms[isys].get_cell()[:, :] * AA__BOHR
-            else:
-                tmp['basis'] = None
-
-            tmp['natoms'] = len(self._atoms[isys])
+            tmp = {}
 
             if self._atomic and self._withtargets:
                 tmp['targets'] = self._targets[isys]
             elif not self._atomic and self._withtargets:
                 tmp['targets'] = self._targets[isys, :]
 
-            tmp['typenames'] = list(self._atoms[isys].symbols)
+            if self._withatoms:
 
-            # create a dictionary with unique species and id's
-            atomtospecies = dict()
-            for species in tmp['typenames']:
-                if not species in atomtospecies:
-                    atomtospecies[species] = len(atomtospecies) + 1
-            uniquespecies = list(['null'] * len(atomtospecies.keys()))
-            for species in atomtospecies:
-                uniquespecies[atomtospecies[species] - 1] = species
-            tmp['atomtospecies'] = atomtospecies
-            tmp['uniquespecies'] = uniquespecies
-            tmp['uniquespecies'] = ['"' + entry + '"' for entry in
-                                     tmp['uniquespecies']]
+                periodic = self._atoms[isys].get_pbc()
+
+                if sum(periodic) == 3:
+                    periodic = True
+                elif sum(periodic) == 0:
+                    periodic = False
+                else:
+                    msg = 'Currently, only uniform pbc are supported.'
+                    raise FnetdataError(msg)
+
+                tmp['periodic'] = periodic
+
+                if periodic:
+                    tmp['coords'] = self._atoms[isys].get_scaled_positions()
+                else:
+                    # dataset expects coordinates in Bohr
+                    tmp['coords'] = self._atoms[isys].get_positions() * AA__BOHR
+
+                if periodic:
+                    # dataset expects lattice vectors in Bohr
+                    tmp['basis'] = self._atoms[isys].get_cell()[:, :] * AA__BOHR
+                else:
+                    tmp['basis'] = None
+
+                tmp['natoms'] = len(self._atoms[isys])
+
+                tmp['atomicnumbers'] = \
+                    np.array(self._atoms[isys].get_atomic_numbers())
+                tmp_zz.append(set(tmp['atomicnumbers']))
+
+                tmp['typenames'] = list(self._atoms[isys].symbols)
+
+                # create a dictionary with unique species and id's
+                atomtospecies = dict()
+                localattolocalsp = np.empty(tmp['natoms'], dtype=int)
+                for species in tmp['typenames']:
+                    if not species in atomtospecies:
+                        atomtospecies[species] = len(atomtospecies) + 1
+                # mapping from local atom index to local species name
+                tmp['atomtospecies'] = atomtospecies
+                localtypes = list(['null'] * len(atomtospecies.keys()))
+                for species in atomtospecies:
+                    localtypes[atomtospecies[species] - 1] = species
+                # list of string representations of local species
+                tmp['localtypes'] = localtypes
+                for iatom in range(tmp['natoms']):
+                    ispecies = tmp['atomtospecies'][
+                        tmp['typenames'][iatom]]
+                    localattolocalsp[iatom] = ispecies
+                # local atom index to local species index
+                tmp['localattolocalsp'] = localattolocalsp
 
             data.append(tmp.copy())
 
-        return data
+        # extract global atomic numbers contained in the dataset
+        if self._withatoms:
+            unique_global_zz = {item for sublist in tmp_zz for item in sublist}
+            unique_global_zz = np.sort(
+                np.array(list(unique_global_zz), dtype=int))
+        else:
+            unique_global_zz = None
+
+        # map local atom index to global species index
+        if self._withatoms:
+            for isys in range(self._nsystems):
+                data[isys]['localattoglobalsp'] = \
+                    np.empty(data[isys]['natoms'], dtype=int)
+                for iatom in range(data[isys]['natoms']):
+                    pos = np.where(
+                        unique_global_zz == data[isys]['atomicnumbers'][iatom])
+                    # Fortran indexing starts at 1
+                    data[isys]['localattoglobalsp'][iatom] = pos[0] + 1
+
+        return data, unique_global_zz
 
 
-    def _create_single_xml(self, data, weight, features=None):
-        '''Creates a single fnetdata.xml file, as ET xml-tree instance.
-
-        Args:
-
-            data (dict): dictionary, containing all the necessary information
-            weight (int): weighting of current datapoint
-            features (2darray): numpy array containing external atomic
-                features, used as an additional, optional input
-
-        Returns:
-
-            root (ET instance): xml-tree, representing a single dataset file
-
-        '''
-
-        root = ET.Element('fnetdata')
-
-        root = xml_append_weight(root, weight)
-        root = xml_append_geometry(root, data, self._frac)
-
-        if self._withfeatures:
-            root = xml_append_external_features(
-                root, features, self._nfeatures, contiguous=False)
-
-        if self._withtargets:
-            root = xml_append_targets(
-                root, data, self._ntargets, self._atomic, contiguous=False)
-
-        return root
-
-
-    def _create_contiguous_xml(self, data):
-        '''Creates a contiguous fnetdata.xml file, as ET xml-tree instance.
+    def _create_contiguous_hdf(self, fname, data, zz):
+        '''Creates a contiguous HDF5 dataset file.
 
         Args:
 
+            fname (str): filename of dataset file to write
             data (list): dictionaries, containing the necessary information
+            zz (1darray): unique atomic numbers of the dataset
 
         Returns:
 
-            root (ET instance): xml-tree, representing a contiguous dataset file
+            fid (file): in-memory hdf file, representing a contiguous dataset
 
         '''
 
-        root = ET.Element('fnetdata')
+        fid = h5py.File(fname, 'w')
 
-        datasettag = ET.SubElement(root, 'dataset')
-        tmptag = ET.SubElement(datasettag, 'ndatapoints')
-        tmptag.text = '{}'.format(self._nsystems)
+        rootgrp = fid.create_group('fnetdata')
 
-        if self._withfeatures:
+        datagrp = rootgrp.create_group('dataset')
+        datagrp.attrs['ndatapoints'] = self._nsystems
+        datagrp.attrs['nextfeatures'] = self._nfeatures
+        datagrp.attrs['withstructures'] = int(self._withatoms)
 
-            featurestag = ET.SubElement(root, 'features')
+        if self._withatoms:
+            datagrp.attrs['ntotatoms'] = self._ntotatoms
+            types = datagrp.create_dataset(
+                'atomicnumbers', zz.shape, dtype='int')
+            types[...] = zz
 
-            tmptag = ET.SubElement(featurestag, 'nextfeatures')
-            tmptag.text = '{}'.format(self._nfeatures)
-
-        if self._withtargets:
-
-            traintag = ET.SubElement(root, 'training')
-
-            tmptag = ET.SubElement(traintag, 'atomic')
-            if self._atomic:
-                tmptag.text = 'Yes'
-            else:
-                tmptag.text = 'No'
-
-            tmptag = ET.SubElement(traintag, 'ntargets')
-            tmptag.text = '{}'.format(self._ntargets)
+        traingrp = datagrp.create_group('training')
+        traingrp.attrs['ntargets'] = self._ntargets
+        traingrp.attrs['atomic'] = int(self._atomic)
 
         for isys in range(self._nsystems):
 
-            subroot = ET.SubElement(root, 'datapoint{}'.format(isys + 1))
+            subroot = datagrp.create_group('datapoint{}'.format(isys + 1))
 
-            subroot = xml_append_weight(subroot, self._weights[isys])
-            subroot = xml_append_geometry(subroot, data[isys], self._frac)
+            hdf_append_weight(subroot, self._weights[isys])
+
+            if self._withatoms:
+                hdf_append_geometry(subroot, data[isys], True)
 
             if self._withtargets:
-                subroot = xml_append_targets(
-                    subroot, data[isys], self._ntargets,
-                    self._atomic, contiguous=True)
+                hdf_append_targets(subroot, data[isys]['targets'])
 
             if self._withfeatures:
-                subroot = xml_append_external_features(
-                    subroot, self._features[isys],
-                    self._nfeatures, contiguous=True)
+                hdf_append_external_features(subroot, self._features[isys])
 
-        return root
+        return fid
 
 
-    def dump(self):
-        '''Based on the stored data, either a contiguous fnetdata
-           or various single fnetdata files get dumped to disk.
-        '''
-
-        data = self._process_data()
-
-        if self._contiguous:
-            xml = self._create_contiguous_xml(data)
-            dump_as_xml(xml, self._paths)
-        else:
-            for isys in range(self._nsystems):
-                if self._withfeatures:
-                    xml = self._create_single_xml(
-                        data[isys], self._weights[isys],
-                        features=self._features[isys])
-                else:
-                    xml = self._create_single_xml(
-                        data[isys], self._weights[isys], features=None)
-                dump_as_xml(xml, self._paths[isys])
-
-
-    def _checktargetconsistency(self, targets):
-        '''Performs basic consistency checks on the target values.
+    def dump(self, fname):
+        '''Based on the stored data, a contiguous
+           dataset file will get dumped to disk.
 
         Args:
 
-            targets (list or 2darray): list of numpy arrays (atomic) or 2darray,
-                containing the targets of the training dataset
+            fname (str): filename of dataset file to write
 
         '''
 
-        if not self._atomic and isinstance(targets, list):
-            targets = np.array(targets)
+        if not isinstance(fname, str):
+            msg = 'Invalid dataset filename, string expected.'
+            raise FnetdataError(msg)
 
-        if self._atomic and len(targets) == 0:
-            msg = 'Empty list of targets provided.'
-            raise FortformatError(msg)
+        data, unique_global_zz = self._process_data()
 
-        if not self._atomic and sum(targets.shape) < 2:
-            msg = 'Empty list of targets provided.'
-            raise FortformatError(msg)
-
-        if not self._atomic and targets.ndim != 2:
-            msg = 'Invalid number of target dimensions, ' + \
-                'specify (nDatapoints, nTargets).'
-            raise FortformatError(msg)
-
-        if self._atomic and self._nsystems != len(targets) or \
-        not self._atomic and self._nsystems != targets.shape[0]:
-            msg = 'Number of features and targets does not match.'
-            raise FortformatError(msg)
-
-        if self._atomic:
-            self._ntargets = targets[0].shape[1]
-        else:
-            self._ntargets = targets.shape[1]
-
-
-    def _checkfeatureconsistency(self, atoms, features=None):
-        '''Performs basic consistency checks on the atomic features.
-
-        Args:
-
-            atoms (list): list of ASE atoms objects, containing the geometries
-                of the training dataset to be used
-            features (list): list of numpy arrays containing external atomic
-                features, used as an additional, optional input
-
-        '''
-
-        if features is not None and not isinstance(features, list):
-            msg = 'Expected external features as list.'
-            raise FortformatError(msg)
-
-        if not isinstance(atoms, list):
-            msg = 'Expected geometry features as list.'
-            raise FortformatError(msg)
-
-        if features is not None and len(features) == 0:
-            msg = 'Empty list of external features provided.'
-            raise FortformatError(msg)
-
-        if len(atoms) == 0:
-            msg = 'Empty list of geometry features provided.'
-            raise FortformatError(msg)
-
-        if not self._contiguous and features is not None \
-           and len(self._paths) != len(features):
-            msg = 'Number of external features and paths does not match.'
-            raise FortformatError(msg)
-
-        if not self._contiguous and len(self._paths) != len(atoms):
-            msg = 'Number of geometry features and paths does not match.'
-            raise FortformatError(msg)
-
-        nsystems = len(atoms)
-
-        if features is not None:
-            msg = 'Mismatch in number of external features and ' +\
-                'number of atoms of the corresponding geometry.'
-            for isys in range(nsystems):
-                if not len(atoms[isys]) == features[isys].shape[0]:
-                    raise FortformatError(msg)
-
-            nfeatures = features[0].shape[1]
-        else:
-            nfeatures = 0
-
-        return nsystems, nfeatures
+        fid = self._create_contiguous_hdf(fname, data, unique_global_zz)
+        dump_as_hdf(fid, fname)
 
 
     @property
@@ -392,11 +271,11 @@ class Fortformat:
 
         if weights.ndim != 1:
             msg = 'Invalid weights found, 1-dimensional list or array expected.'
-            raise FortformatError(msg)
+            raise FnetdataError(msg)
 
         if not issubclass(weights.dtype.type, np.integer) or any(weights < 1):
             msg = 'Invalid weight(s) found, choose positive integers.'
-            raise FortformatError(msg)
+            raise FnetdataError(msg)
 
         self._weights = weights
 
@@ -428,12 +307,138 @@ class Fortformat:
         return self._ntargets
 
 
-def dump_as_xml(root, fname):
-    '''Dumps a given xml-tree to disk.
+    @property
+    def ntotatoms(self):
+        '''Defines property, providing the total number of atoms in the dataset.
+
+        Returns:
+
+            ntotatoms (1darray): total number of atoms in the dataset
+
+        '''
+
+        return self._ntotatoms
+
+
+def _checkfeatureconsistency(atoms=None, features=None):
+    '''Performs basic consistency checks on the atomic features.
 
     Args:
 
-        root (ET instance): xml-tree to write to disk
+        atoms (list): list of ASE atoms objects, containing the geometries
+            of the training dataset to be used if provided
+        features (list): list of numpy arrays containing external atomic
+            features, used as an additional, optional input
+
+    Returns:
+
+        nsystems (int): number of datapoints in dataset
+        ntotatoms (int): total number of atoms in geometry list
+        atoms (list): list of ASE atoms objects, containing the geometries
+            of the training dataset to be used if provided
+        nfeatures (int): number of features per atom
+        features (list): list of numpy arrays containing external atomic
+            features, used as an additional, optional input
+
+    '''
+
+    if features is not None and not isinstance(features, list):
+        msg = 'Expected external features as list.'
+        raise FnetdataError(msg)
+
+    if atoms is not None and not isinstance(atoms, list):
+        msg = 'Expected geometry features as list.'
+        raise FnetdataError(msg)
+
+    if features is not None and len(features) == 0:
+        msg = 'Empty list of external features provided.'
+        raise FnetdataError(msg)
+
+    if atoms is not None and len(atoms) == 0:
+        msg = 'Empty list of geometry features provided.'
+        raise FnetdataError(msg)
+
+    # either geometries or external features must be present
+    if atoms is not None:
+        nsystems = len(atoms)
+    else:
+        nsystems = len(features)
+
+    ntotatoms = 0
+
+    if atoms is not None:
+        for isys in range(nsystems):
+            ntotatoms += len(atoms[isys])
+
+    if atoms is not None and features is not None:
+        msg = 'Mismatch in number of external features and ' +\
+            'number of atoms of the corresponding geometry.'
+        for isys in range(nsystems):
+            ntotatoms += len(atoms[isys])
+            if not len(atoms[isys]) == features[isys].shape[0]:
+                raise FnetdataError(msg)
+
+        nfeatures = features[0].shape[1]
+    else:
+        nfeatures = 0
+
+    return nsystems, ntotatoms, atoms, nfeatures, features
+
+
+def _checktargetconsistency(targets, nsystems, atomic):
+    '''Performs basic consistency checks on the target values.
+
+    Args:
+
+        targets (list or 2darray): list of numpy arrays (atomic) or 2darray,
+            containing the targets of the training dataset
+        nsystems (int): number of datapoints in dataset
+        atomic (bool): true, if targets are atomic properties (e.g. forces)
+            and false, if targets are system properties (e.g. total energy)
+
+    Returns:
+
+        targets (list or 2darray): list of numpy arrays (atomic) or 2darray,
+            containing the targets of the training dataset
+        ntargets (int): number of features per atom
+
+    '''
+
+    if not atomic and isinstance(targets, list):
+        targets = np.array(targets)
+
+    if atomic and len(targets) == 0:
+        msg = 'Empty list of targets provided.'
+        raise FnetdataError(msg)
+
+    if not atomic and sum(targets.shape) < 2:
+        msg = 'Empty list of targets provided.'
+        raise FnetdataError(msg)
+
+    if not atomic and targets.ndim != 2:
+        msg = 'Invalid number of target dimensions, ' + \
+            'specify (nDatapoints, nTargets).'
+        raise FnetdataError(msg)
+
+    if atomic and nsystems != len(targets) or \
+    not atomic and nsystems != targets.shape[0]:
+        msg = 'Number of features and targets does not match.'
+        raise FnetdataError(msg)
+
+    if atomic:
+        ntargets = targets[0].shape[1]
+    else:
+        ntargets = targets.shape[1]
+
+    return targets, ntargets
+
+
+def dump_as_hdf(fid, fname):
+    '''Dumps a given in-memory hdf file to disk.
+
+    Args:
+
+        fid (file): hdf file to write to disk
         fname (str): path to write the file to
 
     '''
@@ -441,195 +446,258 @@ def dump_as_xml(root, fname):
     fname = os.path.abspath(fname)
     os.makedirs(os.path.dirname(fname), exist_ok=True)
 
-    fnetdata = ET.ElementTree(_beautify(root))
-    fnetdata.write(fname, xml_declaration=True, encoding='utf-8')
+    fid.close()
 
 
-def xml_append_weight(root, weight):
-    '''Appends the datapoint weight to a given xml-tree root.
+def hdf_append_weight(root, weight):
+    '''Appends the datapoint weight to a given in-memory hdf file.
 
     Args:
 
-        root (ET instance): xml-tree
+        root (hdf group): hdf group
         weight (int): positive integer weight of current datapoint
-
-    Returns:
-
-        root (ET instance): xml-tree with a weight appended to it
 
     '''
 
-    weighttag = ET.SubElement(root, 'weight')
-    weighttag.text = str(weight)
-
-    return root
+    root.attrs['weight'] = weight
 
 
-def xml_append_geometry(root, data, frac):
-    '''Appends geometry information to a given xml-tree root.
+def hdf_append_geometry(root, data, frac):
+    '''Appends geometry information to a given in-memory hdf file.
 
     Args:
 
-        root (ET instance): xml-tree
+        root (hdf group): hdf group
         data (dict): dictionary, containing the necessary information
         frac (bool): true, if coordinates should be stored in units of the
             lattice vectors (presupposes a periodic structure)
 
-    Returns:
-
-        root (ET instance): xml-tree with a geometry appended to it
-
     '''
 
-    geotag = ET.SubElement(root, 'geometry')
+    geogrp = root.create_group('geometry')
 
-    tmptag = ET.SubElement(geotag, 'typenames')
-    tmptag.text = ' '.join(data['uniquespecies'])
+    geogrp.attrs['fractional'] = int(frac and data['periodic'])
+    geogrp.attrs['localtypes'] = ','.join(data['localtypes'])
 
-    tmptag = ET.SubElement(geotag, 'fractional')
-    if frac and data['periodic']:
-        tmptag.text = 'Yes'
-    else:
-        tmptag.text = 'No'
+    localattolocalsp = geogrp.create_dataset(
+        'localattolocalsp', data['localattolocalsp'].shape, dtype='int')
+    localattolocalsp[...] = data['localattolocalsp']
 
-    tmptag = ET.SubElement(geotag, 'typesandcoordinates')
+    localattoglobalsp = geogrp.create_dataset(
+        'localattoglobalsp', data['localattoglobalsp'].shape, dtype='int')
+    localattoglobalsp[...] = data['localattoglobalsp']
 
-    tmp = []
-    for iatom in range(data['natoms']):
-        ispecies = data['atomtospecies'][
-            data['typenames'][iatom]]
-        coordentry = data['coords'][iatom, :]
-        tmp.append('  {} '.format(ispecies) + \
-                   (3 * FLOATFMT).format(*coordentry))
-    tmptag.text = NL + NL.join(tmp) + NL
+    localattoatnum = geogrp.create_dataset(
+        'localattoatnum', data['atomicnumbers'].shape, dtype='int')
+    localattoatnum[...] = data['atomicnumbers']
 
-    tmptag = ET.SubElement(geotag, 'periodic')
+    coords = geogrp.create_dataset(
+        'coordinates', data['coords'].shape, dtype='float')
+    coords[...] = data['coords']
+
+    geogrp.attrs['periodic'] = int(data['periodic'])
+
     if data['periodic']:
-        tmptag.text = 'Yes'
-        tmptag = ET.SubElement(geotag, 'latticevectors')
-        tmp = []
-        for ilatt in range(3):
-            tmp.append((3 * FLOATFMT).format((*data['basis'][ilatt, :])))
-            tmptag.text = NL + NL.join(tmp) + NL
-    else:
-        tmptag.text = 'No'
-
-    tmptag = ET.SubElement(geotag, 'coordinateorigin')
-    tmptag.text = NL + (3 * FLOATFMT).format(*np.array((0.0, 0.0, 0.0))) + NL
-
-    return root
+        basis = geogrp.create_dataset(
+            'basis', data['basis'].shape, dtype='float')
+        basis[...] = data['basis']
 
 
-def xml_append_external_features(root, features, nfeatures, contiguous=False):
-    '''Appends external atomic features to a given xml-tree root.
+def hdf_append_external_features(root, data):
+    '''Appends external atomic features to a given in-memory hdf file.
 
     Args:
 
-        root (ET instance): xml-tree
-        features (2darray): numpy array containing external atomic
+        root (hdf group): hdf group
+        data (2darray): numpy array containing external atomic
             features, used as an additional, optional input
-        nfeatures (int): specifies the number of external features per atom
-        contiguous (bool): decides whether reduced feature information
-            (contiguous format) or complete entries (single format) should get
-            appended (default: False)
-
-    Returns:
-
-        root (ET instance): xml-tree with external features appended to it
 
     '''
 
-    tmp = []
-
-    featurestag = ET.SubElement(root, 'features')
-
-    if not contiguous:
-        tmptag = ET.SubElement(featurestag, 'nextfeatures')
-        tmptag.text = '{}'.format(nfeatures)
-
-    tmptag = ET.SubElement(featurestag, 'extfeatures')
-
-    for ifeature in range(features.shape[0]):
-        tmp.append((nfeatures * FLOATFMT)
-                   .format(*features[ifeature, :]))
-
-    tmptag.text = NL + NL.join(tmp) + NL
-
-    return root
+    features = root.create_dataset('extfeatures', data.shape, dtype='float')
+    features[...] = data
 
 
-def xml_append_targets(root, data, ntargets, atomic, contiguous=False):
-    '''Appends target information to a given xml-tree root.
+def hdf_append_targets(root, data):
+    '''Appends target information to a given in-memory hdf file.
 
     Args:
 
-        root (ET instance): xml-tree
-        data (dict): dictionary, containing the necessary information
-        ntargets (int): number of atomic targets if atomic is true,
-            otherwise number of global system targets
-        atomic (bool): true, if targets are atomic properties (e.g. forces)
-            and false, if targets are system properties (e.g. total energy)
-        contiguous (bool): decides whether reduced target information
-            (contiguous format) or complete entries (single format) should get
-            appended (default: False)
-
-    Returns:
-
-        root (ET instance): xml-tree with targets appended to it
+        root (hdf group): hdf group
+        data (2darray): atomic or global targets
 
     '''
 
-    tmp = []
-
-    traintag = ET.SubElement(root, 'training')
-
-    if not contiguous:
-        tmptag = ET.SubElement(traintag, 'atomic')
-        if atomic:
-            tmptag.text = 'Yes'
-        else:
-            tmptag.text = 'No'
-
-        tmptag = ET.SubElement(traintag, 'ntargets')
-        tmptag.text = '{}'.format(ntargets)
-
-    tmptag = ET.SubElement(traintag, 'targets')
-
-    if atomic:
-        for iatom in range(data['natoms']):
-            tmp.append((ntargets * FLOATFMT)
-                       .format(*data['targets'][iatom, :]))
-        tmptag.text = NL + NL.join(tmp) + NL
+    if data.ndim == 1:
+        tmp = np.empty((len(data), 1), dtype=float)
+        tmp[:, 0] = data
     else:
-        tmptag.text = NL + (ntargets * \
-            FLOATFMT).format(*data['targets']) + NL
+        tmp = data
 
-    return root
-
-
-def _beautify(root, level=0, nindent=0):
-    '''Break lines and indent xml tags, if desired.'''
-
-    indent = nindent * ' '
-
-    ii = '\n' + level * indent
-    jj = '\n' + (level - 1) * indent
-
-    if len(root) > 0:
-        if not root.text or not root.text.strip():
-            root.text = ii + indent
-        if not root.tail or not root.tail.strip():
-            root.tail = ii
-        for subroot in root:
-            _beautify(subroot, level + 1)
-        if not root.tail or not root.tail.strip():
-            root.tail = jj
-    else:
-        if level and (not root.tail or not root.tail.strip()):
-            root.tail = jj
-
-    return root
+    targets = root.create_dataset('targets', tmp.shape, dtype='float')
+    targets[...] = tmp
 
 
-class FortformatError(Exception):
-    '''Exception thrown by the Fortformat class.'''
+class Fnetout:
+    '''Basic Fortnet Output Format Class.'''
+
+
+    def __init__(self, fname):
+        '''Initializes a Fnetout object.
+
+        Args:
+
+            fname (str): filename to extract data from
+
+        '''
+
+        self._fname = fname
+
+        with h5py.File(self._fname, 'r') as fnetoutfile:
+            fnetout = fnetoutfile['fnetout']
+            self._mode = fnetout.attrs.get('mode').decode('UTF-8').strip()
+            if not self._mode in ('validate', 'predict'):
+                raise FnetoutError('Invalid running mode specification.')
+
+            output = fnetoutfile['fnetout']['output']
+            self._ndatapoints = output.attrs.get('ndatapoints')
+            if len(self._ndatapoints) == 1:
+                # number of datapoints stored in array of size 1
+                self._ndatapoints = self._ndatapoints[0]
+            else:
+                msg = "Error while reading fnetout file '" + self._fname + \
+                    "'. Unrecognized number of datapoints obtained."
+                raise FnetoutError(msg)
+
+            self._targettype = \
+                output.attrs.get('targettype').decode('UTF-8').strip()
+            if not self._targettype in ('atomic', 'global'):
+                raise FnetoutError('Invalid running mode obtained.')
+
+            # get number of atomic or global predictions/targets
+            self._npredictions = np.shape(
+                    np.array(output['datapoint1']['output']))[1]
+
+            if self._mode == 'validate':
+                self._npredictions = int(self._npredictions / 2)
+
+
+    @property
+    def mode(self):
+        '''Defines property, providing the mode of the Fortnet run.
+
+        Returns:
+
+            mode (str): mode of the run that produced the Fnetout file
+
+        '''
+
+        return self._mode
+
+
+    @property
+    def ndatapoints(self):
+        '''Defines property, providing the number of datapoints.
+
+        Returns:
+
+            ndatapoints (int): total number of datapoints of the training
+
+        '''
+
+        return self._ndatapoints
+
+
+    @property
+    def targettype(self):
+        '''Defines property, providing the target type.
+
+        Returns:
+
+            targettype (str): type of targets the network was trained on
+
+        '''
+
+        return self._targettype
+
+
+    @property
+    def predictions(self):
+        '''Defines property, providing the predictions of Fortnet.
+
+        Returns:
+
+            predictions (list or 2darray): predictions of the network
+
+        '''
+
+        with h5py.File(self._fname, 'r') as fnetoutfile:
+            output = fnetoutfile['fnetout']['output']
+            if self._targettype == 'atomic':
+                predictions = []
+                for idata in range(self._ndatapoints):
+                    dataname = 'datapoint' + str(idata + 1)
+                    if self._mode == 'validate':
+                        predictions.append(
+                            np.array(output[dataname]['output'],
+                                     dtype=float)[:, :self._npredictions])
+                    else:
+                        predictions.append(
+                            np.array(output[dataname]['output'], dtype=float))
+            else:
+                predictions = np.empty(
+                    (self._ndatapoints, self._npredictions), dtype=float)
+                for idata in range(self._ndatapoints):
+                    dataname = 'datapoint' + str(idata + 1)
+                    if self._mode == 'validate':
+                        predictions[idata, :] = \
+                            np.array(output[dataname]['output'],
+                                     dtype=float)[0, :self._npredictions]
+                    else:
+                        predictions[idata, :] = \
+                            np.array(output[dataname]['output'],
+                                     dtype=float)[0, :]
+
+        return predictions
+
+
+    @property
+    def targets(self):
+        '''Defines property, providing the targets during training.
+
+        Returns:
+
+            targets (list or 2darray): targets during training
+
+        '''
+
+        if self._mode == 'predict':
+            return None
+
+        with h5py.File(self._fname, 'r') as fnetoutfile:
+            output = fnetoutfile['fnetout']['output']
+            if self._targettype == 'atomic':
+                targets = []
+                for idata in range(self._ndatapoints):
+                    dataname = 'datapoint' + str(idata + 1)
+                    targets.append(
+                        np.array(output[dataname]['output'],
+                                 dtype=float)[:, self._npredictions:])
+            else:
+                targets = np.empty(
+                    (self._ndatapoints, self._npredictions), dtype=float)
+                for idata in range(self._ndatapoints):
+                    dataname = 'datapoint' + str(idata + 1)
+                    targets[idata, :] = \
+                        np.array(output[dataname]['output'],
+                                 dtype=float)[0, self._npredictions:]
+
+        return targets
+
+
+class FnetdataError(Exception):
+    '''Exception thrown by the Fnetdata class.'''
+
+
+class FnetoutError(Exception):
+    '''Exception thrown by the Fnetout class.'''

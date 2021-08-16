@@ -7,9 +7,8 @@
 
 #:include 'common.fypp'
 
+!> Provides utilities to parallelize the Fortnet software.
 module fnet_parallel
-
-  use dftbp_accuracy, only: dp
 
   implicit none
 
@@ -20,6 +19,7 @@ module fnet_parallel
 
 contains
 
+  !> Returns the start and end index of an MPI process that calculates parts of a loop.
   pure subroutine getStartAndEndIndex(nSystems, nProcs, iProc, iStart, iEnd)
 
     !> array size to split

@@ -7,596 +7,936 @@
 
 #:include 'common.fypp'
 
+!> Implements the generic dataset type as well as corresponding IO routines.
 module fnet_fnetdata
 
-  use xmlf90_strings
-  use xmlf90_flib_dom, only : fnode
+  use h5lt
+  use hdf5
 
-  use dftbp_linkedlist
-  use dftbp_accuracy, only: dp
+  use dftbp_assert
+  use dftbp_accuracy, only: dp, mc
   use dftbp_message, only : error
   use dftbp_typegeometry, only : TGeometry, normalize
-  use dftbp_typegeometryhsd, only : readTGeometryHSD
-  use dftbp_unitconversion, only : lengthUnits, unit
-  use dftbp_hsdutils, only : getChild, getChildValue, setChildValue, detailedError
-  use dftbp_hsdutils2, only : getModifierIndex
   use dftbp_simplealgebra, only : invert33, determinant33
-  use dftbp_charmanip, only : tolower, i2c
+  use dftbp_charmanip, only : i2c
+  use dftbp_constants, only : elementSymbol
+  use dftbp_sorting, only : heap_sort
+  use dftbp_globalenv, only : synchronizeAll
 
-  use fnet_nestedtypes, only : TRealArray1D, TRealArray2D
+  use fnet_acsf, only : TAcsf
+  use fnet_nestedtypes, only : TIntArray1D, TRealArray2D
+  use fnet_hdf5fx, only : h5ltfx_read_dataset_int_f, h5ltfx_read_dataset_double_f
+  use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
+
+#:if WITH_MPI
+  use fnet_mpifx
+#:endif
 
   implicit none
 
   private
 
-  public :: readFnetdataWeight, readContiguousFnetdataWeights
-  public :: readFnetdataGeometry, readContiguousFnetdataGeometries
-  public :: readFnetdataTargets, readContiguousFnetdataTargets
-  public :: readFnetdataFeatures, readContiguousFnetdataFeatures
-  public :: readFnetdataAtomIdentifier, readContiguousFnetdataAtomIdentifier
-  public :: inquireFeatures
+  public :: TDataset
+  public :: readHdfDataset, checkDatasetCompatibility, checkBpnnDatasetCompatibility
+  public :: checkAcsfDatasetCompatibility, checkExtFeaturesDatasetCompatibility
+  public :: inquireStructures, inquireTargets, inquireExtFeatures
+
+#:if WITH_MPI
+  public :: syncDataset
+#:endif
+
+
+  !> Representation of a Fortnet compatible dataset.
+  type TDataset
+
+    !> number of datapoints in dataset
+    integer :: nDatapoints
+
+    !> number of dataset species
+    integer :: nSpecies
+
+    !> total number of atoms in the dataset structures
+    integer :: nTotalAtoms
+
+    !> true, if targets are provided
+    logical :: tTargets
+
+    !> true, if targets are atomic properties
+    logical :: tAtomicTargets
+
+    !> number of target values per atom (if tAtomicTargets = .true.) or system
+    integer :: nTargets
+
+    !> global atomic numbers present in the dataset
+    integer, allocatable :: atomicNumbers(:)
+
+    !> number of targets per network parameter
+    real(dp) :: nTargetsPerParam
+
+    !> target values for training or validation
+    type(TRealArray2D), allocatable :: targets(:)
+
+    !> contains obtained datapoint weights
+    integer, allocatable :: weights(:)
+
+    !> true, if geometries are provided
+    logical :: tStructures
+
+    !> contains obtained dataset geometries
+    type(TGeometry), allocatable :: geos(:)
+
+    !> index mapping local atom --> global species index
+    type(TIntArray1D), allocatable :: localAtToGlobalSp(:)
+
+    !> index mapping local atom --> atomic number
+    type(TIntArray1D), allocatable :: localAtToAtNum(:)
+
+    !> true, if external features are provided
+    logical :: tExtFeatures
+
+    !> total number of available external, atomic features in dataset
+    integer :: nExtFeatures
+
+    !> additional external, atomic features of the dataset
+    type(TRealArray2D), allocatable :: extFeatures(:)
+
+  contains
+
+    procedure :: checkConsistency => TDataset_checkConsistency
+
+  end type TDataset
 
 
 contains
 
-  !> interpret the weighting information stored in a contiguous fnetdata.xml file
-  subroutine readContiguousFnetdataWeights(root, weights)
+#:if WITH_MPI
+  !> Synchronizes a dataset between the MPI nodes.
+  subroutine syncDataset(dataset, comm)
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
+    !> representation of a dataset
+    type(TDataset), intent(inout) :: dataset
 
-    !> contains the weighting information on exit
-    integer, intent(out), allocatable :: weights(:)
+    !> mpi communicator with some additional information
+    type(mpifx_comm), intent(in) :: comm
 
-    !> node to get dataset size from
-    type(fnode), pointer :: datasetnode
+    !> auxiliary variables
+    integer :: iData, dims0d
+    integer, allocatable :: dims1d(:)
 
-    !> temporary pointer to node, containing information
-    type(fnode), pointer :: tmp
+    ! synchronize scalar integers
+    call mpifx_bcast(comm, dataset%nDatapoints)
+    call mpifx_bcast(comm, dataset%nSpecies)
+    call mpifx_bcast(comm, dataset%nTotalAtoms)
+    call mpifx_bcast(comm, dataset%nTargets)
+    call mpifx_bcast(comm, dataset%nTargetsPerParam)
+    call mpifx_bcast(comm, dataset%nExtFeatures)
 
-    !> number of datapoints contained in the dataset file
-    integer :: nDatapoints
+    ! synchronize scalar logicals
+    call mpifx_bcast(comm, dataset%tTargets)
+    call mpifx_bcast(comm, dataset%tAtomicTargets)
+    call mpifx_bcast(comm, dataset%tStructures)
+    call mpifx_bcast(comm, dataset%tExtFeatures)
 
-    !> auxiliary variable
-    integer :: iDatapoint
+    if (.not. comm%lead) then
 
-    ! read dataset size
-    call getChild(root, 'dataset', datasetnode)
-    call getChildValue(datasetnode, 'ndatapoints', nDatapoints)
+      if (allocated(dataset%atomicNumbers)) deallocate(dataset%atomicNumbers)
+      allocate(dataset%atomicNumbers(dataset%nSpecies))
 
-    allocate(weights(nDatapoints))
+      if (allocated(dataset%weights)) deallocate(dataset%weights)
+      allocate(dataset%weights(dataset%nDatapoints))
 
-    do iDatapoint = 1, nDatapoints
-      call getChild(root, 'datapoint' // i2c(iDatapoint), tmp)
-      call readFnetdataWeight(tmp, weights(iDatapoint))
+    end if
+
+    ! synchronize 1d integer arrays
+    call mpifx_bcast(comm, dataset%atomicNumbers)
+    call mpifx_bcast(comm, dataset%weights)
+
+    if (.not. comm%lead) then
+
+      if (dataset%tTargets) then
+        if (allocated(dataset%targets)) deallocate(dataset%targets)
+        allocate(dataset%targets(dataset%nDatapoints))
+      end if
+
+      if (dataset%tStructures) then
+        if (allocated(dataset%geos)) deallocate(dataset%geos)
+        allocate(dataset%geos(dataset%nDatapoints))
+        if (allocated(dataset%localAtToGlobalSp)) deallocate(dataset%localAtToGlobalSp)
+        allocate(dataset%localAtToGlobalSp(dataset%nDatapoints))
+        if (allocated(dataset%localAtToAtNum)) deallocate(dataset%localAtToAtNum)
+        allocate(dataset%localAtToAtNum(dataset%nDatapoints))
+      end if
+
+      if (dataset%tExtFeatures) then
+        if (allocated(dataset%extFeatures)) deallocate(dataset%extFeatures)
+        allocate(dataset%extFeatures(dataset%nDatapoints))
+      end if
+
+    end if
+
+    ! synchronize derived types
+    do iData = 1, dataset%nDatapoints
+      if (dataset%tStructures) then
+        call syncGeometry(comm, dataset%geos(iData))
+        if (comm%lead) then
+          dims0d = size(dataset%localAtToGlobalSp(iData)%array)
+        end if
+        call mpifx_bcast(comm, dims0d)
+        if (.not. comm%lead) then
+          if (allocated(dataset%localAtToGlobalSp(iData)%array)) then
+            deallocate(dataset%localAtToGlobalSp(iData)%array)
+          end if
+          if (allocated(dataset%localAtToAtNum(iData)%array)) then
+            deallocate(dataset%localAtToAtNum(iData)%array)
+          end if
+          allocate(dataset%localAtToGlobalSp(iData)%array(dims0d))
+          allocate(dataset%localAtToAtNum(iData)%array(dims0d))
+        end if
+        call mpifx_bcast(comm, dataset%localAtToGlobalSp(iData)%array)
+        call mpifx_bcast(comm, dataset%localAtToAtNum(iData)%array)
+      end if
+      if (dataset%tTargets) then
+        if (comm%lead) then
+          dims1d = shape(dataset%targets(iData)%array)
+        else
+          if (allocated(dims1d)) deallocate(dims1d)
+          allocate(dims1d(2))
+        end if
+        call mpifx_bcast(comm, dims1d)
+        if (.not. comm%lead) then
+          if (allocated(dataset%targets(iData)%array)) then
+            deallocate(dataset%targets(iData)%array)
+          end if
+          allocate(dataset%targets(iData)%array(dims1d(1), dims1d(2)))
+        end if
+        call mpifx_bcast(comm, dataset%targets(iData)%array)
+      end if
+      if (dataset%tExtFeatures) then
+        if (comm%lead) then
+          dims1d = shape(dataset%extFeatures(iData)%array)
+        else
+          if (allocated(dims1d)) deallocate(dims1d)
+          allocate(dims1d(2))
+        end if
+        call mpifx_bcast(comm, dims1d)
+        if (.not. comm%lead) then
+          if (allocated(dataset%extFeatures(iData)%array)) then
+            deallocate(dataset%extFeatures(iData)%array)
+          end if
+          allocate(dataset%extFeatures(iData)%array(dims1d(1), dims1d(2)))
+        end if
+        call mpifx_bcast(comm, dataset%extFeatures(iData)%array)
+      end if
+      ! ensure that the current loop iteration is completed
+      call synchronizeAll()
     end do
 
-  end subroutine readContiguousFnetdataWeights
+  end subroutine syncDataset
 
 
-  !> interpret the weighting information stored in fnetdata.xml files
-  subroutine readFnetdataWeight(root, weight)
+  !> Synchronizes a geometry between the MPI nodes.
+  subroutine syncGeometry(comm, geo)
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
+    !> mpi communicator with some additional information
+    type(mpifx_comm), intent(in) :: comm
 
-    !> contains the weight information on exit
-    integer, intent(out) :: weight
+    !> representation of a geometry
+    type(TGeometry), intent(inout) :: geo
 
-    ! read weight information
-    call getChildValue(root, 'weight', weight, default=1)
+    ! synchronize scalar integers
+    call mpifx_bcast(comm, geo%nAtom)
+    call mpifx_bcast(comm, geo%nSpecies)
 
-  end subroutine readFnetdataWeight
+    ! synchronize scalar logicals
+    call mpifx_bcast(comm, geo%tPeriodic)
+    call mpifx_bcast(comm, geo%tFracCoord)
+    call mpifx_bcast(comm, geo%tHelical)
 
+    if (.not. comm%lead) then
 
-  !> interpret the geometry information stored in fnetdata.xml files
-  subroutine readFnetdataGeometry(root, geo)
+      if (allocated(geo%species)) deallocate(geo%species)
+      allocate(geo%species(geo%nAtom))
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> contains the geometry information on exit
-    type(TGeometry), intent(out) :: geo
-
-    !> node to get geometry from
-    type(fnode), pointer :: geonode
-
-    !> nodes, containing the informations
-    type(fnode), pointer :: child, typesAndCoords
-
-    !> temporary string buffer
-    type(TListString) :: strBuffer
-
-    !> temporary integer and real valued buffer
-    type(TListIntR1) :: intBuffer
-    type(TListRealR1) :: realBuffer
-
-    !> lattice vectors and determinant
-    real(dp) :: latvec(9), det
-
-    !> auxiliary variable
-    integer, allocatable :: tmpInt(:,:)
-
-    ! read geometry information
-    call getChild(root, 'geometry', geonode)
-    call getChildValue(geonode, 'periodic', geo%tPeriodic, default=.false.)
-
-    ! no support for helical boundary conditions
-    geo%tHelical = .false.
-
-    call init(strBuffer)
-
-    call getChildValue(geonode, 'TypeNames', strBuffer)
-    geo%nSpecies = len(strBuffer)
-
-    if (geo%nSpecies == 0) then
-      call detailedError(geonode, 'Missing species names.')
-    end if
-
-    allocate(geo%speciesNames(geo%nSpecies))
-
-    call asArray(strBuffer, geo%speciesNames)
-    call destruct(strBuffer)
-
-    call getChildValue(geonode, 'fractional', geo%tFracCoord)
-
-    if (geo%tFracCoord .and. (.not. geo%tPeriodic)) then
-      call detailedError(typesAndCoords, 'Fractional coordinates are only allowed for periodic&
-          & systems.')
-    end if
-
-    call init(intBuffer)
-    call init(realBuffer)
-
-    call getChildValue(geonode, 'TypesAndCoordinates', 1, intBuffer, 3, realBuffer,&
-        & child=typesAndCoords)
-
-    geo%nAtom = len(intBuffer)
-
-    if (geo%nAtom == 0) then
-      call detailedError(typesAndCoords, 'Missing coordinates')
-    end if
-
-    allocate(geo%species(geo%nAtom))
-    allocate(geo%coords(3, geo%nAtom))
-    allocate(tmpInt(1, geo%nAtom))
-
-    call asArray(intBuffer, tmpInt)
-    call destruct(intBuffer)
-
-    geo%species(:) = tmpInt(1,:)
-    deallocate(tmpInt)
-
-    !! Check validity of species
-    if (any(geo%species < 1 .or. geo%species > geo%nSpecies)) then
-      call detailedError(typesAndCoords, 'Type index must be between 1 and ' // i2c(geo%nSpecies)&
-          & // '.')
-    end if
-
-    call asArray(realBuffer, geo%coords)
-    call destruct(realBuffer)
-
-    if (geo%tPeriodic) then
+      if (allocated(geo%origin)) deallocate(geo%origin)
       allocate(geo%origin(3))
-      call getChildValue(geonode, 'CoordinateOrigin', geo%origin, [0.0_dp, 0.0_dp, 0.0_dp])
-      geo%coords(:,:) = geo%coords - spread(geo%origin, 2, geo%nAtom)
-      allocate(geo%latVecs(3,3))
-      call getChildValue(geonode, 'LatticeVectors', latvec, child=child)
-      geo%latVecs(:,:) = reshape(latvec, [3, 3])
-      if (geo%tFracCoord) then
-        geo%coords(:,:) = matmul(geo%latVecs, geo%coords)
-        geo%origin(:) = matmul(geo%latVecs, geo%origin)
-      end if
-      allocate(geo%recVecs2p(3, 3))
-      det = determinant33(geo%latVecs)
-      if (abs(det) < 1e-12_dp) then
-        call detailedError(child, 'Dependent lattice vectors.')
-      end if
-      call invert33(geo%recVecs2p, geo%latVecs, det)
-      geo%recVecs2p(:,:) = reshape(geo%recVecs2p, [3, 3], order=[2, 1])
+
+      if (allocated(geo%speciesNames)) deallocate(geo%speciesNames)
+      allocate(geo%speciesNames(geo%nSpecies))
+
     end if
 
-    call normalize(geo)
+    ! synchronize 1d arrays
+    call mpifx_bcast(comm, geo%species)
+    if (geo%tPeriodic) then
+      call mpifx_bcast(comm, geo%origin)
+    end if
+    call mpifx_bcast(comm, geo%speciesNames)
 
-  end subroutine readFnetdataGeometry
+    if (.not. comm%lead) then
+
+      if (allocated(geo%coords)) deallocate(geo%coords)
+      allocate(geo%coords(3, geo%nAtom))
+
+      if (geo%tPeriodic) then
+
+        if (allocated(geo%latVecs)) deallocate(geo%latVecs)
+        allocate(geo%latVecs(3, 3))
+
+        if (allocated(geo%recVecs2p)) deallocate(geo%recVecs2p)
+        allocate(geo%recVecs2p(3, 3))
+
+      end if
+
+    end if
+
+    ! synchronize 2d arrays
+    call mpifx_bcast(comm, geo%coords)
+    if (geo%tPeriodic) then
+      call mpifx_bcast(comm, geo%latVecs)
+      call mpifx_bcast(comm, geo%recVecs2p)
+    end if
+
+  end subroutine syncGeometry
+#:endif
 
 
-  !> interpret the geometry information stored in a contiguous fnetdata.xml file
-  subroutine readContiguousFnetdataGeometries(root, geo)
+  !> Inquires whether geometries are provided by the dataset file.
+  subroutine inquireStructures(fname, tStructures)
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
+    !> filename of the dataset
+    character(len=*), intent(in) :: fname
 
-    !> contains the geometry information on exit
-    type(TGeometry), intent(out), allocatable :: geo(:)
+    !> true, if the dataset provides structural information
+    logical, intent(out) :: tStructures
 
-    !> node to get dataset size from
-    type(fnode), pointer :: datasetnode
+    !> file identification
+    integer(hid_t) :: file_id
 
-    !> temporary pointer to node, containing information
-    type(fnode), pointer :: tmp
-
-    !> number of datapoints contained in the dataset file
-    integer :: nDatapoints
+    !> temporary storage container
+    integer :: tmp(1)
 
     !> auxiliary variable
-    integer :: iGeo
+    integer :: iErr
 
-    ! read dataset size
-    call getChild(root, 'dataset', datasetnode)
-    call getChildValue(datasetnode, 'ndatapoints', nDatapoints)
+    ! open the hdf5 interface
+    call h5open_f(iErr)
 
-    allocate(geo(nDatapoints))
+    ! open the dataset file
+    call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
-    do iGeo = 1, nDatapoints
-      call getChild(root, 'datapoint' // i2c(iGeo), tmp)
-      call readFnetdataGeometry(tmp, geo(iGeo))
+    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset', 'withstructures', tmp, iErr)
+    if (tmp(1) == 1) then
+      tStructures = .true.
+    else
+      tStructures = .false.
+    end if
+
+    ! close the dataset file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
+
+  end subroutine inquireStructures
+
+
+  !> Inquires whether targets are provided by the dataset file.
+  subroutine inquireTargets(fname, tTargets, tAtomic, nTargets)
+
+    !> filename of the dataset
+    character(len=*), intent(in) :: fname
+
+    !> true, if the dataset provides target information
+    logical, intent(out) :: tTargets
+
+    !> optional information regarding the target kind
+    logical, intent(out), optional :: tAtomic
+
+    !> optional output for the number of targets
+    integer, intent(out), optional :: nTargets
+
+    !> file identification
+    integer(hid_t) :: file_id
+
+    !> temporary storage container
+    integer :: tmp(1)
+
+    !> auxiliary variables
+    integer :: iErr
+
+    ! open the hdf5 interface
+    call h5open_f(iErr)
+
+    ! open the dataset file
+    call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
+
+    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'ntargets', tmp, iErr)
+    nTargets = tmp(1)
+    if (nTargets > 0) then
+      tTargets = .true.
+    else
+      tTargets = .false.
+    end if
+
+    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'atomic', tmp, iErr)
+    if (tmp(1) == 1) then
+      tAtomic = .true.
+    else
+      tAtomic = .false.
+    end if
+
+    ! close the dataset file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
+
+  end subroutine inquireTargets
+
+
+  !> Inquires the number of external atomic features in fnetdata tree.
+  subroutine inquireExtFeatures(fname, tFeatures, nFeatures)
+
+    !> filename of the dataset
+    character(len=*), intent(in) :: fname
+
+    !> true, if the dataset provides external atomic input features
+    logical, intent(out) :: tFeatures
+
+    !> optional number of features per atom, provided by the dataset
+    integer, intent(out), optional :: nFeatures
+
+    !> file identification
+    integer(hid_t) :: file_id
+
+    !> temporary storage container
+    integer :: tmp(1)
+
+    !> auxiliary variables
+    integer :: iErr
+
+    ! open the hdf5 interface
+    call h5open_f(iErr)
+
+    ! open the dataset file
+    call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
+
+    ! read nextfeatures attribute
+    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset', 'nextfeatures', tmp, iErr)
+    nFeatures = tmp(1)
+    if (nFeatures > 0) then
+      tFeatures = .true.
+    else
+      tFeatures = .false.
+    end if
+
+    ! close the dataset file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
+
+  end subroutine inquireExtFeatures
+
+
+  !> Checks the compatibility of two datasets.
+  subroutine checkDatasetCompatibility(ref, comp)
+
+    !> representation of a dataset
+    type(TDataset), intent(in) :: ref, comp
+
+    !> logicals to determine if species exist in reference setchildvalue
+    logical, allocatable :: tFound(:)
+
+    !> auxiliary variable
+    integer :: iSp1, iSp2
+
+    if (.not. (ref%tTargets .eqv. comp%tTargets)) then
+      call error('Incompatible training and validation dataset. Check targets.')
+    end if
+
+    if (.not. (ref%tAtomicTargets .eqv. comp%tAtomicTargets)) then
+      call error('Incompatible training and validation dataset. Check target kind.')
+    end if
+
+    if (.not. (ref%nTargets == comp%nTargets)) then
+      call error('Incompatible training and validation dataset. Check number of targets.')
+    end if
+
+    if (.not. (ref%tStructures .eqv. comp%tStructures)) then
+      call error('Incompatible training and validation dataset. Check structures.')
+    end if
+
+    if (.not. (ref%tExtFeatures .eqv. comp%tExtFeatures)) then
+      call error('Incompatible training and validation dataset. Check external features.')
+    end if
+
+    if (.not. (ref%nExtFeatures == comp%nExtFeatures)) then
+      call error('Incompatible training and validation dataset. Check number of external features.')
+    end if
+
+    if (ref%tStructures) then
+
+      allocate(tFound(comp%nSpecies))
+      tFound(:) = .false.
+
+      ! check for global atomic numbers as species identifier
+      outer: do iSp1 = 1, comp%nSpecies
+        ! check if current element is in reference dataset
+        inner: do iSp2 = 1, ref%nSpecies
+          if (ref%atomicNumbers(iSp2) == comp%atomicNumbers(iSp1)) then
+            tFound(iSp1) = .true.
+            exit inner
+          end if
+        end do inner
+      end do outer
+
+      ! evaluate results of global species names
+      if (any(.not. tFound)) then
+        call error('Incompatible training and validation dataset. Check species.')
+      end if
+
+    end if
+
+  end subroutine checkDatasetCompatibility
+
+
+  !> Check dataset consistency by evaluating several assertions.
+  subroutine TDataset_checkConsistency(this)
+
+    !> representation of a dataset
+    class(TDataset), intent(in) :: this
+
+    @:ASSERT(this%nDatapoints >= 1)
+    @:ASSERT(this%nSpecies >= 1)
+    @:ASSERT(this%nExtFeatures >= 0)
+
+    @:ASSERT(minval(this%weights) >= 1)
+
+    if (this%tTargets) then
+      @:ASSERT(this%nTargets > 0)
+    else
+      @:ASSERT(this%nTargets == 0)
+    end if
+
+    if (this%tExtFeatures) then
+      @:ASSERT(this%nExtFeatures > 0)
+    else
+      @:ASSERT(this%nExtFeatures == 0)
+    end if
+
+    if (this%tStructures) then
+      @:ASSERT(size(this%geos) >= 1)
+      @:ASSERT(size(this%weights) == size(this%geos))
+      @:ASSERT(size(this%atomicNumbers) == this%nSpecies)
+      @:ASSERT(size(this%localAtToGlobalSp) == size(this%geos))
+      @:ASSERT(size(this%localAtToAtNum) == size(this%geos))
+    else
+      @:ASSERT(this%nTargets == 0)
+    end if
+
+  end subroutine TDataset_checkConsistency
+
+
+  !> Checks the compatibility of a dataset with an external features configuration.
+  subroutine checkAcsfDatasetCompatibility(dataset, acsf)
+
+    !> representation of a dataset
+    type(TDataset), intent(in) :: dataset
+
+    !> representation of acsf mapping information
+    type(TAcsf), intent(in) :: acsf
+
+    !> true, if the ACSF configuration is fully species-unresolved
+    logical :: tReduce
+
+    !> temporary storage container
+    integer, allocatable :: datasetAtomicNumbers(:), acsfAtomicNumbers(:), tmpAtomicNumbers(:)
+
+    !> auxiliary variable
+    integer :: iFunc
+
+    if (.not. dataset%tStructures) then
+      call error('Error while parsing ACSF from netstat file. The dataset does not provide '&
+          & // ' any structural information.')
+    end if
+
+    ! determine if the ACSF configuration is species-resolved
+    allocate(tmpAtomicNumbers(0))
+    do iFunc = 1, size(acsf%gFunctions%func)
+      if (acsf%gFunctions%func(iFunc)%tRadial) then
+        tmpAtomicNumbers = [tmpAtomicNumbers, [acsf%gFunctions%func(iFunc)%atomicNumbers(1)]]
+      else
+        tmpAtomicNumbers = [tmpAtomicNumbers, acsf%gFunctions%func(iFunc)%atomicNumbers]
+      end if
     end do
 
-  end subroutine readContiguousFnetdataGeometries
+    ! reduce the ACSF atomic numbers to unique ones
+    call getUniqueInt(tmpAtomicNumbers, acsfAtomicNumbers)
+
+    if (all(acsfAtomicNumbers == 0)) then
+      tReduce = .true.
+    else
+      tReduce = .false.
+    end if
+
+    if (.not. tReduce) then
+      ! compare their sorted equivalents
+      datasetAtomicNumbers = dataset%atomicNumbers
+      call heap_sort(datasetAtomicNumbers)
+      call heap_sort(acsfAtomicNumbers)
+      if (.not. all(shape(datasetAtomicNumbers) == shape(acsfAtomicNumbers))) then
+        call error('Incompatibility in atomic number shape of dataset and ACSF.')
+      end if
+      if (.not. all(datasetAtomicNumbers == acsfAtomicNumbers)) then
+        call error('Incompatibility in atomic numbers of dataset and ACSF.')
+      end if
+    end if
+
+  end subroutine checkAcsfDatasetCompatibility
 
 
-  !> interpret the target information of a training xml-tree
-  subroutine readTargets(root, nTargets, nAtom, tAtomicTargets, targets)
+  !> Checks the compatibility of a dataset with an external features configuration.
+  subroutine checkExtFeaturesDatasetCompatibility(dataset, indices)
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
+    !> representation of a dataset
+    type(TDataset), intent(in) :: dataset
 
-    !> number of targets per atom or system
-    integer, intent(in) :: nTargets
+    !> dataset indices of requested external features
+    integer, intent(in) :: indices(:)
 
-    !> number of atoms of the corresponding geometry
-    integer, intent(in) :: nAtom
+    if (any(indices <= 0)) then
+      call error('Error while parsing external feature indices from netstat file. Zero or '&
+          & // 'negative values obtained.')
+    end if
 
-    !> true, if targets for every atom provided
+    if (any(indices > dataset%nExtFeatures)) then
+      call error('Error while parsing external feature indices from netstat file. One or more '&
+          & // 'indices exceed the range of provided features of the dataset.')
+    end if
+
+  end subroutine checkExtFeaturesDatasetCompatibility
+
+
+  !> Checks the compatibility of a dataset with the species of a BPNN.
+  subroutine checkBpnnDatasetCompatibility(dataset, atomicNumbers, tAtomicTargets, allowSpSubset)
+
+    !> representation of a dataset
+    type(TDataset), intent(in) :: dataset
+
+    !> atomic numbers of a BPNN representation
+    integer, intent(in) :: atomicNumbers(:)
+
+    !> true, if the BPNN was created for atomic targets
     logical, intent(in) :: tAtomicTargets
 
-    !> contains the target information on exit
-    real(dp), intent(out), allocatable :: targets(:,:)
+    !> true, if the dataset is allowed to only hold a subset of BPNN species
+    logical, intent(in), optional :: allowSpSubset
 
-    !> temporary target storage container
-    real(dp), allocatable :: tmpTargets(:)
+    !> logicals to determine if species exist in reference setchildvalue
+    logical, allocatable :: tFound(:)
 
-    if (tAtomicTargets) then
-      allocate(tmpTargets(nTargets * nAtom))
+    !> if present, equals optional dummy argument, otherwise false
+    logical :: tAllowSpSubset
+
+    !> temporary storage container
+    integer, allocatable :: datasetAtomicNumbers(:), bpnnAtomicNumbers(:)
+
+    !> auxiliary variables
+    integer :: iAtNum1, iAtNum2
+
+    if (present(allowSpSubset)) then
+      tAllowSpSubset = allowSpSubset
     else
-      allocate(tmpTargets(nTargets))
+      tAllowSpSubset = .false.
     end if
 
-    call getChildValue(root, 'targets', tmpTargets)
-
-    if (tAtomicTargets) then
-      targets = reshape(tmpTargets, [nTargets, nAtom])
-    else
-      targets = reshape(tmpTargets, [nTargets, 1])
+    if (.not. (dataset%tAtomicTargets .eqv. tAtomicTargets)) then
+      call error('Incompatibility in target kind of dataset and BPNN.')
     end if
 
-  end subroutine readTargets
+    ! compare atomic numbers
+    if (tAllowSpSubset) then
+      allocate(tFound(size(dataset%atomicNumbers)))
+      tFound(:) = .false.
+      outer: do iAtNum1 = 1, size(dataset%atomicNumbers)
+        ! check if current species name is in reference dataset
+        inner: do iAtNum2 = 1, size(atomicNumbers)
+          if (atomicNumbers(iAtNum2) == dataset%atomicNumbers(iAtNum1)) then
+            tFound(iAtNum1) = .true.
+            exit inner
+          end if
+        end do inner
+      end do outer
+      ! evaluate results of atomic numbers
+      if (any(.not. tFound)) then
+        call error('Incompatibility in atomic numbers of dataset and BPNN.')
+      end if
+    else
+      datasetAtomicNumbers = dataset%atomicNumbers
+      call heap_sort(datasetAtomicNumbers)
+      bpnnAtomicNumbers = atomicNumbers
+      call heap_sort(bpnnAtomicNumbers)
+      if (.not. all(shape(datasetAtomicNumbers) == shape(bpnnAtomicNumbers))) then
+        call error('Incompatibility in atomic number shape of dataset and BPNN.')
+      end if
+      if (.not. all(datasetAtomicNumbers == bpnnAtomicNumbers)) then
+        call error('Incompatibility in atomic numbers of dataset and BPNN.')
+      end if
+    end if
+
+  end subroutine checkBpnnDatasetCompatibility
 
 
-  !> interpret the target information stored in fnetdata.xml files
-  subroutine readFnetdataTargets(fnetdata, nAtom, targets, tAtomicTargets)
+  !> Reads a binary HDF5 dataset file.
+  subroutine readHdfDataset(fname, dataset)
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: fnetdata
+    !> filename of the dataset
+    character(len=*), intent(in) :: fname
 
-    !> number of atoms of current geometry
-    integer, intent(in) :: nAtom
+    !> representation of a dataset
+    type(TDataset), intent(out) :: dataset
 
-    !> contains the target information on exit
-    real(dp), intent(out), allocatable :: targets(:,:)
+    !> file identification
+    integer(hid_t) :: file_id, dataset_grp, training_grp, datapoint_grp, geometry_grp
 
-    !> true, if targets for every atom provided
-    logical, intent(out) :: tAtomicTargets
+    !> temporary storage container
+    integer :: tmp(1)
 
-    !> node to get targets from
-    type(fnode), pointer :: trainnode
+    !> determinant to calculate inverse lattice vectors
+    real(dp) :: det
 
-    !> number of targets per atom or system
-    integer :: nTargets
-
-    ! read target information
-    call getChild(fnetdata, 'training', trainnode)
-    call getChildValue(trainnode, 'atomic', tAtomicTargets)
-    call getChildValue(trainnode, 'ntargets', nTargets)
-
-    call readTargets(trainnode, nTargets, nAtom, tAtomicTargets, targets)
-
-  end subroutine readFnetdataTargets
-
-
-  !> interpret the geometry information stored in a contiguous fnetdata.xml file
-  subroutine readContiguousFnetdataTargets(root, geo, targets, nTargets, tAtomicTargets)
-
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> contains corresponding geometry information
-    type(TGeometry), intent(in) :: geo(:)
-
-    !> target values for training
-    type(TRealArray2D), intent(out), allocatable :: targets(:)
-
-    !> number of target values per atom (if tAtomicTargets = .true.) or system
-    integer, intent(out) :: nTargets
-
-    !> true, if targets for every atom provided
-    logical, intent(out) :: tAtomicTargets
-
-    !> node to get target properties from
-    type(fnode), pointer :: trainnode
-
-    !> temporary pointer to node, containing information
-    type(fnode), pointer :: tmp
+    !> name of current datapoint
+    character(len=:), allocatable :: dname
 
     !> auxiliary variable
-    integer :: iTarget
+    integer :: iErr, iDatapoint
 
-    ! read target information
-    call getChild(root, 'training', trainnode)
-    call getChildValue(trainnode, 'atomic', tAtomicTargets)
-    call getChildValue(trainnode, 'ntargets', nTargets)
+    ! open the hdf5 interface
+    call h5open_f(iErr)
 
-    allocate(targets(size(geo)))
+    ! open the dataset file
+    call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
-    do iTarget = 1, size(geo)
-      call getChild(root, 'datapoint' // i2c(iTarget), tmp)
-      call getChild(tmp, 'training', trainnode)
-      call readTargets(trainnode, nTargets, geo(iTarget)%nAtom, tAtomicTargets,&
-          & targets(iTarget)%array)
+    ! open the dataset group
+    call h5gopen_f(file_id, 'fnetdata/dataset', dataset_grp, iErr)
+
+    ! open the training group
+    call h5gopen_f(dataset_grp, 'training', training_grp, iErr)
+
+    call h5ltget_attribute_int_f(dataset_grp, './', 'ndatapoints', tmp, iErr)
+    dataset%nDatapoints = tmp(1)
+
+    call h5ltget_attribute_int_f(dataset_grp, './', 'nextfeatures', tmp, iErr)
+    dataset%nExtFeatures = tmp(1)
+    if (dataset%nExtFeatures > 0) then
+      dataset%tExtFeatures = .true.
+      allocate(dataset%extFeatures(dataset%nDatapoints))
+    else
+      dataset%tExtFeatures = .false.
+    end if
+
+    call h5ltget_attribute_int_f(dataset_grp, './', 'ntotatoms', tmp, iErr)
+    dataset%nTotalAtoms = tmp(1)
+
+    call h5ltget_attribute_int_f(dataset_grp, './', 'withstructures', tmp, iErr)
+    if (tmp(1) == 1) then
+      dataset%tStructures = .true.
+      allocate(dataset%geos(dataset%nDatapoints))
+      allocate(dataset%localAtToAtNum(dataset%nDatapoints))
+      allocate(dataset%localAtToGlobalSp(dataset%nDatapoints))
+    else
+      dataset%tStructures = .false.
+    end if
+
+    call h5ltget_attribute_int_f(training_grp, './', 'ntargets', tmp, iErr)
+    dataset%nTargets = tmp(1)
+    if (dataset%nTargets > 0) then
+      dataset%tTargets = .true.
+      allocate(dataset%targets(dataset%nDatapoints))
+    else
+      dataset%tTargets = .false.
+    end if
+
+    call h5ltget_attribute_int_f(training_grp, './', 'atomic', tmp, iErr)
+    if (tmp(1) == 1) then
+      dataset%tAtomicTargets = .true.
+    else
+      dataset%tAtomicTargets = .false.
+    end if
+
+    call h5ltfx_read_dataset_int_f(dataset_grp, 'atomicnumbers', dataset%atomicNumbers)
+    dataset%nSpecies = size(dataset%atomicNumbers)
+
+    allocate(dataset%weights(dataset%nDatapoints))
+
+    do iDatapoint = 1, dataset%nDatapoints
+      dname = 'datapoint' // i2c(iDatapoint)
+
+      ! open the datapoint group
+      call h5gopen_f(dataset_grp, dname, datapoint_grp, iErr)
+
+      ! get weight of datapoint
+      call h5ltget_attribute_int_f(datapoint_grp, './', 'weight', tmp, iErr)
+      dataset%weights(iDatapoint) = tmp(1)
+
+      if (dataset%tStructures) then
+        ! open the geometry group
+        call h5gopen_f(datapoint_grp, 'geometry', geometry_grp, iErr)
+
+        ! check for periodic boundary conditions
+        call h5ltget_attribute_int_f(geometry_grp, './', 'periodic', tmp, iErr)
+        if (tmp(1) == 1) then
+          dataset%geos(iDatapoint)%tPeriodic = .true.
+        else
+          dataset%geos(iDatapoint)%tPeriodic = .false.
+        end if
+
+        ! no support for helical boundary conditions
+        dataset%geos(iDatapoint)%tHelical = .false.
+
+        ! check for fractional coordinates
+        call h5ltget_attribute_int_f(geometry_grp, './', 'fractional', tmp, iErr)
+        if (tmp(1) == 1) then
+          dataset%geos(iDatapoint)%tFracCoord = .true.
+        else
+          dataset%geos(iDatapoint)%tFracCoord = .false.
+        end if
+
+        ! read mappings from local atom index to atomic number
+        call h5ltfx_read_dataset_int_f(geometry_grp, 'localattoatnum',&
+            & dataset%localAtToAtNum(iDatapoint)%array)
+        call getNumberOfUniqueInt(dataset%localAtToAtNum(iDatapoint)%array,&
+            & dataset%geos(iDatapoint)%nSpecies)
+
+        ! read mappings from local atom index to local species index
+        call h5ltfx_read_dataset_int_f(geometry_grp, 'localattolocalsp',&
+            & dataset%geos(iDatapoint)%species)
+
+        ! read mappings from local atom index to global species index
+        call h5ltfx_read_dataset_int_f(geometry_grp, 'localattoglobalsp',&
+            & dataset%localAtToGlobalSp(iDatapoint)%array)
+
+        ! extract local species names from atomic numbers
+        call getReducedSpeciesNames(dataset%geos(iDatapoint)%species,&
+            & dataset%localAtToAtNum(iDatapoint)%array, dataset%geos(iDatapoint)%speciesNames)
+
+        ! read coordinates
+        call h5ltfx_read_dataset_double_f(geometry_grp, 'coordinates',&
+            & dataset%geos(iDatapoint)%coords)
+        dataset%geos(iDatapoint)%nAtom = size(dataset%geos(iDatapoint)%coords, dim=2)
+
+        ! check validity of species
+        if (any(dataset%geos(iDatapoint)%species < 1&
+            & .or. dataset%geos(iDatapoint)%species > dataset%geos(iDatapoint)%nSpecies)) then
+          call error('Error while parsing dataset species. Type index must be between 1 and '&
+              & // i2c(dataset%geos(iDatapoint)%nSpecies) // '.')
+        end if
+
+        if (dataset%geos(iDatapoint)%tPeriodic) then
+          call h5ltfx_read_dataset_double_f(geometry_grp, 'basis',&
+              & dataset%geos(iDatapoint)%latVecs)
+          ! set dummy origin
+          dataset%geos(iDatapoint)%origin = [0.0_dp, 0.0_dp, 0.0_dp]
+          dataset%geos(iDatapoint)%coords(:,:) = dataset%geos(iDatapoint)%coords&
+              & - spread(dataset%geos(iDatapoint)%origin, 2, dataset%geos(iDatapoint)%nAtom)
+          if (dataset%geos(iDatapoint)%tFracCoord) then
+            dataset%geos(iDatapoint)%coords(:,:) = matmul(dataset%geos(iDatapoint)%latVecs,&
+                & dataset%geos(iDatapoint)%coords)
+            dataset%geos(iDatapoint)%origin(:) = matmul(dataset%geos(iDatapoint)%latVecs,&
+                & dataset%geos(iDatapoint)%origin)
+          end if
+          allocate(dataset%geos(iDatapoint)%recVecs2p(3, 3))
+          det = determinant33(dataset%geos(iDatapoint)%latVecs)
+          if (abs(det) < 1e-12_dp) then
+            call error('Dependent lattice vectors in ' // dname // '.')
+          end if
+          call invert33(dataset%geos(iDatapoint)%recVecs2p, dataset%geos(iDatapoint)%latVecs, det)
+          dataset%geos(iDatapoint)%recVecs2p(:,:) =&
+              & reshape(dataset%geos(iDatapoint)%recVecs2p, [3, 3], order=[2, 1])
+        end if
+
+        call normalize(dataset%geos(iDatapoint))
+
+        ! close the geometry group
+        call h5gclose_f(geometry_grp, iErr)
+      end if
+
+      if (dataset%tTargets) then
+        call h5ltfx_read_dataset_double_f(datapoint_grp, 'targets',&
+            & dataset%targets(iDatapoint)%array)
+      end if
+
+      if (dataset%tExtFeatures) then
+        call h5ltfx_read_dataset_double_f(datapoint_grp, 'extfeatures',&
+            & dataset%extFeatures(iDatapoint)%array)
+      end if
+
+      ! close the datapoint group
+      call h5gclose_f(datapoint_grp, iErr)
+
     end do
 
-  end subroutine readContiguousFnetdataTargets
+    ! close the training group
+    call h5gclose_f(training_grp, iErr)
+
+    ! close the dataset group
+    call h5gclose_f(dataset_grp, iErr)
+
+    ! close the dataset file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
+
+    ! perform some basic consistency checks
+    call dataset%checkConsistency()
+
+  end subroutine readHdfDataset
 
 
-  !> interpret the external atomic feature information of a features xml-tree
-  subroutine readFeatures(root, nFeatures, nAtom, features, inds)
+  !> Returns the local species names of a geometry in the local order.
+  subroutine getReducedSpeciesNames(localAtToLocalSp, localAtToAtNum, speciesNames)
 
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
+    !> index mapping local atom --> local species index
+    integer, intent(in) :: localAtToLocalSp(:)
 
-    !> number of external features per atom
-    integer, intent(in) :: nFeatures
+    !> index mapping local atom --> atomic number
+    integer, intent(in) :: localAtToAtNum(:)
 
-    !> number of atoms of the corresponding geometry
-    integer, intent(in) :: nAtom
+    !> unique species name in order of local species indices
+    character(mc), intent(out), allocatable :: speciesNames(:)
 
-    !> contains the desired feature subset on exit
-    real(dp), intent(out), allocatable :: features(:,:)
+    !> auxiliary variables
+    integer :: ii, jj, kk
+    integer :: tmp1(size(localAtToAtNum)), tmp2(size(localAtToLocalSp))
+    integer, allocatable :: uniqueAtNum(:), uniqueLocalSp(:)
 
-    !> indices of external features to extract
-    integer, intent(in), optional :: inds(:)
+    kk = 1
+    tmp1(1) = localAtToAtNum(1)
+    tmp2(1) = localAtToLocalSp(1)
 
-    !> temporary feature storage container
-    real(dp), allocatable :: tmpFeatures(:)
-
-    !> contains the full feature information of the dataset
-    real(dp), allocatable :: allFeatures(:,:)
-
-    !> auxiliary variable
-    integer :: iFeature
-
-    allocate(tmpFeatures(nFeatures * nAtom))
-
-    call getChildValue(root, 'extfeatures', tmpFeatures)
-
-    allFeatures = reshape(tmpFeatures, [nFeatures, nAtom])
-
-    if (present(inds)) then
-      ! reduce external features to desired subset
-      allocate(features(size(inds), size(allFeatures, dim=2)))
-      do iFeature = 1, size(inds)
-        features(iFeature, :) = allFeatures(inds(iFeature), :)
+    outer: do ii = 2, size(localAtToAtNum)
+      do jj = 1, kk
+        if (tmp1(jj) == localAtToAtNum(ii)) then
+          cycle outer
+        end if
       end do
-    else
-      features = allFeatures
-    end if
+      kk = kk + 1
+      tmp1(kk) = localAtToAtNum(ii)
+      tmp2(kk) = localAtToLocalSp(ii)
+    end do outer
 
-  end subroutine readFeatures
+    uniqueAtNum = tmp1(1:kk)
+    uniqueLocalSp = tmp2(1:kk)
 
+    allocate(speciesNames(size(uniqueAtNum)))
 
-  !> interpret the external atomic feature information stored in fnetdata.xml files
-  subroutine readFnetdataFeatures(root, nAtom, features, inds)
-
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> number of atoms of current geometry
-    integer, intent(in) :: nAtom
-
-    !> contains the desired feature subset on exit
-    real(dp), intent(out), allocatable :: features(:,:)
-
-    !> indices of external features to extract (default: all)
-    integer, intent(in), optional :: inds(:)
-
-    !> node to get features from
-    type(fnode), pointer :: featuresnode
-
-    !> number of features per atom
-    integer :: nFeatures
-
-    ! read feature information
-    call getChild(root, 'features', featuresnode)
-    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
-
-    if (present(inds)) then
-      call checkFeatureInds(inds, nFeatures)
-    end if
-
-    call readFeatures(featuresnode, nFeatures, nAtom, features, inds=inds)
-
-  end subroutine readFnetdataFeatures
-
-
-  !> interpret the feature information stored in a contiguous fnetdata.xml file
-  subroutine readContiguousFnetdataFeatures(root, geo, features, inds)
-
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> contains corresponding geometry information
-    type(TGeometry), intent(in) :: geo(:)
-
-    !> contains external atomic features for training on exit
-    type(TRealArray2D), intent(out), allocatable :: features(:)
-
-    !> indices of external features to extract (default: all)
-    integer, intent(in), optional :: inds(:)
-
-    !> node to get feature properties from
-    type(fnode), pointer :: featuresnode
-
-    !> temporary pointer to node, containing information
-    type(fnode), pointer :: tmp
-
-    !> number of features per atom in dataset
-    integer :: nFeatures
-
-    !> auxiliary variable
-    integer :: iFeatureSet
-
-    ! read feature information
-    call getChild(root, 'features', featuresnode)
-    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
-
-    if (present(inds)) then
-      call checkFeatureInds(inds, nFeatures)
-    end if
-
-    allocate(features(size(geo)))
-
-    do iFeatureSet = 1, size(geo)
-      call getChild(root, 'datapoint' // i2c(iFeatureSet), tmp)
-      call getChild(tmp, 'features', featuresnode)
-      call readFeatures(featuresnode, nFeatures, geo(iFeatureSet)%nAtom,&
-          & features(iFeatureSet)%array, inds=inds)
+    ! map unique indices to species names
+    do ii = 1, size(uniqueAtNum)
+      speciesNames(uniqueLocalSp(ii)) = trim(elementSymbol(uniqueAtNum(ii)))
     end do
 
-  end subroutine readContiguousFnetdataFeatures
-
-
-  !> inquire the number of external atomic features in fnetdata tree
-  subroutine inquireFeatures(root, nFeatures)
-
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> number of features per atom, provided by the dataset
-    integer, intent(out) :: nFeatures
-
-    !> node to get features from
-    type(fnode), pointer :: featuresnode
-
-    ! read feature information
-    call getChild(root, 'features', featuresnode, requested=.false.)
-
-    if (associated(featuresnode)) then
-      call getChildValue(featuresnode, 'nextfeatures', nFeatures)
-    else
-      nFeatures = 0
-    end if
-
-  end subroutine inquireFeatures
-
-
-  !> check feature indices for a valid range
-  subroutine checkFeatureInds(inds, nFeatures)
-
-    !> indices of external features to extract
-    integer, intent(in) :: inds(:)
-
-    !> number of features per atom in dataset
-    integer, intent(in) :: nFeatures
-
-    if ((maxval(inds) > nFeatures) .or. (minval(inds) <= 0)) then
-      call error('External feature indices are out of range.')
-    end if
-
-  end subroutine checkFeatureInds
-
-
-  !> interpret single external atomic feature information stored in fnetdata.xml files
-  subroutine readFnetdataAtomIdentifier(root, nAtom, ind, features)
-
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> number of atoms of current geometry
-    integer, intent(in) :: nAtom
-
-    !> index of external features to extract
-    integer, intent(in) :: ind
-
-    !> contains the atom identifier on exit
-    real(dp), intent(out), allocatable :: features(:)
-
-    !> temporary container to overcome different ranks
-    real(dp), allocatable :: tmpFeatures(:,:)
-
-    !> node to get features from
-    type(fnode), pointer :: featuresnode
-
-    !> number of features per atom
-    integer :: nFeatures
-
-    ! read feature information
-    call getChild(root, 'features', featuresnode)
-    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
-    call checkFeatureInds([ind], nFeatures)
-    call readFeatures(featuresnode, nFeatures, nAtom, tmpFeatures, inds=[ind])
-
-    features = tmpFeatures(1, :)
-
-  end subroutine readFnetdataAtomIdentifier
-
-
-  !> interpret single feature information stored in a contiguous fnetdata.xml file
-  subroutine readContiguousFnetdataAtomIdentifier(root, geo, ind, features)
-
-    !> pointer to the node, containing the data
-    type(fnode), pointer :: root
-
-    !> contains corresponding geometry information
-    type(TGeometry), intent(in) :: geo(:)
-
-    !> index of external features to extract
-    integer, intent(in) :: ind
-
-    !> contains atom identifier for mapping on exit
-    type(TRealArray1D), intent(out), allocatable :: features(:)
-
-    !> temporary container to overcome different ranks
-    type(TRealArray2D), allocatable :: tmpFeatures(:)
-
-    !> node to get feature properties from
-    type(fnode), pointer :: featuresnode
-
-    !> temporary pointer to node, containing information
-    type(fnode), pointer :: tmp
-
-    !> number of features per atom in dataset
-    integer :: nFeatures
-
-    !> auxiliary variable
-    integer :: iFeatureSet
-
-    ! read feature information
-    call getChild(root, 'features', featuresnode)
-    call getChildValue(featuresnode, 'nextfeatures', nFeatures)
-    call checkFeatureInds([ind], nFeatures)
-
-    allocate(features(size(geo)))
-    allocate(tmpFeatures(size(geo)))
-
-    do iFeatureSet = 1, size(geo)
-      call getChild(root, 'datapoint' // i2c(iFeatureSet), tmp)
-      call getChild(tmp, 'features', featuresnode)
-      call readFeatures(featuresnode, nFeatures, geo(iFeatureSet)%nAtom,&
-          & tmpFeatures(iFeatureSet)%array, inds=[ind])
-      features(iFeatureSet)%array = tmpFeatures(iFeatureSet)%array(1, :)
-    end do
-
-  end subroutine readContiguousFnetdataAtomIdentifier
+  end subroutine getReducedSpeciesNames
 
 end module fnet_fnetdata

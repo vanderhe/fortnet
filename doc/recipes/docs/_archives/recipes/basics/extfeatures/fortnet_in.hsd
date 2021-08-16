@@ -1,41 +1,33 @@
 Network = BPNN {
   Hidden = 2 2
-  Activation = 'tanh'
+  Activation = tanh
 }
 
-Mapping = ACSF {
-  NRadial = 5
-  NAngular = 4
-  RCut = 4.0
-  Standardization = Yes
-}
-
-Training = SD {
-  Threshold = 1e-08
-  NIterations = 10
-  NPrintout = 5
-  NSaveNet = 10
-  MinDisplacement = 1e-10
-  MaxDisplacement = 5e-02
-  Loss = 'mse'
-}
-
-Data {
-  Dataset = 'fnetdata.xml'
-  Standardization = No
-  NetstatFiles = Type2FileNames {
-    Prefix = "./"
-    Suffix = ".net"
-    LowerCaseTypeName = No
+Features {
+  External = FromDataset {
+    Indices = 1 2 3
   }
 }
 
-External {
-  Features = 1 2 3
+Training = LBFGS {
+  Threshold = 1e-08
+  NIterations = 1000
+  NPrintout = 100
+  NSaveNet = 100
+  MinDisplacement = 1e-10
+  MaxDisplacement = 5e-02
+  LineMin = Yes
+  Memory = 1000
+  Loss = mse
+}
+
+Data {
+  Dataset = fnetdata.hdf5
+  NetstatFile = fortnet.hdf5
 }
 
 Options {
-  Mode = 'train'
+  Mode = train
   ReadNetStats = No
   RandomSeed = 123456
 }

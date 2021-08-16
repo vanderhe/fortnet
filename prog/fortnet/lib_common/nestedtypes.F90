@@ -7,6 +7,7 @@
 
 #:include 'common.fypp'
 
+!> Defines several nested derived types used by other modules.
 module fnet_nestedtypes
 
   use dftbp_accuracy, only: dp
@@ -40,6 +41,7 @@ module fnet_nestedtypes
     integer, allocatable :: array(:)
 
   end type TIntArray1D
+
 
   type :: TIntArray2D
 
@@ -153,7 +155,7 @@ module fnet_nestedtypes
   end type TDerivs
 
 
-  !> if compiled with mpi enabled, contains mpi communicator
+  !> If compiled with mpi enabled, contains mpi communicator
   type TEnv
 
   #:if WITH_MPI
@@ -169,7 +171,8 @@ module fnet_nestedtypes
 
 contains
 
-  subroutine TPredicts_init(this, reference)
+  !> Initialises a prediction structure based on a reference.
+  pure subroutine TPredicts_init(this, reference)
 
     !> representation of neural network predictions
     type(TPredicts), intent(out) :: this
@@ -191,6 +194,7 @@ contains
   end subroutine TPredicts_init
 
 
+  !> Initialises an MPI environment. 
   subroutine TEnv_init(this)
 
     !> mpi environment instance
@@ -207,7 +211,8 @@ contains
   end subroutine TEnv_init
 
 
-  subroutine TBiasDerivs_init(dims, db)
+  !> Initialises a structure that holds the derivatives of bias parameters.
+  pure subroutine TBiasDerivs_init(dims, db)
 
     !> dimensions of all layers in the network
     integer, intent(in) :: dims(:)
@@ -236,7 +241,8 @@ contains
   end subroutine TBiasDerivs_init
 
 
-  subroutine TWeightDerivs_init(dims, dw)
+  !> Initialises a structure that holds the derivatives of weight parameters.
+  pure subroutine TWeightDerivs_init(dims, dw)
 
     !> dimensions of all layers in the network
     integer, intent(in) :: dims(:)
@@ -265,6 +271,7 @@ contains
   end subroutine TWeightDerivs_init
 
 
+  !> Initialises a structure that holds multiple network layer structures.
   subroutine TMultiLayerStruc_init(dims, nStrucs, this)
 
     !> dimensions of all layers in the sub-nn's
@@ -292,6 +299,7 @@ contains
   end subroutine TMultiLayerStruc_init
 
 
+  !> Initialises a wrapper around bias and weight derivatives.
   subroutine TDerivs_init(dims, nStrucs, derivs)
 
     !> dimensions of all layers in the sub-nn's
@@ -317,7 +325,8 @@ contains
   end subroutine TDerivs_init
 
 
-  subroutine TDerivs_serialized(this, nTotParams, ddSerial)
+  !> Serialises the gradients of a derivative type.
+  pure subroutine TDerivs_serialized(this, nTotParams, ddSerial)
 
     !> representation of weight and bias derivatives
     class(TDerivs), intent(in) :: this
@@ -362,6 +371,7 @@ contains
   end subroutine TDerivs_serialized
 
 
+  !> Resets a derivative structure to hold zero-valued entries.
   subroutine TDerivs_reset(this)
 
     !> representation of weight and bias derivatives

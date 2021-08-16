@@ -7,19 +7,29 @@
 
 #:include 'common.fypp'
 
+!> Implements the Behler-Parrinello-Neural-Network topology.
 module fnet_bpnn
 
+  use h5lt
+  use hdf5
+
+  use dftbp_message, only : error
   use dftbp_globalenv, only : stdOut
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
+  use dftbp_charmanip, only : tolower, i2c
+  use dftbp_constants, only : elementSymbol
 
-  use fnet_initprogram, only : TProgramvariables, TEnv
-  use fnet_nestedtypes, only : TRealArray1D, TRealArray2D, TMultiLayerStruc, TMultiLayerStruc_init
-  use fnet_nestedtypes, only : TBiasDerivs, TWeightDerivs, TDerivs, TDerivs_init
-  use fnet_nestedtypes, only : TIntArray1D, TPredicts, TPredicts_init
+  use fnet_nestedtypes, only : TRealArray2D, TMultiLayerStruc, TMultiLayerStruc_init, TBiasDerivs,&
+      & TWeightDerivs, TDerivs, TDerivs_init, TIntArray1D, TPredicts, TPredicts_init, TEnv
+  use fnet_hdf5fx, only : h5ltfx_read_dataset_int_f, h5ltfx_read_dataset_double_f,&
+      & h5ltfxmake_dataset_int_f, h5ltfxmake_dataset_double_f
+  use fnet_features, only : TFeatures
   use fnet_network, only : TNetwork, TNetwork_init
-  use fnet_loss, only : lossGradientFunc
+  use fnet_loss, only : lossFunc, lossGradientFunc
   use fnet_optimizers, only : TOptimizer, next
+  use fnet_fnetdata, only : TDataset
+  use fnet_random, only : knuthShuffle
 
 #:if WITH_MPI
   use fnet_mpifx
@@ -30,13 +40,16 @@ module fnet_bpnn
 
   private
 
-  public :: TBpnn_init, TBpnn
+  public :: TBpnn, TBpnn_init
 
 
   type :: TBpnn
 
     !> number of sub-nn's
     integer :: nSpecies
+
+    !> atomic numbers of sub-nn species
+    integer, allocatable :: atomicNumbers(:)
 
     !> total number of bias and weight parameters of each sub-nn
     integer :: nBiases, nWeights
@@ -62,12 +75,17 @@ module fnet_bpnn
     procedure :: fromFile => TBpnn_fromFile
     procedure :: toFile => TBpnn_toFile
 
+  #:if WITH_MPI
+    procedure :: sync => TBpnn_sync
+  #:endif
+
   end type TBpnn
 
 
 contains
 
-  subroutine TBpnn_init(this, dims, nSpecies, rndGen, activation)
+  !> Initialises a BPNN instance.
+  subroutine TBpnn_init(this, dims, nSpecies, atomicNumbers, rndGen, activation)
 
     !> representation of a Behler-Parrinello neural network
     type(TBpnn), intent(out) :: this
@@ -77,6 +95,9 @@ contains
 
     !> number of different species in training data
     integer, intent(in) :: nSpecies
+
+    !> atomic numbers of sub-nn species
+    integer, intent(in) :: atomicNumbers(:)
 
     !> luxury pseudorandom generator instance
     type(TRanlux), intent(inout), optional :: rndGen
@@ -89,6 +110,7 @@ contains
 
     this%dims = dims
     this%nSpecies = nSpecies
+    this%atomicNumbers = atomicNumbers
 
     allocate(this%nets(nSpecies))
 
@@ -103,19 +125,58 @@ contains
   end subroutine TBpnn_init
 
 
-  subroutine TBpnn_nTrain(this, prog, tConverged, loss, validLoss, gradients)
+  !> Performs multiple training iterations of a BPNN.
+  subroutine TBpnn_nTrain(this, env, rndGen, pOptimizer, trainDataset, validDataset, features,&
+      & nTrainIt, nPrintOut, nSaveNet, netstatpath, loss, lossgrad, tShuffle, tMonitorValid,&
+      & tConverged, trainLoss, validLoss, gradients)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
 
-    !> representation of program variables
-    type(TProgramVariables), intent(inout) :: prog
+    !> contains mpi communicator, if compiled with mpi enabled
+    type(TEnv), intent(in) :: env
+
+    !> luxury pseudorandom generator instance
+    type(TRanlux), intent(inout) :: rndGen
+
+    !> general function optimizer
+    type(TOptimizer), intent(inout) :: pOptimizer(:)
+
+    !> representation of training and validation dataset
+    type(TDataset), intent(in) :: trainDataset, validDataset
+
+    !> collected features, including external and ACSF features
+    type(TFeatures), intent(in) :: features
+
+    !> maximum number of training iterations
+    integer, intent(in) :: nTrainIt
+
+    !> printout loss/gradient information every nPrintOut steps
+    integer, intent(in) :: nPrintOut
+
+    !> save network status every nSaveNet steps
+    integer, intent(in) :: nSaveNet
+
+    !> filename of netstat file
+    character(len=*), intent(in) :: netstatpath
+
+    !> loss function procedure
+    procedure(lossFunc), intent(in), pointer :: loss
+
+    !> procedure, pointing to the choosen loss function gradient
+    procedure(lossGradientFunc), intent(in), pointer :: lossgrad
+
+    !> true, if a Knuth-shuffle should be applied to the gradients calculations
+    logical, intent(in) :: tShuffle
+
+    !> true, if validation monitoring is desired
+    logical, intent(in) :: tMonitorValid
 
     !> true, if gradient got below the specified tolerance
     logical, intent(out) :: tConverged
 
     !> optional, iteration-resolved total loss
-    real(dp), intent(out), allocatable, optional :: loss(:)
+    real(dp), intent(out), allocatable, optional :: trainLoss(:)
 
     !> optional, iteration-resolved total validation loss
     real(dp), intent(out), allocatable, optional :: validLoss(:)
@@ -135,6 +196,9 @@ contains
     !> temporary iteration-resolved euclidean norm of total gradient
     real(dp), allocatable :: tmpGradients(:)
 
+    !> shuffle array to randomize the order of gradient calculations
+    integer, allocatable :: shuffle(:)
+
     !> true, if current process is the lead
     logical :: tLead
 
@@ -142,85 +206,101 @@ contains
     logical :: tPrintOut, tSaveNet
 
     !> auxiliary variables
-    integer :: iIter, iStart, iEnd, iTmpIter, iLastIter
+    integer :: ii, iIter, iStart, iEnd, iTmpIter, iLastIter
 
     call TDerivs_init(this%dims, size(this%nets), dd)
     call TDerivs_init(this%dims, size(this%nets), ddRes)
 
-    call TPredicts_init(predicts, prog%data%targets)
-    call TPredicts_init(resPredicts, prog%data%targets)
-    call TPredicts_init(validPredicts, prog%data%targets)
+    call TPredicts_init(predicts, trainDataset%targets)
+    call TPredicts_init(resPredicts, trainDataset%targets)
+    call TPredicts_init(validPredicts, trainDataset%targets)
 
-    allocate(tmpLoss(prog%train%nTrainIt))
-    allocate(tmpGradients(prog%train%nTrainIt))
+    allocate(tmpLoss(nTrainIt))
+    allocate(tmpGradients(nTrainIt))
 
-    if (prog%data%tMonitorValid) then
-      allocate(tmpValidLoss(prog%train%nTrainIt))
+    if (tMonitorValid) then
+      allocate(tmpValidLoss(nTrainIt))
       tmpValidLoss(:) = 0.0_dp
     end if
 
   #:if WITH_MPI
-    tLead = prog%env%globalMpiComm%lead
-    call getStartAndEndIndex(prog%data%nDatapoints, prog%env%globalMpiComm%size,&
-        & prog%env%globalMpiComm%rank, iStart, iEnd)
-    call syncWeightsAndBiases(this, prog%env%globalMpiComm)
+    tLead = env%globalMpiComm%lead
+    call getStartAndEndIndex(trainDataset%nDatapoints, env%globalMpiComm%size,&
+        & env%globalMpiComm%rank, iStart, iEnd)
+    call syncWeightsAndBiases(this, env%globalMpiComm)
   #:else
     tLead = .true.
     iStart = 1
-    iEnd = prog%data%nDatapoints
+    iEnd = trainDataset%nDatapoints
   #:endif
 
-    call this%updateGradients(prog, iStart, iEnd, dd, ddRes, predicts, resPredicts)
+    ! generate shuffle array, if desired
+    allocate(shuffle(trainDataset%nDatapoints))
+    shuffle = [(ii, ii = 1, trainDataset%nDatapoints)]
+    if (tLead .and. tShuffle) then
+      call knuthShuffle(rndGen, shuffle)
+    end if
+
+  #:if WITH_MPI
+    call mpifx_bcast(env%globalMpiComm, shuffle)
+  #:endif
+
+    call this%updateGradients(env, iStart, iEnd, shuffle, trainDataset, features%trainFeatures,&
+        & lossgrad, dd, ddRes, predicts, resPredicts)
 
     if (tLead) then
-      if (prog%data%tZscore) then
-        call removeZscore(resPredicts, prog%data%zPrec)
-      end if
-      tmpLoss(1) = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
+      tmpLoss(1) = loss(resPredicts, trainDataset%targets, weights=trainDataset%weights)
     end if
-    if (prog%data%tMonitorValid) then
-      validPredicts = this%predictBatch(prog%features%validFeatures, prog%env,&
-          & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+    if (tMonitorValid) then
+      validPredicts = this%predictBatch(features%validFeatures, env,&
+          & validDataset%localAtToGlobalSp, trainDataset%tAtomicTargets)
       if (tLead) then
-        tmpValidLoss(1) = prog%train%loss(validPredicts, prog%data%validTargets)
+        tmpValidLoss(1) = loss(validPredicts, validDataset%targets)
       end if
     end if
 
-    lpIter: do iIter = 1, prog%train%nTrainIt
+    lpIter: do iIter = 1, nTrainIt
 
       iTmpIter = iIter
 
       if (tLead) then
-        call this%update(prog%train%pOptimizer, ddRes, tmpLoss(iIter), sum(prog%data%weights),&
+        call this%update(pOptimizer, ddRes, tmpLoss(iIter), sum(trainDataset%weights),&
             & tmpGradients(iIter), tConverged)
       end if
 
     #:if WITH_MPI
-      call mpifx_bcast(prog%env%globalMpiComm, tConverged)
-      call syncWeightsAndBiases(this, prog%env%globalMpiComm)
+      call mpifx_bcast(env%globalMpiComm, tConverged)
+      call syncWeightsAndBiases(this, env%globalMpiComm)
     #:endif
 
       call ddRes%reset()
-      call this%updateGradients(prog, iStart, iEnd, dd, ddRes, predicts, resPredicts)
+
+      if (tLead .and. tShuffle) then
+        call knuthShuffle(rndGen, shuffle)
+      end if
+
+    #:if WITH_MPI
+      call mpifx_bcast(env%globalMpiComm, shuffle)
+    #:endif
+
+      call this%updateGradients(env, iStart, iEnd, shuffle, trainDataset, features%trainFeatures,&
+          & lossgrad, dd, ddRes, predicts, resPredicts)
 
       if (tLead) then
-        if (prog%data%tZscore) then
-          call removeZscore(resPredicts, prog%data%zPrec)
-        end if
-        tmpLoss(iIter) = prog%train%loss(resPredicts, prog%data%targets, weights=prog%data%weights)
+        tmpLoss(iIter) = loss(resPredicts, trainDataset%targets, weights=trainDataset%weights)
       end if
-      if (prog%data%tMonitorValid) then
-        validPredicts = this%predictBatch(prog%features%validFeatures, prog%env,&
-            & prog%data%localValidAtToGlobalSp, prog%data%tAtomicTargets, zPrec=prog%data%zPrec)
+      if (tMonitorValid) then
+        validPredicts = this%predictBatch(features%validFeatures, env,&
+            & validDataset%localAtToGlobalSp, trainDataset%tAtomicTargets)
         if (tLead) then
-          tmpValidLoss(iIter) = prog%train%loss(validPredicts, prog%data%validTargets)
+          tmpValidLoss(iIter) = loss(validPredicts, validDataset%targets)
         end if
       end if
 
-      tPrintOut = (modulo(iIter, prog%train%nPrintOut) == 0) .or. (iIter == prog%train%nTrainIt)
+      tPrintOut = (modulo(iIter, nPrintOut) == 0) .or. (iIter == nTrainIt)
 
       if (tPrintOut) then
-        if (prog%data%tMonitorValid) then
+        if (tMonitorValid) then
           write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter),&
               & tmpGradients(iIter), tmpValidLoss(iIter)
         else
@@ -228,21 +308,21 @@ contains
         end if
       end if
 
-      tSaveNet = (modulo(iIter, prog%train%nSaveNet) == 0) .or. (iIter == prog%train%nTrainIt)
+      tSaveNet = (modulo(iIter, nSaveNet) == 0) .or. (iIter == nTrainIt)
 
       if (tLead .and. tSaveNet) then
-        call this%toFile(prog)
+        call this%toFile(netstatpath)
       end if
 
       if (tConverged) then
-        if (prog%data%tMonitorValid) then
+        if (tMonitorValid) then
           write(stdout, '(I10,5X,E15.6,4X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter),&
               & tmpGradients(iIter), tmpValidLoss(iIter)
         else
           write(stdout, '(I10,5X,E15.6,4X,E15.6)') iIter, tmpLoss(iIter), tmpGradients(iIter)
         end if
         if (tLead) then
-          call this%toFile(prog)
+          call this%toFile(netstatpath)
         end if
         exit lpIter
       end if
@@ -250,22 +330,26 @@ contains
     end do lpIter
 
   #:if WITH_MPI
-    call mpifx_bcast(prog%env%globalMpiComm, tmpLoss)
-    call mpifx_bcast(prog%env%globalMpiComm, tmpValidLoss)
-    call mpifx_bcast(prog%env%globalMpiComm, tmpGradients)
-    call mpifx_allreduce(prog%env%globalMpiComm, iTmpIter, iLastIter, MPI_MAX)
+    call mpifx_bcast(env%globalMpiComm, tmpLoss)
+    if (tMonitorValid) then
+      call mpifx_bcast(env%globalMpiComm, tmpValidLoss)
+    end if
+    call mpifx_bcast(env%globalMpiComm, tmpGradients)
+    call mpifx_allreduce(env%globalMpiComm, iTmpIter, iLastIter, MPI_MAX)
+  #:else
+    iLastIter = iTmpIter
   #:endif
 
     ! crop loss to actual range of past iterations and, if desired, pass through
-    if (present(loss)) then
-      allocate(loss(iLastIter))
-      loss(:) = tmpLoss(1:iLastIter)
+    if (present(trainLoss)) then
+      allocate(trainLoss(iLastIter))
+      trainLoss(:) = tmpLoss(1:iLastIter)
     end if
     if (present(gradients)) then
       allocate(gradients(iLastIter))
       gradients(:) = tmpGradients(1:iLastIter)
     end if
-    if (prog%data%tMonitorValid .and. present(validLoss)) then
+    if (tMonitorValid .and. present(validLoss)) then
       allocate(validLoss(iLastIter))
       validLoss(:) = tmpValidLoss(1:iLastIter)
     end if
@@ -273,16 +357,30 @@ contains
   end subroutine TBpnn_nTrain
 
 
-  subroutine TBpnn_updateGradients(this, prog, iStart, iEnd, dd, resDd, predicts, resPredicts)
+  !> Calculates new gradients in weight-bias space based on the current BPNN state.
+  subroutine TBpnn_updateGradients(this, env, iStart, iEnd, shuffle, trainDataset, trainFeatures,&
+      & lossgrad, dd, resDd, predicts, resPredicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
 
-    !> representation of program variables
-    type(TProgramVariables), intent(in) :: prog
+    !> contains mpi communicator, if compiled with mpi enabled
+    type(TEnv), intent(in) :: env
 
     !> system index to start and end at
     integer, intent(in) :: iStart, iEnd
+
+    !> shuffle indices for permuting the gradient calculation
+    integer, intent(in) :: shuffle(:)
+
+    !> training dataset representation
+    type(TDataset), intent(in) :: trainDataset
+
+    !> collection of input features for training
+    type(TRealArray2D), intent(in) :: trainFeatures(:)
+
+    !> procedure, pointing to the choosen loss function gradient
+    procedure(lossGradientFunc), intent(in), pointer :: lossgrad
 
     !> total weight and bias gradients of the current system
     type(TDerivs), intent(inout) :: dd
@@ -303,36 +401,37 @@ contains
     type(TDerivs) :: ddTmp
 
     !> auxiliary variables
-    integer :: iSys, iGlobalSp, iLayer
+    integer :: ii, iSys, iGlobalSp, iLayer
 
-    lpSystem: do iSys = iStart, iEnd
-      call this%sysTrain(prog%features%features(iSys)%array, prog%data%zTargets(iSys)%array,&
-          & prog%data%localAtToGlobalSp(iSys)%array, prog%data%tAtomicTargets, prog%train%lossgrad,&
+    lpSystem: do ii = iStart, iEnd
+      iSys = shuffle(ii)
+      call this%sysTrain(trainFeatures(iSys)%array, trainDataset%targets(iSys)%array,&
+          & trainDataset%localAtToGlobalSp(iSys)%array, trainDataset%tAtomicTargets, lossgrad,&
           & ddTmp, iPredict)
-      ! collect outputs and gradients of the systems in range
+      ! collect outputs and gradients of the systems
       predicts%sys(iSys)%array(:,:) = iPredict
       do iGlobalSp = 1, size(this%nets)
         do iLayer = 1, size(this%dims)
           dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
-              & ddTmp%dw(iGlobalSp)%dw(iLayer)%array * real(prog%data%weights(iSys), dp)
+              & ddTmp%dw(iGlobalSp)%dw(iLayer)%array * real(trainDataset%weights(iSys), dp)
           dd%db(iGlobalSp)%db(iLayer)%array = dd%db(iGlobalSp)%db(iLayer)%array +&
-              & ddTmp%db(iGlobalSp)%db(iLayer)%array * real(prog%data%weights(iSys), dp)
+              & ddTmp%db(iGlobalSp)%db(iLayer)%array * real(trainDataset%weights(iSys), dp)
         end do
       end do
     end do lpSystem
 
   #:if WITH_MPI
     ! collect outputs of all nodes
-    do iSys = 1, prog%data%nDatapoints
-      call mpifx_allreduce(prog%env%globalMpiComm, predicts%sys(iSys)%array,&
+    do iSys = 1, trainDataset%nDatapoints
+      call mpifx_allreduce(env%globalMpiComm, predicts%sys(iSys)%array,&
           & resPredicts%sys(iSys)%array, MPI_SUM)
     end do
     ! sync gradients between MPI nodes
     do iGlobalSp = 1, size(this%nets)
       do iLayer = 1, size(this%dims)
-        call mpifx_allreduce(prog%env%globalMpiComm, dd%dw(iGlobalSp)%dw(iLayer)%array,&
+        call mpifx_allreduce(env%globalMpiComm, dd%dw(iGlobalSp)%dw(iLayer)%array,&
             & resDd%dw(iGlobalSp)%dw(iLayer)%array, MPI_SUM)
-        call mpifx_allreduce(prog%env%globalMpiComm, dd%db(iGlobalSp)%db(iLayer)%array,&
+        call mpifx_allreduce(env%globalMpiComm, dd%db(iGlobalSp)%db(iLayer)%array,&
             & resDd%db(iGlobalSp)%db(iLayer)%array, MPI_SUM)
       end do
     end do
@@ -341,33 +440,117 @@ contains
     resDd = dd
   #:endif
 
+    ! reset the temporary predictions, important if random shuffling is applied
+    do iSys = 1, size(predicts%sys)
+      predicts%sys(iSys)%array(:,:) = 0.0_dp
+    end do
+
+    ! reset the temporary gradient storage type
     call dd%reset()
 
   end subroutine TBpnn_updateGradients
 
 
-  subroutine removeZscore(output, zPrec)
+#:if WITH_MPI
 
-    !> neural network output
-    type(TPredicts), intent(inout) :: output
+  !> Synchronizes the entire BPNN derived type.
+  subroutine TBpnn_sync(this, comm)
 
-    !> storage container of means and variances to calculate z-score, shape: [nTargets, 2]
-    real(dp), intent(in) :: zPrec(:,:)
+    !> representation of a Behler-Parrinello neural network
+    class(TBpnn), intent(inout) :: this
+
+    !> mpi communicator with some additional information
+    type(mpifx_comm), intent(in) :: comm
 
     !> auxiliary variables
-    integer :: iSys, iAtom
+    integer :: iNet, iLayer, dims0d
+    integer, allocatable :: tmpDims(:)
+    character(len=1000) :: tmpStr
+    character(len=:), allocatable :: tmpTransferType
 
-    do iSys = 1, size(output%sys)
-      do iAtom = 1, size(output%sys(iSys)%array, dim=2)
-        output%sys(iSys)%array(:, iAtom) = output%sys(iSys)%array(:, iAtom) * zPrec(:, 2) +&
-            & zPrec(:, 1)
+    call mpifx_bcast(comm, this%nSpecies)
+    call mpifx_bcast(comm, this%nBiases)
+    call mpifx_bcast(comm, this%nWeights)
+
+    if (comm%lead) then
+      dims0d = size(this%atomicNumbers)
+    end if
+    call mpifx_bcast(comm, dims0d)
+    if (.not. comm%lead) then
+      if (allocated(this%atomicNumbers)) deallocate(this%atomicNumbers)
+      allocate(this%atomicNumbers(dims0d))
+    end if
+    call mpifx_bcast(comm, this%atomicNumbers)
+
+    if (comm%lead) then
+      dims0d = size(this%dims)
+    end if
+    call mpifx_bcast(comm, dims0d)
+    if (.not. comm%lead) then
+      if (allocated(this%dims)) deallocate(this%dims)
+      allocate(this%dims(dims0d))
+    end if
+    call mpifx_bcast(comm, this%dims)
+
+    if (comm%lead) then
+      dims0d = size(this%nets)
+    end if
+    call mpifx_bcast(comm, dims0d)
+    if (.not. comm%lead) then
+      if (allocated(this%nets)) deallocate(this%nets)
+      allocate(this%nets(dims0d))
+    end if
+
+    do iNet = 1, size(this%nets)
+      call mpifx_bcast(comm, this%nets(iNet)%nBiases)
+      call mpifx_bcast(comm, this%nets(iNet)%nWeights)
+      ! provide network dimensions to non-leads
+      if (comm%lead) then
+        dims0d = size(this%nets(iNet)%dims)
+        tmpDims = this%nets(iNet)%dims
+      end if
+      call mpifx_bcast(comm, dims0d)
+      if (.not. comm%lead) then
+        if (allocated(tmpDims)) deallocate(tmpDims)
+        allocate(tmpDims(dims0d))
+      end if
+      call mpifx_bcast(comm, tmpDims)
+      ! provide network transfer function
+      if (comm%lead) then
+        dims0d = len(this%nets(iNet)%transferType)
+        tmpStr = this%nets(iNet)%transferType
+      end if
+      call mpifx_bcast(comm, dims0d)
+      if (.not. comm%lead) then
+        if (allocated(tmpTransferType)) deallocate(tmpTransferType)
+      end if
+      call mpifx_bcast(comm, tmpStr)
+      tmpTransferType = tolower(trim(tmpStr))
+      ! synchronize network layers
+      if (.not. comm%lead) then
+        if (allocated(this%nets(iNet)%dims)) deallocate(this%nets(iNet)%dims)
+        if (allocated(this%nets(iNet)%layers)) deallocate(this%nets(iNet)%layers)
+        if (allocated(this%nets(iNet)%transferType)) deallocate(this%nets(iNet)%transferType)
+        call TNetwork_init(this%nets(iNet), tmpDims, descriptor=tmpTransferType)
+      end if
+    end do
+
+    ! broadcast actual layer-resolved values
+    do iNet = 1, size(this%nets)
+      do iLayer = 1, size(this%nets(iNet)%dims)
+        call mpifx_bcast(comm, this%nets(iNet)%layers(iLayer)%aa)
+        call mpifx_bcast(comm, this%nets(iNet)%layers(iLayer)%aarg)
+      end do
+      do iLayer = 1, size(this%nets(iNet)%dims) - 1
+        call mpifx_bcast(comm, this%nets(iNet)%layers(iLayer + 1)%bb)
+        call mpifx_bcast(comm, this%nets(iNet)%layers(iLayer)%ww)
       end do
     end do
 
-  end subroutine removeZscore
+  end subroutine TBpnn_sync
 
 
-#:if WITH_MPI
+  !> Synchronizes the BPNN network parameters between the MPI nodes.
   subroutine syncWeightsAndBiases(this, comm)
 
     !> representation of a Behler-Parrinello neural network
@@ -380,23 +563,18 @@ contains
     integer :: iGlobalSp, iLayer
 
     do iGlobalSp = 1, size(this%nets)
-
-      ! broadcast all weights
+      ! broadcast all weights and biases of a sub-network
       do iLayer = 1, size(this%dims)
         call mpifx_bcast(comm, this%nets(iGlobalSp)%layers(iLayer)%ww)
-      end do
-
-      ! broadcast all biases
-      do iLayer = 1, size(this%dims)
         call mpifx_bcast(comm, this%nets(iGlobalSp)%layers(iLayer)%bb)
       end do
-
     end do
 
   end subroutine syncWeightsAndBiases
 #:endif
 
 
+  !> Performs a training iteration for a single system, i.e. set of input features.
   subroutine TBpnn_sysTrain(this, input, targets, localAtToGlobalSp, tAtomic, lossgrad, dd,&
       & predicts)
 
@@ -410,7 +588,7 @@ contains
     !> shape: [nTargets, nAtoms] for atomic targets or [nTargets, 1] for system targets
     real(dp), intent(in) :: targets(:,:)
 
-    !> index mapping local atom --> global species index
+    !> maps local atom index --> global species index
     integer, intent(in) :: localAtToGlobalSp(:)
 
     !> true, if network is trained on atomic properties
@@ -464,7 +642,6 @@ contains
       globalPredicts = sum(predicts, dim=2)
       allocate(lossgrads(size(predicts, dim=1), size(input, dim=2)))
       do iAtom = 1, size(input, dim=2)
-        ! lossgrads(:, iAtom) = globalPredicts - targets(:, 1)
         lossgrads(:, iAtom) = reshape(lossgrad(reshape(globalPredicts, [size(globalPredicts), 1]),&
             & targets), [size(globalPredicts)])
       end do
@@ -473,7 +650,6 @@ contains
       predicts(:, 1) = globalPredicts
     else
       allocate(lossgrads, source=predicts)
-      ! lossgrads(:,:) = predicts - targets
       lossgrads(:,:) = lossgrad(predicts, targets)
     end if
 
@@ -493,6 +669,7 @@ contains
   end subroutine TBpnn_sysTrain
 
 
+  !> Updates the BPNN parameters based on the obtained gradients in weight-bias space.
   subroutine TBpnn_update(this, pOptimizer, dd, loss, nDatapoints, totGradNorm, tConverged)
 
     !> representation of a Behler-Parrinello neural network
@@ -543,6 +720,7 @@ contains
   end subroutine TBpnn_update
 
 
+  !> Inserts serialized network-resolved weights and biases into the BPNN structure.
   subroutine TBpnn_serialWeightsAndBiasesFillup(this, weightsAndBiases)
 
     !> representation of a Behler-Parrinello neural network
@@ -561,6 +739,7 @@ contains
   end subroutine TBpnn_serialWeightsAndBiasesFillup
 
 
+  !> Maps the BPNN parameters to a serialized array, suitable for the gradient-based optimizer.
   subroutine TBpnn_serializedWeightsAndBiases(this, weightsAndBiases)
 
     !> representation of a Behler-Parrinello neural network
@@ -585,6 +764,7 @@ contains
   end subroutine TBpnn_serializedWeightsAndBiases
 
 
+  !> Resets the activation values of a BPNN instance.
   subroutine TBpnn_resetActivations(this)
 
     !> representation of a Behler-Parrinello neural network
@@ -600,6 +780,7 @@ contains
   end subroutine TBpnn_resetActivations
 
 
+  !> Collects the outputs of all sub-networks (for predicting system-wide properties).
   subroutine TBpnn_collectOutput(this, output)
 
     !> representation of a Behler-Parrinello neural network
@@ -651,7 +832,7 @@ contains
     !> number of atoms in the current system
     integer :: nAtoms
 
-    !> auxiliary variable
+    !> auxiliary variables
     integer :: iAtom, iGlobalSp
 
     nAtoms = size(input, dim=2)
@@ -674,8 +855,8 @@ contains
   end function TBpnn_iPredict
 
 
-  function TBpnn_predictBatch(this, features, env, localAtToGlobalSp, tAtomic, zPrec)&
-      & result(resPredicts)
+  !> Calculates the network output for a batch of input features.
+  function TBpnn_predictBatch(this, features, env, localAtToGlobalSp, tAtomic) result(resPredicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this
@@ -691,9 +872,6 @@ contains
 
     !> true, if network is trained on atomic properties
     logical, intent(in) :: tAtomic
-
-    !> means and variances to calculate z-score, shape: [nTargets, 2]
-    real(dp), intent(in), optional :: zPrec(:,:)
 
     !> network predictions during the training
     type(TPredicts) :: predicts, resPredicts
@@ -718,8 +896,8 @@ contains
 
     if (tAtomic) then
       do iSys = 1, size(features)
-        allocate(predicts%sys(iSys)%array(this%dims(size(this%dims)),&
-            & size(features(iSys)%array, dim=2)))
+        allocate(predicts%sys(iSys)%array(this%dims(size(this%dims)), size(features(iSys)%array,&
+            & dim=2)))
         predicts%sys(iSys)%array(:,:) = 0.0_dp
       end do
     else
@@ -745,58 +923,231 @@ contains
     resPredicts = predicts
   #:endif
 
-  #:if WITH_MPI
-    if (present(zPrec) .and. tLead) then
-      call removeZscore(resPredicts, zPrec)
-    end if
-    if (present(zPrec)) then
-      do iSys = 1, size(features)
-        call mpifx_bcast(env%globalMpiComm, resPredicts%sys(iSys)%array)
-      end do
-    end if
-  #:else
-    if (present(zPrec)) then
-      call removeZscore(resPredicts, zPrec)
-    end if
-  #:endif
-
   end function TBpnn_predictBatch
 
 
-  subroutine TBpnn_toFile(this, prog)
+  !> Writes weight and bias parameters to netstat file.
+  subroutine TBpnn_toFile(this, fname)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this
 
-    !> representation of program variables
-    type(TProgramVariables), intent(in) :: prog
+    !> filename (will be fortnet.hdf5)
+    character(len=*), intent(in) :: fname
 
-    !> auxiliary variable
-    integer :: iSpecies
+    !> various specifier flags
+    integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
 
-    do iSpecies = 1, size(this%nets)
-      call this%nets(iSpecies)%toFile(prog, iSpecies)
+    !> name of current subnetwork and layer
+    character(len=:), allocatable :: netname, layername
+
+    !> auxiliary variables
+    integer :: iErr, iNet, iLayer, tExist
+
+    ! open the hdf5 interface
+    call h5open_f(iErr)
+
+    ! open the netstat file
+    call h5fopen_f(fname, H5F_ACC_RDWR_F, file_id, iErr)
+
+    ! open the netstat group
+    call h5gopen_f(file_id, 'netstat', netstat_id, iErr)
+
+    ! open the bpnn group
+    call h5gopen_f(netstat_id, 'bpnn', bpnn_id, iErr)
+
+    do iNet = 1, this%nSpecies
+      netname = trim(elementSymbol(this%atomicNumbers(iNet))) // '-subnetwork'
+
+      ! open the subnetwork group
+      call h5gopen_f(bpnn_id, netname, subnet_id, iErr)
+
+      do iLayer = 1, size(this%nets(iNet)%dims) - 1
+        layername = 'layer' // i2c(iLayer)
+
+        ! open the layer group
+        call h5gopen_f(subnet_id, layername, layer_id, iErr)
+
+        tExist = h5ltfind_dataset_f(layer_id, 'weights')
+
+        if (tExist == 1) then
+          call h5ldelete_f(layer_id, 'weights', iErr)
+        end if
+
+        tExist = h5ltfind_dataset_f(layer_id, 'bias')
+
+        if (tExist == 1) then
+          call h5ldelete_f(layer_id, 'bias', iErr)
+        end if
+
+        ! write weight matrices
+        call h5ltfxmake_dataset_double_f(layer_id, 'weights', this%nets(iNet)%layers(iLayer)%ww)
+
+        ! write bias vectors
+        call h5ltfxmake_dataset_double_f(layer_id, 'bias', this%nets(iNet)%layers(iLayer + 1)%bb)
+
+        ! close the layer group
+        call h5gclose_f(layer_id, iErr)
+
+      end do
+
+      ! close the subnetwork group
+      call h5gclose_f(subnet_id, iErr)
+
     end do
+
+    ! close the bpnn group
+    call h5gclose_f(bpnn_id, iErr)    
+
+    ! close the netstat group
+    call h5gclose_f(netstat_id, iErr)
+
+    ! close the netstat file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
 
   end subroutine TBpnn_toFile
 
 
-  subroutine TBpnn_fromFile(this, prog)
+  !> Reads a BPNN from a netstat file.
+  subroutine TBpnn_fromFile(this, fname, tAtomicTargets)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(out) :: this
 
-    !> representation of program variables
-    type(TProgramVariables), intent(inout) :: prog
+    !> filename (will be fortnet.hdf5)
+    character(len=*), intent(in) :: fname
 
-    !> auxiliary variable
-    integer :: iSpecies
+    !> true, if originally trained on atomic properties
+    logical, intent(out) :: tAtomicTargets
 
-    call TBpnn_init(this, prog%arch%allDims, prog%data%nSpecies, activation=prog%arch%activation)
+    !> various specifier flags
+    integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
 
-    do iSpecies = 1, prog%data%nSpecies
-      call this%nets(iSpecies)%fromFile(prog, iSpecies)
+    !> name of current subnetwork and layer
+    character(len=:), allocatable :: netname, layername
+
+    !> temporary activation function type
+    character(len=:), allocatable :: activation, tmpActivation
+
+    !> dimensions of all layers in the sub-nn's
+    integer, allocatable :: dims(:), tmpDims(:)
+
+    !> atomic numbers of sub-nn species
+    integer, allocatable :: atomicNumbers(:)
+
+    !> auxiliary variables
+    character(len=100) :: tmp
+    integer :: iErr, iNet, iLayer
+
+    ! open the hdf5 interface
+    call h5open_f(iErr)
+
+    ! open the netstat file
+    call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
+
+    ! open the netstat group
+    call h5gopen_f(file_id, 'netstat', netstat_id, iErr)
+
+    ! open the bpnn group
+    call h5gopen_f(netstat_id, 'bpnn', bpnn_id, iErr)
+
+    ! read atomic numbers of sub-nn
+    call h5ltfx_read_dataset_int_f(bpnn_id, 'atomicnumbers', atomicNumbers)
+
+    ! read the output type, i.e. atomic or global targets
+    call h5ltget_attribute_string_f(bpnn_id, './', 'targettype', tmp, iErr)
+    if (tolower(trim(tmp)) == 'atomic') then
+      tAtomicTargets = .true.
+    elseif (tolower(trim(tmp)) == 'global') then
+      tAtomicTargets = .false.
+    else
+      call error('Error while reading BPNN from netstat file. Unrecognized target type '&
+          & // tolower(trim(tmp)) // '.')
+    end if
+
+    do iNet = 1, size(atomicNumbers)
+      netname = trim(elementSymbol(atomicNumbers(iNet))) // '-subnetwork'
+
+      ! open the subnetwork group
+      call h5gopen_f(bpnn_id, netname, subnet_id, iErr)
+
+      ! read layer topology
+      call h5ltfx_read_dataset_int_f(subnet_id, 'topology', tmpDims)
+      if (.not. allocated(dims)) then
+        dims = tmpDims
+      end if
+      if (.not. all(shape(dims) == shape(tmpDims))) then
+        call error('Error while reading sub-network topology. Currently only equally shaped'&
+            & //' networks are supported.')
+      end if
+      if (.not. all(dims == tmpDims)) then
+        call error('Error while reading sub-network topology. Currently only equal topologies'&
+            & //' are supported.')
+      end if
+      dims = tmpDims
+
+      ! read transfer function type
+      call h5ltget_attribute_string_f(subnet_id, './', 'activation', tmp, iErr)
+      tmpActivation = tolower(trim(tmp))
+      if (.not. allocated(activation)) then
+        activation = tmpActivation
+      end if
+      if (.not. (tmpActivation == activation)) then
+        call error('Error while reading sub-network transfer functions. Currently only networks'&
+            & //' with equal transfer are supported.')
+      end if
+      activation = tmpActivation
+
+      ! close the subnetwork group
+      call h5gclose_f(subnet_id, iErr)
+
     end do
+
+    ! allocate sub-nn's and their layer structures
+    call TBpnn_init(this, dims, size(atomicNumbers), atomicNumbers, activation=activation)
+
+    do iNet = 1, size(this%atomicNumbers)
+      netname = trim(elementSymbol(this%atomicNumbers(iNet))) // '-subnetwork'
+
+      ! open the subnetwork group
+      call h5gopen_f(bpnn_id, netname, subnet_id, iErr)
+
+      do iLayer = 1, size(this%nets(iNet)%dims) - 1
+        layername = 'layer' // i2c(iLayer)
+
+        ! open the layer group
+        call h5gopen_f(subnet_id, layername, layer_id, iErr)
+
+        ! read weight matrices
+        call h5ltfx_read_dataset_double_f(layer_id, 'weights', this%nets(iNet)%layers(iLayer)%ww)
+
+        ! read bias vectors
+        call h5ltfx_read_dataset_double_f(layer_id, 'bias', this%nets(iNet)%layers(iLayer + 1)%bb)
+
+        ! close the layer group
+        call h5gclose_f(layer_id, iErr)
+
+      end do
+
+      ! close the subnetwork group
+      call h5gclose_f(subnet_id, iErr)
+
+    end do
+
+    ! close the bpnn group
+    call h5gclose_f(bpnn_id, iErr)    
+
+    ! close the netstat group
+    call h5gclose_f(netstat_id, iErr)
+
+    ! close the netstat file
+    call h5fclose_f(file_id, iErr)
+
+    ! close the hdf5 interface
+    call h5close_f(iErr)
 
   end subroutine TBpnn_fromFile
 

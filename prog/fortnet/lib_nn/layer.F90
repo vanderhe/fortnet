@@ -7,12 +7,14 @@
 
 #:include 'common.fypp'
 
+!> Defines a layer of a dense feed-forward multilayer-perceptron.
 module fnet_layer
 
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
 
-  use fnet_transfer
+  use fnet_transfer, only : transferFunc, gaussian, gaussianDeriv, relu, reluDeriv, sigmoid,&
+      & sigmoidDeriv, heaviside, heavisideDeriv, tanhf, tanhDeriv, linear, linearDeriv
   use fnet_random, only : normalXavier
 
   implicit none
@@ -51,6 +53,7 @@ module fnet_layer
 
 contains
 
+  !> Initialises a single layer instance (+ initial activations if desired).
   subroutine TLayer_init(this, nCurrentNeurons, nNextNeurons, rndGen)
 
     !> representation of a neural network layer
@@ -70,8 +73,8 @@ contains
     allocate(this%ww(nCurrentNeurons, nNextNeurons))
     allocate(this%bb(nCurrentNeurons))
 
-    this%aa = 0.0_dp
-    this%aarg = 0.0_dp
+    this%aa(:) = 0.0_dp
+    this%aarg(:) = 0.0_dp
 
     if (present(rndGen)) then
       call normalXavier(rndGen, this%ww, nNextNeurons, nCurrentNeurons)
@@ -84,6 +87,7 @@ contains
   end subroutine TLayer_init
 
 
+  !> Sets the activation/transfer function as well as its derivative.
   subroutine TLayer_setTransferFunc(this, descriptor)
 
     !> representation of a neural network layer

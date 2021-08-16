@@ -7,6 +7,7 @@
 
 #:include 'common.fypp'
 
+!> Provides several loss functions as well as their gradients.
 module fnet_loss
 
   use dftbp_accuracy, only : dp
@@ -68,7 +69,7 @@ module fnet_loss
 
 contains
 
-  !> simple deviation between predictions and targets
+  !> Calculates the simple deviation between predictions and targets.
   pure function deviation(predicts, targets) result(dev)
 
     !> neural network predictions
@@ -85,7 +86,7 @@ contains
   end function deviation
 
 
-  !> mean absolute error derivation w.r.t predictions and targets
+  !> Calculates the mean absolute error derivation w.r.t predictions and targets.
   pure function maGradients(predicts, targets) result(grads)
 
     !> neural network predictions
@@ -102,7 +103,7 @@ contains
   end function maGradients
 
 
-  !> mean absolute percentage error derivation w.r.t predictions and targets
+  !> Calculates the mean absolute percentage error derivation w.r.t predictions and targets.
   pure function mapGradients(predicts, targets) result(grads)
 
     !> neural network predictions
@@ -119,7 +120,7 @@ contains
   end function mapGradients
 
 
-  !> mean squared error derivation w.r.t predictions and targets
+  !> Calculates the mean squared error derivation w.r.t predictions and targets.
   pure function msGradients(predicts, targets) result(grads)
 
     !> neural network predictions
@@ -136,7 +137,7 @@ contains
   end function msGradients
 
 
-  !> root mean squared error derivation w.r.t predictions and targets
+  !> Calculates the root mean squared error derivation w.r.t predictions and targets.
   pure function rmsGradients(predicts, targets) result(grads)
 
     !> neural network predictions
@@ -153,7 +154,7 @@ contains
   end function rmsGradients
 
 
-  !> mean absolute loss function
+  !> Calculates the mean absolute loss function.
   pure function simpleMaLoss(predicts, targets) result(loss)
 
     !> neural network predictions
@@ -170,7 +171,7 @@ contains
   end function simpleMaLoss
 
 
-  !> mean absolute percentage loss function
+  !> Calculates the mean absolute percentage loss function.
   pure function simpleMapLoss(predicts, targets) result(loss)
 
     !> neural network predictions
@@ -187,7 +188,7 @@ contains
   end function simpleMapLoss
 
 
-  !> mean squared loss function
+  !> Calculates the mean squared loss function.
   pure function simpleMsLoss(predicts, targets) result(loss)
 
     !> neural network predictions
@@ -204,7 +205,7 @@ contains
   end function simpleMsLoss
 
 
-  !> mean squared logarithmic loss function
+  !> Calculates the mean squared logarithmic loss function.
   pure function simpleMslLoss(predicts, targets) result(loss)
 
     !> neural network predictions
@@ -221,7 +222,7 @@ contains
   end function simpleMslLoss
 
 
-  !> root mean square loss function
+  !> Calculates the root mean square loss function.
   pure function simpleRmsLoss(predicts, targets) result(loss)
 
     !> neural network predictions
@@ -238,7 +239,7 @@ contains
   end function simpleRmsLoss
 
 
-  !> mean absolute loss function
+  !> Calculates the mean absolute loss function.
   pure function maLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
@@ -286,7 +287,7 @@ contains
   end function maLoss
 
 
-  !> mean absolute percentage loss function
+  !> Calculates the mean absolute percentage loss function.
   pure function mapLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
@@ -334,7 +335,7 @@ contains
   end function mapLoss
 
 
-  !> mean squared loss function
+  !> Calculates the mean squared loss function.
   pure function msLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
@@ -382,7 +383,7 @@ contains
   end function msLoss
 
 
-  !> mean squared logarithmic loss function
+  !> Calculates the mean squared logarithmic loss function.
   pure function mslLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
@@ -430,7 +431,7 @@ contains
   end function mslLoss
 
 
-  !> root mean square loss function
+  !> Calculates the root mean square loss function.
   pure function rmsLoss(predicts, targets, weights) result(loss)
 
     !> neural network predictions
@@ -478,7 +479,7 @@ contains
   end function rmsLoss
 
 
-  !> calculates the absolute minium deviation between predictions and targets
+  !> Calculates the absolute minium deviation between predictions and targets.
   pure function minError(predicts, targets) result(err)
 
     !> neural network predictions
@@ -508,7 +509,7 @@ contains
   end function minError
 
 
-  !> calculates the absolute maximum deviation between predictions and targets
+  !> Calculates the absolute maximum deviation between predictions and targets.
   pure function maxError(predicts, targets) result(err)
 
     !> neural network predictions

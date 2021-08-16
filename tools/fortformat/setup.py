@@ -4,8 +4,8 @@ from distutils.core import setup
 
 setup(
     name='fortformat',
-    version='0.2',
-    description='Basic Fortnet Input Format Class',
+    version='0.3',
+    description='Basic Fortnet IO Format Classes',
     author='T. W. van der Heide',
     url='https://github.com/vanderhe/fortnet',
     platforms='platform independent',
@@ -20,11 +20,11 @@ setup(
         'Topic :: Scientific/Engineering',
     ],
     long_description='''
-Basic Fortnet Input Format Class
---------------------------------
-This basic Python class implements the Fortnet input file format. The input
-geometries, stored in a list of ASE atoms objects, and targets, stored in a
-list of Numpy arrays, conveniently get dumped to disk as simple text files.
+Basic Fortnet IO Format Classes
+-------------------------------
+These basic Python classes implement the Fortnet input and output file format.
+The Fnetdata class enables to create compatible HDF5 datasets, whereas the
+Fnetout class extracts certain properties of the HDF5 output for later analysis.
 ''',
-    requires=['numpy']
+    requires=['numpy', 'h5py']
 )

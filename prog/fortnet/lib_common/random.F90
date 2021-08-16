@@ -7,6 +7,7 @@
 
 #:include 'common.fypp'
 
+!> Provides utilities to generate random distributions for network initialization.
 module fnet_random
 
   use dftbp_message, only : error
@@ -18,21 +19,43 @@ module fnet_random
 
   private
 
-  public :: randn
+  public :: knuthShuffle
   public :: normalXavier
 
   interface normalXavier
     module procedure :: normalXavier1d, normalXavier2d
   end interface normalXavier
 
-  interface randn
-    module procedure :: randn1d, randn2d
-  end interface randn
-
 
 contains
 
+  !> Implements the Knuth-Shuffle algorithm.
+  subroutine knuthShuffle(rndGen, array)
 
+    !> luxury pseudorandom generator instance
+    type(TRanlux), intent(inout) :: rndGen
+
+    !> array that will be shuffled on exit
+    integer, intent(inout) :: array(:)
+
+    !> temporarily stores a real-valued random number
+    real(dp) :: rnd
+
+    !> auxiliary variables
+    integer :: ii, rndpos, tmp
+ 
+    do ii = size(array), 2, -1
+      call getRandom(rndGen, rnd)
+      rndpos = int(rnd * ii) + 1
+      tmp = array(rndpos)
+      array(rndpos) = array(ii)
+      array(ii) = tmp
+    end do
+
+  end subroutine knuthShuffle
+
+
+  !> Generates a 1d truncated, normal distributed Xavier network initialization.
   subroutine normalXavier1d(rndGen, array, nLastLayer, nCurrentLayer, gain, min)
 
     !> luxury pseudorandom generator instance
@@ -95,6 +118,7 @@ contains
   end subroutine normalXavier1d
 
 
+  !> Generates a 2d truncated, normal distributed Xavier network initialization.
   subroutine normalXavier2d(rndGen, array, nLastLayer, nCurrentLayer, gain, min)
 
     !> luxury pseudorandom generator instance
@@ -155,43 +179,5 @@ contains
     array(:,:) = exp(-0.5_dp * rnd**2 / var) / sqrt(2.0_dp * pi * var)
 
   end subroutine normalXavier2d
-
-
-  function randn1d(rndGen, amount) result(rnd1)
-
-    !> luxury pseudorandom generator instance
-    type(TRanlux), intent(inout) :: rndGen
-
-    ! amount of random numbers to generate
-    integer, intent(in) :: amount
-
-    !> generated random numbers
-    real(dp) :: rnd1(amount), rnd2(amount)
-
-    call getRandom(rndGen, rnd1)
-    call getRandom(rndGen, rnd2)
-
-    rnd1 = sqrt(- 2.0_dp * log(rnd1)) * cos(2.0_dp * pi * rnd2)
-
-  end function randn1d
-
-
-  function randn2d(rndGen, amount1, amount2) result(rnd1)
-
-    !> luxury pseudorandom generator instance
-    type(TRanlux), intent(inout) :: rndGen
-
-    ! amount of random numbers to generate
-    integer, intent(in) :: amount1, amount2
-
-    !> generated random numbers
-    real(dp) :: rnd1(amount1, amount2), rnd2(amount1, amount2)
-
-    call getRandom(rndGen, rnd1)
-    call getRandom(rndGen, rnd2)
-
-    rnd1 = sqrt(- 2.0_dp * log(rnd1)) * cos(2.0_dp * pi * rnd2)
-
-  end function randn2d
 
 end module fnet_random

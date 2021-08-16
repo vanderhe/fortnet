@@ -7,7 +7,7 @@ Fortnet Recipes
 
    introduction.rst
    basics/index.rst
-   fnetdata/index.rst
+   fortformat/index.rst
    bpnn/index.rst
    acsf/index.rst
    transfer/index.rst
