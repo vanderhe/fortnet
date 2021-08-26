@@ -28,7 +28,8 @@ module fnet_initprogram
   use dftbp_globalenv, only : stdOut
   use dftbp_hsdparser, only : parseHSD, dumpHSD
 
-  use fnet_fnetdata, only : inquireExtFeatures, readHdfDataset, TDataset, checkDatasetCompatibility
+  use fnet_fnetdata, only : inquireExtFeatures, inquireTargets, inquireStructures, readHdfDataset,&
+      & TDataset, checkDatasetCompatibility
   use fnet_netstat, only : createNetstat, readSubnetArchitecture
   use fnet_acsf, only : TGFunction_init, TGFunctions
   use fnet_features, only : TFeatures, TFeaturesBlock
@@ -515,18 +516,17 @@ contains
     !> true, if files exist
     logical :: tExist
 
+    !> true, if dataset holds corresponding information
+    logical :: tStructures, tTargets, tExtFeatures
+
     call getChildValue(node, 'NetstatFile', strBuffer, default='fortnet.hdf5')
 
+    ! netstat file must be present in validation or prediction mode
     if ((mode == 'validate') .or. (mode == 'predict')) then
       inquire(file=trim(unquote(char(strBuffer))), exist=tExist)
-      if (tExist) then
-        data%netstatpath = trim(unquote(char(strBuffer)))
-      else
-        call detailedError(node, 'Specified netstat file is not present.')
-      end if
-    else
-      data%netstatpath = trim(unquote(char(strBuffer)))
+      if (.not. tExist) call detailedError(node, 'Specified netstat file is not present.')
     end if
+    data%netstatpath = trim(unquote(char(strBuffer)))
 
     call getChildValue(node, 'Dataset', strBuffer)
     inquire(file=trim(unquote(char(strBuffer))), exist=tExist)
@@ -534,6 +534,21 @@ contains
       data%trainpath = trim(unquote(char(strBuffer)))
     else
       call detailedError(node, 'Specified dataset file is not present.')
+    end if
+
+    ! dataset must contain targets in training or validation mode
+    if ((mode == 'train') .or. (mode == 'validate')) then
+      call inquireTargets(data%trainpath, tTargets)
+      if (.not. tTargets) then
+        call error('Selected running mode requires the dataset to hold target information.')
+      end if
+    end if
+
+    ! dataset must always hold some feature information
+    call inquireStructures(data%trainpath, tStructures)
+    call inquireExtFeatures(data%trainpath, tExtFeatures)
+    if ((.not. tStructures) .and. (.not. tExtFeatures)) then
+      call error('Neither mappings nor features provided by the dataset.')
     end if
 
     ! validation dataset only relevant for training runs
@@ -958,6 +973,9 @@ contains
             call getChildValue(tmp, 'xi', xi)
             call getChildValue(tmp, 'eta', eta)
             call getChildValue(tmp, 'lambda', lambda)
+            if ((lambda > 1.0_dp) .or. ((lambda < -1.0_dp))) then
+              call detailedError(tmp, 'Specified lambda parameter leaves interval [-1, 1].')
+            end if
             call TGFunction_init(this%mapping%functions%func(iChild - iAutoBlock), type, rCut,&
                 & xi=xi, eta=eta, lambda=lambda)
           case default
