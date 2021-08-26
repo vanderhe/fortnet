@@ -371,18 +371,24 @@ contains
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
     call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'ntargets', tmp, iErr)
-    nTargets = tmp(1)
-    if (nTargets > 0) then
+
+    if (tmp(1) > 0) then
       tTargets = .true.
     else
       tTargets = .false.
     end if
 
+    if (present(nTargets)) then
+      nTargets = tmp(1)
+    end if
+
     call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'atomic', tmp, iErr)
-    if (tmp(1) == 1) then
-      tAtomic = .true.
-    else
-      tAtomic = .false.
+    if (present(tAtomic)) then
+      if (tmp(1) == 1) then
+        tAtomic = .true.
+      else
+        tAtomic = .false.
+      end if
     end if
 
     ! close the dataset file
@@ -423,11 +429,14 @@ contains
 
     ! read nextfeatures attribute
     call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset', 'nextfeatures', tmp, iErr)
-    nFeatures = tmp(1)
-    if (nFeatures > 0) then
+    if (tmp(1) > 0) then
       tFeatures = .true.
     else
       tFeatures = .false.
+    end if
+
+    if (present(nFeatures)) then
+      nFeatures = tmp(1)
     end if
 
     ! close the dataset file
