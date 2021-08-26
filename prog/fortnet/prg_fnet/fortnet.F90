@@ -18,7 +18,7 @@ program fortnet
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TTraining_initOptimizer,&
       & TNetworkBlock, TDataBlock, TAnalysisBlock
-  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D
+  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D, TJacobians
   use fnet_forces, only : TForces, forceAnalysis, TGeometriesForFiniteDiff,&
       & TGeometriesForFiniteDiff_init
   use fnet_features, only : TFeatures_init, TFeatures_collect, TMappingBlock, TFeaturesBlock
@@ -597,6 +597,9 @@ contains
     !> min. and max. deviation of predictions, in comparison to targets
     real(dp) :: min, max
 
+    !> network predictions during the training
+    type(TJacobians) :: jacobian
+
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead
   #:else
@@ -705,6 +708,10 @@ contains
       write(stdout, '(A,E15.6,/)') 'root mean squared error: ', rms
       write(stdout, '(A,/)') repeat('-', 80)
     end select
+
+    jacobian = bpnn%nJacobian(prog%features%trainFeatures, prog%env,&
+        & prog%trainDataset%localAtToGlobalSp)
+    print *, shape(jacobian%sys(1)%atom(1)%array)
 
   end subroutine runCore
 

@@ -21,7 +21,8 @@ module fnet_bpnn
   use dftbp_constants, only : elementSymbol
 
   use fnet_nestedtypes, only : TRealArray2D, TMultiLayerStruc, TMultiLayerStruc_init, TBiasDerivs,&
-      & TWeightDerivs, TDerivs, TDerivs_init, TIntArray1D, TPredicts, TPredicts_init, TEnv
+      & TWeightDerivs, TDerivs, TDerivs_init, TIntArray1D, TPredicts, TPredicts_init, TEnv,&
+      & TJacobian, TJacobians
   use fnet_hdf5fx, only : h5ltfx_read_dataset_int_f, h5ltfx_read_dataset_double_f,&
       & h5ltfxmake_dataset_int_f, h5ltfxmake_dataset_double_f
   use fnet_features, only : TFeatures
@@ -72,6 +73,8 @@ module fnet_bpnn
     procedure :: nTrain => TBpnn_nTrain
     procedure :: iPredict => TBpnn_iPredict
     procedure :: predictBatch => TBpnn_predictBatch
+    procedure :: iJacobian => TBpnn_iJacobian
+    procedure :: nJacobian => TBpnn_nJacobian
     procedure :: fromFile => TBpnn_fromFile
     procedure :: toFile => TBpnn_toFile
 
@@ -889,6 +892,103 @@ contains
     end if
 
   end function TBpnn_iPredict
+
+
+  !> Calculates the Jacobian matrix element of the atomic outputs w.r.t. the input features.
+  pure function TBpnn_iJacobian(this, input, localAtToGlobalSp) result(jacobian)
+
+    !> representation of a Behler-Parrinello neural network
+    class(TBpnn), intent(in) :: this
+
+    !> single sample of input data to calculate Jacobian matrices for
+    real(dp), intent(in) :: input(:,:)
+
+    !> index mapping local atom --> global species index
+    integer, intent(in) :: localAtToGlobalSp(:)
+
+    !> derivatives of outputs w.r.t. atomic input features
+    type(TJacobian) :: jacobian
+
+    !> number of atoms in the current system
+    integer :: nAtoms
+
+    !> auxiliary variables
+    integer :: iAtom, iGlobalSp
+
+    nAtoms = size(input, dim=2)
+
+    allocate(jacobian%atom(nAtoms))
+
+    do iAtom = 1, nAtoms
+      iGlobalSp = localAtToGlobalSp(iAtom)
+      jacobian%atom(iAtom)%array = this%nets(iGlobalSp)%fdevi(input(:, iAtom))
+    end do
+
+  end function TBpnn_iJacobian
+
+
+  !> Calculates the network's Jacobian for a batch of input features.
+  function TBpnn_nJacobian(this, features, env, localAtToGlobalSp) result(resJacobian)
+
+    !> representation of a Behler-Parrinello neural network
+    class(TBpnn), intent(in) :: this
+
+    !> atomic features as network input
+    type(TRealArray2D), intent(in) :: features(:)
+
+    !> if compiled with mpi enabled, contains mpi communicator
+    type(TEnv), intent(in) :: env
+
+    !> index mapping local atom --> global species index
+    type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
+
+    !> network predictions during the training
+    type(TJacobians) :: jacobian, resJacobian
+
+    !> true, if current process is the lead
+    logical :: tLead
+
+    !> auxiliary variables
+    integer :: iSys, iAtom, iStart, iEnd
+
+  #:if WITH_MPI
+    tLead = env%globalMpiComm%lead
+    call getStartAndEndIndex(size(features), env%globalMpiComm%size, env%globalMpiComm%rank,&
+        & iStart, iEnd)
+  #:else
+    tLead = .true.
+    iStart = 1
+    iEnd = size(features)
+  #:endif
+
+    allocate(jacobian%sys(size(features)))
+
+    do iSys = 1, size(features)
+      allocate(jacobian%sys(iSys)%atom(size(features(iSys)%array, dim=2)))
+      do iAtom = 1, size(features(iSys)%array, dim=2)
+        allocate(jacobian%sys(iSys)%atom(iAtom)%array(this%dims(size(this%dims)), this%dims(1)))
+        jacobian%sys(iSys)%atom(iAtom)%array(:,:) = 0.0_dp
+      end do
+    end do
+
+    resJacobian = jacobian
+
+    do iSys = iStart, iEnd
+      jacobian%sys(iSys) = this%iJacobian(features(iSys)%array, localAtToGlobalSp(iSys)%array)
+    end do
+
+  #:if WITH_MPI
+    do iSys = 1, size(features)
+      do iAtom = 1, size(features(iSys)%array, dim=2)
+        call mpifx_allreduce(env%globalMpiComm, jacobian%sys(iSys)%atom(iAtom)%array,&
+            & resJacobian%sys(iSys)%atom(iAtom)%array, MPI_SUM)
+      end do
+    end do
+  #:else
+    resJacobian = jacobian
+  #:endif
+
+  end function TBpnn_nJacobian
 
 
   !> Calculates the network output for a batch of input features.
