@@ -325,7 +325,7 @@ contains
 
     ! serialize all biases
     do iLayer = 1, size(this%dims)
-      weightsAndBiases(ind:ind + size(this%layers(iLayer)%bb) - 1) = this%layers(iLayer)%bb(:)
+      weightsAndBiases(ind:ind + size(this%layers(iLayer)%bb) - 1) = this%layers(iLayer)%bb
       ind = ind + size(this%layers(iLayer)%bb)
     end do
 

@@ -26,7 +26,7 @@ module fnet_bpnn
       & h5ltfxmake_dataset_int_f, h5ltfxmake_dataset_double_f
   use fnet_features, only : TFeatures
   use fnet_network, only : TNetwork, TNetwork_init
-  use fnet_loss, only : lossFunc, lossGradientFunc
+  use fnet_loss, only : lossFunc, lossGradientFunc, reguFunc, TRegularizationBlock
   use fnet_optimizers, only : TOptimizer, next
   use fnet_fnetdata, only : TDataset
   use fnet_random, only : knuthShuffle
@@ -127,8 +127,8 @@ contains
 
   !> Performs multiple training iterations of a BPNN.
   subroutine TBpnn_nTrain(this, env, rndGen, pOptimizer, trainDataset, validDataset, features,&
-      & nTrainIt, nPrintOut, nSaveNet, netstatpath, loss, lossgrad, tShuffle, tMonitorValid,&
-      & tConverged, trainLoss, validLoss, gradients)
+      & nTrainIt, nPrintOut, nSaveNet, netstatpath, loss, lossgrad, reguLoss, regu, tShuffle,&
+      & tMonitorValid, tConverged, trainLoss, validLoss, gradients)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -165,6 +165,12 @@ contains
 
     !> procedure, pointing to the choosen loss function gradient
     procedure(lossGradientFunc), intent(in), pointer :: lossgrad
+
+    !> regularization loss function procedure
+    procedure(reguFunc), intent(in), pointer :: reguLoss
+
+    !> contains variables of the regularization
+    type(TRegularizationBlock), intent(in) :: regu
 
     !> true, if a Knuth-shuffle should be applied to the gradients calculations
     logical, intent(in) :: tShuffle
@@ -264,8 +270,8 @@ contains
       iTmpIter = iIter
 
       if (tLead) then
-        call this%update(pOptimizer, ddRes, tmpLoss(iIter), sum(trainDataset%weights),&
-            & tmpGradients(iIter), tConverged)
+        call this%update(pOptimizer, ddRes, regu, reguLoss, tmpLoss(iIter),&
+            & sum(trainDataset%weights), tmpGradients(iIter), tConverged)
       end if
 
     #:if WITH_MPI
@@ -670,7 +676,8 @@ contains
 
 
   !> Updates the BPNN parameters based on the obtained gradients in weight-bias space.
-  subroutine TBpnn_update(this, pOptimizer, dd, loss, nDatapoints, totGradNorm, tConverged)
+  subroutine TBpnn_update(this, pOptimizer, dd, regu, reguLoss, loss, nDatapoints, totGradNorm,&
+      & tConverged)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -679,7 +686,13 @@ contains
     type(TOptimizer), intent(inout) :: pOptimizer(:)
 
     !> weight and bias gradients
-    type(TDerivs), intent(in) :: dd
+    type(TDerivs), intent(inout) :: dd
+
+    !> contains variables of the regularization
+    type(TRegularizationBlock), intent(in) :: regu
+
+    !> regularization loss function procedure
+    procedure(reguFunc), intent(in), pointer :: reguLoss
 
     !> loss function value of current training iteration
     real(dp), intent(in) :: loss
@@ -699,11 +712,27 @@ contains
     !> serialized weight and bias gradients
     real(dp), allocatable :: ddSerial(:,:)
 
+    !> sub-network resolved loss values
+    real(dp), allocatable :: subnetLoss(:)
+
     !> auxiliary variable
     integer :: iGlobalSp
 
+    ! add loss based regularization, if desired
+    do iGlobalSp = 1, size(dd%dw)
+      call dd%dw(iGlobalSp)%elasticNetRegularization(this%nets(iGlobalSp)%layers, this%nWeights,&
+          & regu%strength, regu%alpha)
+    end do
+
     call dd%serialized(this%nBiases + this%nWeights, ddSerial)
     call this%serializedWeightsAndBiases(weightsAndBiases)
+
+    ! add loss based regularization, if desired
+    allocate(subnetLoss(size(this%nets)))
+    do iGlobalSp = 1, size(this%nets)
+      subnetLoss(iGlobalSp) = loss + reguLoss(weightsAndBiases(1:this%nWeights, iGlobalSp),&
+          & regu%strength, regu%alpha)
+    end do
 
     ddSerial = ddSerial / real(nDatapoints, dp)
     totGradNorm = norm2(ddSerial)
@@ -711,7 +740,7 @@ contains
     allocate(newWeightsAndBiases(size(weightsAndBiases, dim=1), size(weightsAndBiases, dim=2)))
 
     do iGlobalSp = 1, size(this%nets)
-      call next(pOptimizer(iGlobalSp), loss, ddSerial(:, iGlobalSp),&
+      call next(pOptimizer(iGlobalSp), subnetLoss(iGlobalSp), ddSerial(:, iGlobalSp),&
           & newWeightsAndBiases(:, iGlobalSp), tConverged)
     end do
 
