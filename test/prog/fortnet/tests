@@ -40,6 +40,10 @@ input/loss/mape
 input/loss/mse
 input/loss/rms
 
+input/lossregu/elasticnet
+input/lossregu/lasso
+input/lossregu/ridge
+
 input/mixedfeatures/prediction
 input/mixedfeatures/restart
 input/mixedfeatures/training
