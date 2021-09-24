@@ -80,6 +80,10 @@ module fnet_nestedtypes
     !> contains derivatives of weights
     type(TRealArray2D), allocatable :: dw(:)
 
+  contains
+
+    procedure :: elasticNetRegularization => TWeightDerivs_elasticNetRegularization
+
   end type TWeightDerivs
 
 
@@ -269,6 +273,44 @@ contains
     dw%dw(nArrays)%array(:,:) = 0.0_dp
 
   end subroutine TWeightDerivs_init
+
+
+  !> Applies an elastic net regularization ontop of existing gradients.
+  pure subroutine TWeightDerivs_elasticNetRegularization(this, layers, nWeights, lambda, alpha)
+
+    !> weight derivatives
+    class(TWeightDerivs), intent(inout) :: this
+
+    !> layers to extract weight structure from
+    type(TLayer), intent(in) :: layers(:)
+
+    !> number of weights to regularize
+    integer, intent(in) :: nWeights
+
+    !> strength of the regularization
+    real(dp), intent(in) :: lambda
+
+    !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+    real(dp), intent(in) :: alpha
+
+    !> temporary array to build up signum function values
+    real(dp), allocatable :: sgn(:,:)
+
+    !> auxiliary variable
+    integer :: iLayer
+
+    do iLayer = 1, size(this%dw)
+      sgn = sign(1.0_dp, layers(iLayer)%ww)
+      where (layers(iLayer)%ww == 0.0_dp)
+        sgn(:,:) = 0.0_dp
+      elsewhere
+        sgn(:,:) = sgn
+      end where
+      this%dw(iLayer)%array(:,:) = this%dw(iLayer)%array + lambda / real(nWeights, dp)&
+          & * ((1.0_dp - alpha) * layers(iLayer)%ww + alpha * sgn)
+    end do
+
+  end subroutine TWeightDerivs_elasticNetRegularization
 
 
   !> Initialises a structure that holds multiple network layer structures.

@@ -22,6 +22,9 @@ module fnet_loss
   public :: deviation, maLoss, mapLoss, msLoss, rmsLoss
   public :: maGradients, mapGradients, msGradients, rmsGradients
 
+  public :: TRegularizationBlock
+  public :: reguFunc, nullReguLoss, lassoReguLoss, ridgeReguLoss, elasticNetReguLoss
+
 
   abstract interface
 
@@ -41,7 +44,7 @@ module fnet_loss
       !> optional weighting of individual datapoints
       integer, intent(in), optional :: weights(:)
 
-      !> summed root mean square loss of predictions, in comparison to targets
+      !> total loss of predictions, in comparison to targets
       real(dp) :: loss
 
     end function lossFunc
@@ -64,10 +67,127 @@ module fnet_loss
 
     end function lossGradientFunc
 
+
+    pure function reguFunc(weights, lambda, alpha) result(loss)
+
+      use dftbp_accuracy, only: dp
+
+      implicit none
+
+      !> serialized weights of the network
+      real(dp), intent(in) :: weights(:)
+
+      !> strength of the regularization
+      real(dp), intent(in) :: lambda
+
+      !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+      real(dp), intent(in) :: alpha
+
+      !> total regularization loss
+      real(dp) :: loss
+
+    end function reguFunc
+
   end interface
 
 
+  !> Data type containing variables of the Regularization block.
+  type TRegularizationBlock
+
+    !> regularization strength
+    real(dp) :: strength
+
+    !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+    real(dp) :: alpha
+
+    !> regularization type (lasso, ridge, elasticnet)
+    character(len=:), allocatable :: type
+
+  end type TRegularizationBlock
+
+
 contains
+
+  !> Calculates a dummy, zero-valued regularization loss contribution.
+  pure function nullReguLoss(weights, lambda, alpha) result(loss)
+
+    !> serialized weights of the network
+    real(dp), intent(in) :: weights(:)
+
+    !> strength of the regularization
+    real(dp), intent(in) :: lambda
+
+    !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+    real(dp), intent(in) :: alpha
+
+    !> total regularization loss
+    real(dp) :: loss
+
+    loss = 0.0_dp
+
+  end function nullReguLoss
+
+
+  !> Calculates the L1 regularization (lasso regression) loss contribution.
+  pure function lassoReguLoss(weights, lambda, alpha) result(loss)
+
+    !> serialized weights of the network
+    real(dp), intent(in) :: weights(:)
+
+    !> strength of the regularization
+    real(dp), intent(in) :: lambda
+
+    !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+    real(dp), intent(in) :: alpha
+
+    !> total regularization loss
+    real(dp) :: loss
+
+    loss = lambda / real(size(weights), dp) * sum(abs(weights))
+
+  end function lassoReguLoss
+
+
+  !> Calculates the L2 regularization (ridge regression) loss contribution.
+  pure function ridgeReguLoss(weights, lambda, alpha) result(loss)
+
+    !> serialized weights of the network
+    real(dp), intent(in) :: weights(:)
+
+    !> strength of the regularization
+    real(dp), intent(in) :: lambda
+
+    !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+    real(dp), intent(in) :: alpha
+
+    !> total regularization loss
+    real(dp) :: loss
+
+    loss = lambda / (2.0_dp * real(size(weights), dp)) * sum(weights**2)
+
+  end function ridgeReguLoss
+
+
+  !> Calculates an elastic net regularization loss contribution.
+  pure function elasticNetReguLoss(weights, lambda, alpha) result(loss)
+
+    !> serialized weights of the network
+    real(dp), intent(in) :: weights(:)
+
+    !> strength of the regularization
+    real(dp), intent(in) :: lambda
+
+    !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
+    real(dp), intent(in) :: alpha
+
+    !> total regularization loss
+    real(dp) :: loss
+
+    loss = lambda / real(size(weights), dp) * ((1 - alpha) / 2.0_dp * sum(weights**2)&
+        & + alpha * sum(abs(weights)))
+
+  end function elasticNetReguLoss
+
 
   !> Calculates the simple deviation between predictions and targets.
   pure function deviation(predicts, targets) result(dev)

@@ -4,6 +4,7 @@ Fortnet: A Behler-Parrinello-Neural-Network Implementation
 
 |license|
 |latest version|
+|doi|
 |issues|
 
 Fortnet is a Behler-Parrinello-Neural-Network implementation, written in modern
@@ -104,6 +105,9 @@ included `LICENSE <LICENSE>`_ file for the detailed licensing conditions.
 
 .. |latest version| image:: https://img.shields.io/github/v/release/vanderhe/fortnet
     :target: https://github.com/vanderhe/fortnet/releases/latest
+
+.. |doi| image:: https://zenodo.org/badge/356394988.svg
+   :target: https://zenodo.org/badge/latestdoi/356394988
 
 .. |docs status| image:: https://readthedocs.org/projects/fortnet/badge/?version=latest
     :alt: Documentation Status

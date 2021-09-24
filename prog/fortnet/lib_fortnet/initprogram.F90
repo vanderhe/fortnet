@@ -35,8 +35,9 @@ module fnet_initprogram
   use fnet_features, only : TFeatures, TFeaturesBlock
   use fnet_nestedtypes, only : TEnv, TWrapSteepDesc, TWrapConjGrad, TWrapLbfgs, TWrapFire
   use fnet_optimizers, only : TOptimizer, init, reset, optimizerTypes
-  use fnet_loss, only : lossFunc, lossGradientFunc, maLoss, mapLoss, msLoss, rmsLoss, maGradients,&
-      & mapGradients, msGradients, rmsGradients
+  use fnet_loss, only : lossFunc, lossGradientFunc, reguFunc, maLoss, mapLoss,&
+      & msLoss, rmsLoss, nullReguLoss, lassoReguLoss, ridgeReguLoss, elasticNetReguLoss,&
+      & maGradients, mapGradients, msGradients, rmsGradients, TRegularizationBlock
   use fnet_intmanip, only : combinationsWithReplacement, factorial
 
 #:if WITH_MPI
@@ -120,6 +121,12 @@ module fnet_initprogram
     !> wether a Knuth-shuffle should be applied to the gradient calculation of datapoints
     logical :: tShuffle
 
+    !> true, if loss-based regularization is requested
+    logical :: tRegularization
+
+    !> data type containing variables of the Regularization block
+    type(TRegularizationBlock) :: regu
+
   end type TTrainingBlock
 
 
@@ -171,9 +178,13 @@ module fnet_initprogram
     !> procedure, pointing to the choosen loss function gradient
     procedure(lossGradientFunc), pointer, nopass :: lossgrad => null()
 
+    !> procedure, pointing to the choosen regularization function
+    procedure(reguFunc), pointer, nopass :: reguLoss => null()
+
   contains
 
     procedure :: setLossFunc => TTraining_setLossFunc
+    procedure :: setReguFunc => TTraining_setReguFunc
 
   end type TTraining
 
@@ -641,11 +652,14 @@ contains
     !> node containig the information
     type(fnode), intent(in), pointer :: node
 
+    !> node containing requested regularization
+    type(fnode), pointer :: regunode, tmp
+
     !> type of neural network
     character(len=*), intent(in) :: case
 
-    !> string buffer instance
-    type(string) :: strBuffer
+    !> string buffer instances
+    type(string) :: strBuffer1, strBuffer2
 
     select case (tolower(case))
 
@@ -684,10 +698,52 @@ contains
     call getChildValue(node, 'NPrintout', train%nPrintOut, 10)
     call getChildValue(node, 'NSaveNet', train%nSaveNet, 100)
 
-    call getChildValue(node, 'Loss', strBuffer, 'mse')
-    train%lossType = tolower(trim(unquote(char(strBuffer))))
+    call getChildValue(node, 'Loss', strBuffer1, 'mse')
+    train%lossType = tolower(trim(unquote(char(strBuffer1))))
 
     call getChildValue(node, 'Shuffle', train%tShuffle, .false.)
+
+    ! read optional regularization technique
+    call getChild(node, 'Regularization', child=regunode, requested=.false.)
+
+    if (associated(regunode)) then
+      call getChildValue(node, 'Regularization', tmp)
+      call getNodeName(tmp, strBuffer2)
+      select case (tolower(trim(char(strBuffer2))))
+      case ('lasso')
+        train%regu%type = 'lasso'
+        train%regu%alpha = 1.0_dp
+        call getChildValue(tmp, 'Strength', train%regu%strength)
+      case ('ridge')
+        train%regu%type = 'ridge'
+        train%regu%alpha = 0.0_dp
+        call getChildValue(tmp, 'Strength', train%regu%strength)
+      case ('elasticnet')
+        train%regu%type = 'elasticnet'
+        call getChildValue(tmp, 'Strength', train%regu%strength)
+        call getChildValue(tmp, 'Alpha', train%regu%alpha)
+        if ((train%regu%alpha < 0.0_dp) .or. (train%regu%alpha > 1.0_dp)) then
+          call detailedError(tmp, 'Elastic net regularization alpha out of bounds [0, 1].')
+        end if
+      case default
+        call detailedError(regunode, 'Invalid regularization type.')
+      end select
+      if (train%regu%strength < 0.0_dp) then
+        call detailedError(tmp, 'Regularzation strength must be zero or positive.')
+      elseif (train%regu%strength > 0.0_dp) then
+        train%tRegularization = .true.
+      else
+        train%tRegularization = .false.
+        train%regu%type = ''
+        train%regu%strength = 0.0_dp
+        train%regu%alpha = 0.0_dp
+      end if
+    else
+      train%tRegularization = .false.
+      train%regu%type = ''
+      train%regu%strength = 0.0_dp
+      train%regu%alpha = 0.0_dp
+    end if
 
   end subroutine readTrainingBlock
 
@@ -702,6 +758,7 @@ contains
     type(TTrainingBlock), intent(in) :: train
 
     call this%setLossFunc(train%lossType)
+    call this%setReguFunc(train%regu)
 
   end subroutine TTraining_init
 
@@ -833,6 +890,34 @@ contains
     end select
 
   end subroutine TTraining_setLossFunc
+
+
+  !> Sets the user defined regularization type as well as its derivative.
+  subroutine TTraining_setReguFunc(this, regu)
+
+    !> data type containing variables of the Training block
+    class(TTraining), intent(inout) :: this
+
+    !> data type containing variables of the Regularization block
+    type(TRegularizationBlock), intent(in) :: regu
+
+    select case(trim(regu%type))
+
+      case('lasso')
+        this%reguLoss => lassoReguLoss
+
+      case('ridge')
+        this%reguLoss => ridgeReguLoss
+
+      case('elasticnet')
+        this%reguLoss => elasticNetReguLoss
+
+      case default
+        this%reguLoss => nullReguLoss
+
+    end select
+
+  end subroutine TTraining_setReguFunc
 
 
   !> Reads the Features HSD block.

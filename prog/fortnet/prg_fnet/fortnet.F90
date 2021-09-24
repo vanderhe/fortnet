@@ -21,7 +21,7 @@ program fortnet
   use fnet_features, only : TFeatures_init, TFeatures_collect, TMappingBlock, TFeaturesBlock
   use fnet_acsf, only : TAcsf, TAcsf_init
   use fnet_bpnn, only : TBpnn, TBpnn_init
-  use fnet_loss, only : minError, maxError, msLoss, rmsLoss, maLoss
+  use fnet_loss, only : minError, maxError, msLoss, rmsLoss, maLoss, TRegularizationBlock
   use fnet_netstat, only : readExtFeaturesConfig, writeBpnnHeader, writeExtFeaturesConfig,&
       & inquireExtFeatures, inquireAcsf
   use fnet_iterout, only : writeIterTrajToFile
@@ -77,6 +77,9 @@ program fortnet
   call printExternalFeatureDetails(prog%inp%features)
   call printDatasetDetails(prog%trainDataset, prog%validDataset, prog%inp%data,&
       & prog%inp%network%nSubNnParams)
+  call printTrainingDetails(prog%inp%option%mode, prog%inp%training%nTrainIt,&
+      & prog%inp%training%iOptimizer, prog%inp%training%lossType, prog%inp%training%threshold,&
+      & prog%inp%training%tShuffle, prog%inp%training%tRegularization, prog%inp%training%regu)
 
   if (prog%inp%features%tMappingFeatures) then
     call calculateMappings(prog%inp%data, prog%trainDataset, prog%validDataset, trainAcsf,&
@@ -378,6 +381,70 @@ contains
   end subroutine printExternalFeatureDetails
 
 
+  !> Prints some useful details regarding the training process.
+  subroutine printTrainingDetails(mode, nTrainIt, iOptimizer, lossType, threshold, tShuffle,&
+      & tRegularization, regu)
+
+    !> running mode oif current run
+    character(len=*), intent(in) :: mode
+
+    !> maximum number of training iterations
+    integer, intent(in) :: nTrainIt
+
+    !> integer ID of specified optimizert
+    integer, intent(in) :: iOptimizer
+
+    !> type of loss function to use during the training
+    character(len=*), intent(in) :: lossType
+
+    !> gradient threshold where to stop the training, if provided
+    real(dp), intent(in) :: threshold
+
+    !> wether a Knuth-shuffle should be applied to the gradient calculation of datapoints
+    logical, intent(in) :: tShuffle
+
+    !> true, if loss-based regularization is requested
+    logical, intent(in) :: tRegularization
+
+    !> data type containing variables of the Regularization block
+    type(TRegularizationBlock), intent(in) :: regu
+
+    !> string associated with the integer optimizer ID
+    character(len=:), allocatable :: optimizerStr
+
+    if (mode == 'train') then
+
+      select case(iOptimizer)
+      case(1)
+        optimizerStr = 'Steepest Descent'
+      case(2)
+        optimizerStr = 'Conjugate Gradients'
+      case(3)
+        optimizerStr = 'L-BFGS'
+      case(4)
+        optimizerStr = 'FIRE'
+      case default
+        call error('Could not identify gradient optimizer by integer ID.')
+      end select
+
+      write(stdout, '(A,/)') 'Training Information'
+      write(stdout, '(A,I0)') 'max. iTrain: ', nTrainIt
+      write(stdout, '(A,F0.4)') 'converged at: ', threshold
+      write(stdout, '(2A)') 'optimizer: ', optimizerStr
+      write(stdout, '(2A)') 'loss: ', lossType
+      write(stdout, '(A,L1)') 'shuffle gradients: ', tShuffle
+      if (tRegularization) then
+        write(stdout, '(2A,/)') 'regularization: ', regu%type
+      else
+        write(stdout, '(A,/)') '/'
+      end if
+      write(stdout, '(A,/)') repeat('-', 80)
+
+    end if
+
+  end subroutine printTrainingDetails
+
+
   !> Prints some useful details regarding the dataset(s).
   subroutine printDatasetDetails(trainDataset, validDataset, data, nSubNnParams)
 
@@ -521,9 +588,9 @@ contains
       call bpnn%nTrain(prog%env, prog%rndGen, prog%train%pOptimizer, prog%trainDataset,&
           & prog%validDataset, prog%features, prog%inp%training%nTrainIt,&
           & prog%inp%training%nPrintOut, prog%inp%training%nSaveNet, prog%inp%data%netstatpath,&
-          & prog%train%loss, prog%train%lossgrad, prog%inp%training%tShuffle,&
-          & prog%inp%data%tMonitorValid, tConverged, trainLoss=trainLoss, validLoss=validLoss,&
-          & gradients=gradients)
+          & prog%train%loss, prog%train%lossgrad, prog%train%reguLoss, prog%inp%training%regu,&
+          & prog%inp%training%tShuffle, prog%inp%data%tMonitorValid, tConverged,&
+          & trainLoss=trainLoss, validLoss=validLoss, gradients=gradients)
 
       if (tLead) then
         if (prog%inp%option%tWriteIterTraj .and. prog%inp%data%tMonitorValid) then
