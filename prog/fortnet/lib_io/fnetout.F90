@@ -17,6 +17,7 @@ module fnet_fnetout
   use dftbp_accuracy, only: dp
   use dftbp_charmanip, only : i2c
 
+  use fnet_forces, only : TForces
   use fnet_nestedtypes, only : TRealArray2D, TPredicts
   use fnet_hdf5fx, only : h5ltfxmake_dataset_double_f
 
@@ -30,7 +31,7 @@ module fnet_fnetout
 contains
 
   !> Writes the obtained predictions (+ targets) to an Fnetout file.
-  subroutine writeFnetout(fname, mode, targets, output, tAtomicTargets)
+  subroutine writeFnetout(fname, mode, targets, output, forces, tForcesSupplied, tAtomicTargets)
 
     !> filename (will be fnetout.hdf5)
     character(len=*), intent(in) :: fname
@@ -43,6 +44,12 @@ contains
 
     !> obtained output values of network
     type(TPredicts), intent(in) :: output
+
+    !> obtained atomic forces
+    type(TForces), intent(in) :: forces
+
+    !> true, if writing out atomic forces is desired
+    logical, intent(in) :: tForcesSupplied
 
     !> true, if targets are atomic properties
     logical, intent(in) :: tAtomicTargets
@@ -58,7 +65,7 @@ contains
 
     !> auxiliary variables
     integer(hsize_t) :: dims(1)
-    integer :: iSys, iAtom, iErr
+    integer :: iSys, iErr
 
     if (mode /= 'validate' .and. mode /= 'predict') then
       call error('Invalid program running mode selected.')
@@ -89,6 +96,14 @@ contains
     dims(1) = 1
     call h5ltset_attribute_int_f(output_id, './', 'ndatapoints', [nDatapoints], dims(1), iErr)
 
+    ! indicate whether atomic forces are supplied
+    dims(1) = 1
+    if (tForcesSupplied) then
+      call h5ltset_attribute_int_f(output_id, './', 'tforces', [1], dims(1), iErr)
+    else
+      call h5ltset_attribute_int_f(output_id, './', 'tforces', [0], dims(1), iErr)
+    end if
+
     ! write type of predictions (global or atomic)
     if (tAtomicTargets) then
       call h5ltset_attribute_string_f(output_id, './', 'targettype', 'atomic', iErr)
@@ -109,6 +124,10 @@ contains
         tmpOutput(size(output%sys(iSys)%array, dim=1)+1:, :) = targets(iSys)%array
         ! write atomic targets and predictions to file
         call h5ltfxmake_dataset_double_f(datapoint_id, 'output', tmpOutput)
+        if (tForcesSupplied) then
+          ! write atomic forces to file
+          call h5ltfxmake_dataset_double_f(datapoint_id, 'forces', forces%geos(iSys)%array)
+        end if
         ! close the datapoint group
         call h5gclose_f(datapoint_id, iErr)
       end do
@@ -118,6 +137,10 @@ contains
         call h5gcreate_f(output_id, 'datapoint' // trim(i2c(iSys)), datapoint_id, iErr)
         ! write atomic targets and predictions to file
         call h5ltfxmake_dataset_double_f(datapoint_id, 'output', output%sys(iSys)%array)
+        if (tForcesSupplied) then
+          ! write atomic forces to file
+          call h5ltfxmake_dataset_double_f(datapoint_id, 'forces', forces%geos(iSys)%array)
+        end if
         ! close the datapoint group
         call h5gclose_f(datapoint_id, iErr)
       end do

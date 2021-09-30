@@ -12,6 +12,7 @@ list(APPEND fypp_flags -I${CMAKE_CURRENT_SOURCE_DIR}/include -DRELEASE="'${RELEA
 set(ALL-SOURCES-F90)
 set(ALL-SOURCES-FPP)
 
+add_subdirectory(lib_analysis)
 add_subdirectory(lib_common)
 add_subdirectory(lib_descriptors)
 add_subdirectory(lib_dftbp)
