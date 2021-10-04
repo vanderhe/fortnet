@@ -556,7 +556,7 @@ contains
         analysis%forceMethod = tolower(trim(char(strBuffer)))
         select case (analysis%forceMethod)
         case ('finitedifferences')
-          call getChildValue(tmp, 'Delta', analysis%delta, default=1e-08_dp)
+          call getChildValue(tmp, 'Delta', analysis%delta, default=1e-02_dp)
           if (analysis%delta <= 0.0_dp) then
             call detailedError(tmp, 'Invalid delta parameter of finite differences, must be '&
                 & // 'greater than zero.')
