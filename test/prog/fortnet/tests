@@ -4,6 +4,9 @@
 
 #:include 'common.fypp'
 
+analysis/derivatives/multiTargets
+analysis/derivatives/singleTarget
+
 input/acsf/auto
 input/acsf/autoandmanual
 input/acsf/manual
