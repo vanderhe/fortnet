@@ -1,0 +1,21 @@
+Data {
+
+  Dataset = 'fnetdata.hdf5'
+  NetstatFile = 'fortnet.hdf5'
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = 'validate'
+
+}
+
+Analysis {
+
+  Forces = FiniteDifferences {
+    Delta = 1e-02
+  }
+
+}

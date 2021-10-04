@@ -14,10 +14,13 @@ program fortnet
   use dftbp_message, only : error
   use dftbp_charmanip, only : toupper
   use dftbp_globalenv, only : initGlobalEnv, destructGlobalEnv, stdOut
+  use dftbp_typegeometry, only : TGeometry
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TTraining_initOptimizer,&
-      & TNetworkBlock, TDataBlock
-  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts
+      & TNetworkBlock, TDataBlock, TAnalysisBlock
+  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D
+  use fnet_forces, only : TForces, forceAnalysis, TGeometriesForFiniteDiff,&
+      & TGeometriesForFiniteDiff_init
   use fnet_features, only : TFeatures_init, TFeatures_collect, TMappingBlock, TFeaturesBlock
   use fnet_acsf, only : TAcsf, TAcsf_init
   use fnet_bpnn, only : TBpnn, TBpnn_init
@@ -43,10 +46,16 @@ program fortnet
   type(TBpnn) :: bpnn
 
   !> representation of ACSF mappings
-  type(TAcsf) :: trainAcsf, validAcsf
+  type(TAcsf) :: trainAcsf, validAcsf, forcesAcsf
+
+  !> representation of geometries with shifted atomic coordinates
+  type(TGeometriesForFiniteDiff) :: forcesGeos
 
   !> obtained network predictions
   type(TPredicts) :: predicts
+
+  !> obtained atomic forces
+  type(TForces) :: forces
 
   !> true, if current mpi process is the lead
   logical :: tLead
@@ -82,8 +91,8 @@ program fortnet
       & prog%inp%training%tShuffle, prog%inp%training%tRegularization, prog%inp%training%regu)
 
   if (prog%inp%features%tMappingFeatures) then
-    call calculateMappings(prog%inp%data, prog%trainDataset, prog%validDataset, trainAcsf,&
-        & validAcsf, prog%env)
+    call calculateMappings(prog%inp%data, prog%inp%analysis, prog%trainDataset, prog%validDataset,&
+        & prog%env, trainAcsf, validAcsf, forcesAcsf, forcesGeos)
   end if
 
   if (tLead .and. (.not. prog%inp%option%tReadNetStats)) then
@@ -95,11 +104,11 @@ program fortnet
     end if
   end if
 
-  call runCore(prog, bpnn, trainAcsf, validAcsf, predicts)
+  call runCore(prog, bpnn, trainAcsf, validAcsf, forcesAcsf, forcesGeos, predicts, forces)
 
   if (tLead .and. (prog%inp%option%mode == 'validate' .or. prog%inp%option%mode == 'predict')) then
     call writeFnetout(fnetoutFile, prog%inp%option%mode, prog%trainDataset%targets, predicts,&
-        & prog%trainDataset%tAtomicTargets)
+        & forces, prog%inp%analysis%tForces, prog%trainDataset%tAtomicTargets)
   end if
 
   call destructGlobalEnv()
@@ -247,6 +256,8 @@ contains
       end if
       call bpnn%sync(prog%env%globalMpiComm)
     #:endif
+      ! check the consistency of specified analysis options
+      call prog%inp%checkAnalysisConsistency(prog%trainDataset)
     end select
 
     call bpnn%serializedWeightsAndBiases(weightsAndBiases)
@@ -436,7 +447,7 @@ contains
       if (tRegularization) then
         write(stdout, '(2A,/)') 'regularization: ', regu%type
       else
-        write(stdout, '(A,/)') '/'
+        write(stdout, '(A,/)') 'regularization: /'
       end if
       write(stdout, '(A,/)') repeat('-', 80)
 
@@ -473,26 +484,44 @@ contains
 
 
   !> Carries out the calculation of structural mappings, if desired.
-  subroutine calculateMappings(data, trainDataset, validDataset, trainAcsf, validAcsf, env)
+  subroutine calculateMappings(data, analysis, trainDataset, validDataset, env, trainAcsf,&
+      & validAcsf, forcesAcsf, forcesGeos)
 
     !> variables of the Data input block
     type(TDataBlock), intent(in) :: data
 
+    !> variables of the Analysis input block
+    type(TAnalysisBlock), intent(in) :: analysis
+
     !> representation of a training and validation dataset
     type(TDataset), intent(in) :: trainDataset, validDataset
-
-    !> representation of acsf mapping information
-    type(TAcsf), intent(inout) :: trainAcsf
-
-    !> representation of acsf mapping information
-    type(TAcsf), intent(inout) :: validAcsf
 
     !> if compiled with mpi enabled, contains mpi communicator
     type(TEnv), intent(in) :: env
 
+    !> representation of acsf mapping information
+    type(TAcsf), intent(inout) :: trainAcsf, validAcsf, forcesAcsf
+
+    !> representation of geometries with shifted atomic coordinates
+    type(TGeometriesForFiniteDiff), intent(out) :: forcesGeos
+
+    !> serialized representation of geometries with shifted atomic coordinates
+    type(TGeometry), allocatable :: forcesSerializedGeos(:)
+
+    !> index mapping local atom --> atomic number
+    type(TIntArray1D), allocatable :: localAtToAtNum(:)
+
+    !> auxiliary variables
+    integer :: iGeo, ii, nTotGeometries, ind
+
     write(stdOut, '(A)', advance='no') 'Calculating ACSF...'
+
+    ! copy ACSF configurations in advance of their calculation
     if (data%tMonitorValid) then
       validAcsf = trainAcsf
+    end if
+    if (analysis%tForces) then
+      forcesAcsf = trainAcsf
     end if
 
     call trainAcsf%calculate(trainDataset%geos, env, trainDataset%localAtToAtNum,&
@@ -503,13 +532,31 @@ contains
           & extFeaturesInp=validDataset%extFeatures, zPrec=trainAcsf%zPrec)
     end if
 
+    if (analysis%tForces) then
+      call TGeometriesForFiniteDiff_init(forcesGeos, trainDataset%geos, analysis%delta)
+      nTotGeometries = 0
+      do iGeo = 1, size(forcesGeos%geos)
+        nTotGeometries = nTotGeometries + 6 * size(forcesGeos%geos(iGeo)%atom)
+      end do
+      allocate(localAtToAtNum(nTotGeometries))
+      ind = 1
+      do iGeo = 1, size(forcesGeos%geos)
+        do ii = 1, 6 * size(forcesGeos%geos(iGeo)%atom)
+          localAtToAtNum(ind+ii-1)%array = trainDataset%localAtToAtNum(iGeo)%array
+        end do
+        ind = ind + 6 * size(forcesGeos%geos(iGeo)%atom)
+      end do
+      call forcesGeos%serialize(forcesSerializedGeos)
+      call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec)
+    end if
+
     write(stdout, '(A)') 'done'
 
   end subroutine calculateMappings
 
 
   !> Runs Fortnet's core routines, depending on the obtained configuration.
-  subroutine runCore(prog, bpnn, trainAcsf, validAcsf, predicts)
+  subroutine runCore(prog, bpnn, trainAcsf, validAcsf, forcesAcsf, forcesGeos, predicts, forces)
 
     !> representation of program variables
     type(TProgramVariables), intent(inout) :: prog
@@ -518,10 +565,16 @@ contains
     type(TBpnn), intent(inout) :: bpnn
 
     !> representation of ACSF mappings
-    type(TAcsf), intent(inout) :: trainAcsf, validAcsf
+    type(TAcsf), intent(inout) :: trainAcsf, validAcsf, forcesAcsf
+
+    !> representation of geometries with shifted atomic coordinates
+    type(TGeometriesForFiniteDiff), intent(in) :: forcesGeos
 
     !> obtained network predictions
     type(TPredicts), intent(out) :: predicts
+
+    !> obtained atomic forces
+    type(TForces), intent(out) :: forces
 
     !> true, if gradient got below the specified tolerance
     logical :: tConverged
@@ -622,7 +675,15 @@ contains
       write(stdOut, '(A)', advance='no') 'Start feeding...'
       predicts = bpnn%predictBatch(prog%features%trainFeatures, prog%env,&
           & prog%trainDataset%localAtToGlobalSp, prog%trainDataset%tAtomicTargets)
-      write(stdOut, '(A,/)') 'done'
+      write(stdOut, '(A)') 'done'
+      if (prog%inp%analysis%tForces) then
+        write(stdOut, '(A)', advance='no') 'Calculate forces...'
+        forces = forceAnalysis(bpnn, forcesGeos, forcesAcsf, prog%env,&
+            & prog%trainDataset%localAtToGlobalSp, prog%inp%analysis%delta)
+        write(stdOut, '(A,/)') 'done'
+      else
+        write(stdOut, '(A)') ''
+      end if
       write(stdout, '(A,/)') repeat('-', 80)
     end select
 

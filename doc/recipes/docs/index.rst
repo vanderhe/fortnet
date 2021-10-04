@@ -13,5 +13,6 @@ Fortnet Recipes
    transfer/index.rst
    loss/index.rst
    optimizer/index.rst
+   analysis/index.rst
    licence.rst
    bibliography.rst

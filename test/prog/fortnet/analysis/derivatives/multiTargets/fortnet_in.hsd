@@ -1,0 +1,24 @@
+Data {
+
+  Dataset = '../../../datasets/fnetdata_h2_s_multiGlobal.hdf5'
+  NetstatFile = 'fortnet.hdf5'
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = 'validate'
+
+  RandomSeed = 123456
+  WriteIterationTrajectory = No
+
+}
+
+Analysis {
+
+  Forces = FiniteDifferences {
+    Delta = 1e-02
+  }
+
+}

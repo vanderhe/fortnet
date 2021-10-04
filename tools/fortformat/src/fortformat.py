@@ -529,8 +529,8 @@ def hdf_append_targets(root, data):
     '''
 
     if data.ndim == 1:
-        tmp = np.empty((len(data), 1), dtype=float)
-        tmp[:, 0] = data
+        tmp = np.empty((1, len(data)), dtype=float)
+        tmp[0, :] = data
     else:
         tmp = data
 
@@ -568,6 +568,14 @@ class Fnetout:
                 msg = "Error while reading fnetout file '" + self._fname + \
                     "'. Unrecognized number of datapoints obtained."
                 raise FnetoutError(msg)
+            self._tforces = output.attrs.get('tforces')
+            if len(self._tforces) == 1:
+                # booleans stored in integer arrays of size 1
+                self._tforces = bool(self._tforces[0])
+            else:
+                msg = "Error while reading fnetout file '" + self._fname + \
+                    "'. Unrecognized force specification obtained."
+                raise FnetoutError(msg)
 
             self._targettype = \
                 output.attrs.get('targettype').decode('UTF-8').strip()
@@ -576,7 +584,7 @@ class Fnetout:
 
             # get number of atomic or global predictions/targets
             self._npredictions = np.shape(
-                    np.array(output['datapoint1']['output']))[1]
+                np.array(output['datapoint1']['output']))[1]
 
             if self._mode == 'validate':
                 self._npredictions = int(self._npredictions / 2)
@@ -619,6 +627,19 @@ class Fnetout:
         '''
 
         return self._targettype
+
+
+    @property
+    def tforces(self):
+        '''Defines property, providing hint whether atomic forces are present.
+
+        Returns:
+
+            tforces (bool): true, if atomic forces are supplied
+
+        '''
+
+        return self._tforces
 
 
     @property
@@ -693,6 +714,46 @@ class Fnetout:
                                  dtype=float)[0, self._npredictions:]
 
         return targets
+
+
+    @property
+    def forces(self):
+        '''Defines property, providing the atomic forces, if supplied.
+
+        Returns:
+
+            forces (list): atomic forces on atoms
+
+        '''
+
+        tmp1 = []
+
+        if self._targettype == 'atomic':
+            msg = "Error while extracting forces from fnetout file '" \
+                + self._fname + \
+                "'. Forces only supplied for global property targets."
+            raise FnetoutError(msg)
+
+        with h5py.File(self._fname, 'r') as fnetoutfile:
+            output = fnetoutfile['fnetout']['output']
+            for idata in range(self._ndatapoints):
+                dataname = 'datapoint' + str(idata + 1)
+                tmp1.append(np.array(output[dataname]['forces'], dtype=float))
+
+        # convert to shape np.shape(forces[iData][iTarget]) = (iAtom, 3)
+        forces = []
+        for tmp2 in tmp1:
+            entry = []
+            if not np.shape(tmp2)[1]%3 == 0:
+                msg = "Error while extracting forces from fnetout file '" \
+                    + self._fname + \
+                    "'. Expected three force components and global target."
+                raise FnetoutError(msg)
+            for jj in range(int(np.shape(tmp2)[1] / 3)):
+                entry.append(tmp2[:, 3 * jj:3 * (jj + 1)])
+            forces.append(entry)
+
+        return forces
 
 
 class FnetdataError(Exception):

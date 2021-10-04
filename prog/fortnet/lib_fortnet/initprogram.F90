@@ -52,7 +52,7 @@ module fnet_initprogram
 
   public :: TProgramVariables, TProgramVariables_init
   public :: TTraining_initOptimizer
-  public :: TNetworkBlock, TTrainingBlock, TDataBlock, TOptionBlock
+  public :: TNetworkBlock, TTrainingBlock, TDataBlock, TOptionBlock, TAnalysisBlock
 
 
   !> Data type containing variables of the Network block
@@ -166,6 +166,21 @@ module fnet_initprogram
   end type TOptionBlock
 
 
+  !> Data type containing variables of the Analysis block
+  type TAnalysisBlock
+
+    !> wether to calculate the atomic forces
+    logical :: tForces
+
+    !> method used to calculate the atomic forces
+    character(len=:), allocatable :: forceMethod
+
+    !> coordinate shift to calculate finite differences
+    real(dp) :: delta
+
+  end type TAnalysisBlock
+
+
   !> Data type containing training related information
   type TTraining
 
@@ -207,9 +222,13 @@ module fnet_initprogram
     !> data type containing variables of the Option block
     type(TOptionBlock) :: option
 
+    !> data type containing variables of the Analysis block
+    type(TAnalysisBlock) :: analysis
+
   contains
 
     procedure :: checkInputConsistency => TInput_checkInputConsistency
+    procedure :: checkAnalysisConsistency => TInput_checkAnalysisConsistency
 
   end type TInput
 
@@ -306,6 +325,10 @@ contains
     ! read options block
     call getChild(root, 'Options', tmp)
     call readOptionBlock(this%inp%option, tmp)
+
+    ! read analysis block
+    call getChild(root, 'Analysis', tmp, requested=.false.)
+    call readAnalysisBlock(this%inp%analysis, tmp)
 
     ! define state of luxury random number generator
     call init(this%rndGen, luxlev=3, initSeed=this%inp%option%seed)
@@ -507,6 +530,52 @@ contains
     end if
 
   end subroutine readOptionBlock
+
+
+  !> Interprets the Analysis HSD block.
+  subroutine readAnalysisBlock(analysis, node)
+
+    !> representation of user specified analysis options
+    type(TAnalysisBlock), intent(out) :: analysis
+
+    !> node containig the information
+    type(fnode), pointer :: node, forcenode, tmp
+
+    !> string buffer instance
+    type(string) :: strBuffer
+
+    if (associated(node)) then
+
+      ! read optional technique to calculate atomic forces
+      call getChild(node, 'Forces', child=forcenode, requested=.false.)
+
+      if (associated(forcenode)) then
+        call getChildValue(node, 'Forces', tmp)
+        call getNodeName(tmp, strBuffer)
+        analysis%tForces = .true.
+        analysis%forceMethod = tolower(trim(char(strBuffer)))
+        select case (analysis%forceMethod)
+        case ('finitedifferences')
+          call getChildValue(tmp, 'Delta', analysis%delta, default=1e-02_dp)
+          if (analysis%delta <= 0.0_dp) then
+            call detailedError(tmp, 'Invalid delta parameter of finite differences, must be '&
+                & // 'greater than zero.')
+          end if
+        case default
+          analysis%tForces = .false.
+          call detailedError(forcenode, 'Invalid method specified to calculate atomic forces.')
+        end select
+      else
+        analysis%tForces = .false.
+      end if
+
+    else
+
+      analysis%tForces = .false.
+
+    end if
+
+  end subroutine readAnalysisBlock
 
 
   !> Interprets the Data HSD block.
@@ -1190,7 +1259,31 @@ contains
   end subroutine processAcsfFunctions
 
 
-  !> Checks input consistency by evaluating several assertions.
+  !> Checks analysis input consistency by evaluating several assertions.
+  subroutine TInput_checkAnalysisConsistency(this, trainDataset)
+
+    !> instance containing parsed input
+    class(TInput), intent(in), target :: this
+
+    !> representation of a training dataset
+    type(TDataset), intent(in) :: trainDataset
+
+    if (this%analysis%tForces) then
+      if (trainDataset%tAtomicTargets) then
+        call error('Force analysis may only be applied to non-atomic property targets.')
+      end if
+      if (.not. this%features%tMappingFeatures) then
+        call error('Force analysis may only be applied if ACSF mappings are present.')
+      end if
+      if (this%features%tExtFeatures) then
+        call error('Force analysis may only be applied to purely ACSF based features.')
+      end if
+    end if
+
+  end subroutine TInput_checkAnalysisConsistency
+
+
+  !> Checks rudimentary input consistency by evaluating several assertions.
   subroutine TInput_checkInputConsistency(this)
 
     !> instance containing parsed input
@@ -1227,6 +1320,9 @@ contains
       @:ASSERT(this%training%nTrainIt >= 0)
       @:ASSERT(this%training%nPrintOut >= 1)
       @:ASSERT(this%training%nSaveNet >= 1)
+      if (this%analysis%tForces) then
+        call error('Force analysis may only be executed for non-training runs.')
+      end if
     end if
 
     @:ASSERT(this%option%seed >= 0)
