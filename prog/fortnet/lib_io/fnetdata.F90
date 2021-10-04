@@ -874,7 +874,6 @@ contains
       if (dataset%tTargets) then
         call h5ltfx_read_dataset_double_f(datapoint_grp, 'targets',&
             & dataset%targets(iDatapoint)%array)
-        dataset%targets(iDatapoint)%array = transpose(dataset%targets(iDatapoint)%array)
       end if
 
       if (dataset%tExtFeatures) then

@@ -529,8 +529,8 @@ def hdf_append_targets(root, data):
     '''
 
     if data.ndim == 1:
-        tmp = np.empty((len(data), 1), dtype=float)
-        tmp[:, 0] = data
+        tmp = np.empty((1, len(data)), dtype=float)
+        tmp[0, :] = data
     else:
         tmp = data
 
