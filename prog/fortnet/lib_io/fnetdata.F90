@@ -24,7 +24,7 @@ module fnet_fnetdata
   use dftbp_globalenv, only : synchronizeAll
 
   use fnet_acsf, only : TAcsf
-  use fnet_nestedtypes, only : TIntArray1D, TRealArray2D
+  use fnet_nestedtypes, only : TIntArray1D, TRealArray1D, TRealArray2D
   use fnet_hdf5fx, only : h5ltfx_read_dataset_int_f, h5ltfx_read_dataset_double_f
   use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
 
@@ -76,8 +76,11 @@ module fnet_fnetdata
     !> target values for training or validation
     type(TRealArray2D), allocatable :: targets(:)
 
-    !> contains obtained datapoint weights
+    !> contains obtained datapoint gradient weights
     integer, allocatable :: weights(:)
+
+    !> contains obtained atomic gradient weights
+    type(TRealArray1D), allocatable :: atomicWeights(:)
 
     !> true, if geometries are provided
     logical :: tStructures
@@ -172,6 +175,10 @@ contains
         allocate(dataset%extFeatures(dataset%nDatapoints))
       end if
 
+      ! in every case the atomic gradient weights are present
+      if (allocated(dataset%atomicWeights)) deallocate(dataset%atomicWeights)
+      allocate(dataset%atomicWeights(dataset%nDatapoints))
+
     end if
 
     ! synchronize derived types
@@ -227,6 +234,17 @@ contains
         end if
         call mpifx_bcast(comm, dataset%extFeatures(iData)%array)
       end if
+      if (comm%lead) then
+        dims0d = size(dataset%atomicWeights(iData)%array)
+      end if
+      call mpifx_bcast(comm, dims0d)
+      if (.not. comm%lead) then
+        if (allocated(dataset%atomicWeights(iData)%array)) then
+          deallocate(dataset%atomicWeights(iData)%array)
+        end if
+        allocate(dataset%atomicWeights(iData)%array(dims0d))
+      end if
+      call mpifx_bcast(comm, dataset%atomicWeights(iData)%array)
       ! ensure that the current loop iteration is completed
       call synchronizeAll()
     end do
@@ -521,6 +539,8 @@ contains
     @:ASSERT(this%nExtFeatures >= 0)
 
     @:ASSERT(minval(this%weights) >= 1)
+    @:ASSERT(size(this%weights) == this%nDatapoints)
+    @:ASSERT(size(this%atomicWeights) == this%nDatapoints)
 
     if (this%tTargets) then
       @:ASSERT(this%nTargets > 0)
@@ -718,8 +738,8 @@ contains
     !> name of current datapoint
     character(len=:), allocatable :: dname
 
-    !> auxiliary variable
-    integer :: iErr, iDatapoint
+    !> auxiliary variables
+    integer :: iErr, iDatapoint, tExist
 
     ! open the hdf5 interface
     call h5open_f(iErr)
@@ -778,6 +798,7 @@ contains
     dataset%nSpecies = size(dataset%atomicNumbers)
 
     allocate(dataset%weights(dataset%nDatapoints))
+    allocate(dataset%atomicWeights(dataset%nDatapoints))
 
     do iDatapoint = 1, dataset%nDatapoints
       dname = 'datapoint' // i2c(iDatapoint)
@@ -869,6 +890,16 @@ contains
 
         ! close the geometry group
         call h5gclose_f(geometry_grp, iErr)
+      end if
+
+      ! legacy check for atomicweights
+      tExist = h5ltfind_dataset_f(datapoint_grp, 'atomicweights')
+      if (tExist == 1) then
+        call h5ltfx_read_dataset_double_f(datapoint_grp, 'atomicweights',&
+            & dataset%atomicWeights(iDatapoint)%array)
+      else
+        allocate(dataset%atomicWeights(iDatapoint)%array(dataset%geos(iDatapoint)%nAtom))
+        dataset%atomicWeights(iDatapoint)%array(:) = 1.0_dp
       end if
 
       if (dataset%tTargets) then

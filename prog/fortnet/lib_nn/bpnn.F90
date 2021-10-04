@@ -255,13 +255,15 @@ contains
         & lossgrad, dd, ddRes, predicts, resPredicts)
 
     if (tLead) then
-      tmpLoss(1) = loss(resPredicts, trainDataset%targets, weights=trainDataset%weights)
+      tmpLoss(1) = loss(resPredicts, trainDataset%targets, trainDataset%atomicWeights,&
+          & trainDataset%tAtomicTargets, weights=trainDataset%weights)
     end if
     if (tMonitorValid) then
       validPredicts = this%predictBatch(features%validFeatures, env,&
           & validDataset%localAtToGlobalSp, trainDataset%tAtomicTargets)
       if (tLead) then
-        tmpValidLoss(1) = loss(validPredicts, validDataset%targets)
+        tmpValidLoss(1) = loss(validPredicts, validDataset%targets,&
+            & trainDataset%atomicWeights, trainDataset%tAtomicTargets)
       end if
     end if
 
@@ -293,13 +295,15 @@ contains
           & lossgrad, dd, ddRes, predicts, resPredicts)
 
       if (tLead) then
-        tmpLoss(iIter) = loss(resPredicts, trainDataset%targets, weights=trainDataset%weights)
+        tmpLoss(iIter) = loss(resPredicts, trainDataset%targets, trainDataset%atomicWeights,&
+            & trainDataset%tAtomicTargets, weights=trainDataset%weights)
       end if
       if (tMonitorValid) then
         validPredicts = this%predictBatch(features%validFeatures, env,&
             & validDataset%localAtToGlobalSp, trainDataset%tAtomicTargets)
         if (tLead) then
-          tmpValidLoss(iIter) = loss(validPredicts, validDataset%targets)
+          tmpValidLoss(iIter) = loss(validPredicts, validDataset%targets,&
+              & trainDataset%atomicWeights, trainDataset%tAtomicTargets)
         end if
       end if
 
@@ -412,8 +416,8 @@ contains
     lpSystem: do ii = iStart, iEnd
       iSys = shuffle(ii)
       call this%sysTrain(trainFeatures(iSys)%array, trainDataset%targets(iSys)%array,&
-          & trainDataset%localAtToGlobalSp(iSys)%array, trainDataset%tAtomicTargets, lossgrad,&
-          & ddTmp, iPredict)
+          & trainDataset%atomicWeights(iSys)%array, trainDataset%localAtToGlobalSp(iSys)%array,&
+          & trainDataset%tAtomicTargets, lossgrad, ddTmp, iPredict)
       ! collect outputs and gradients of the systems
       predicts%sys(iSys)%array(:,:) = iPredict
       do iGlobalSp = 1, size(this%nets)
@@ -581,8 +585,8 @@ contains
 
 
   !> Performs a training iteration for a single system, i.e. set of input features.
-  subroutine TBpnn_sysTrain(this, input, targets, localAtToGlobalSp, tAtomic, lossgrad, dd,&
-      & predicts)
+  subroutine TBpnn_sysTrain(this, input, targets, atomicWeights, localAtToGlobalSp, tAtomic,&
+      & lossgrad, dd, predicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -593,6 +597,9 @@ contains
     !> target data
     !> shape: [nTargets, nAtoms] for atomic targets or [nTargets, 1] for system targets
     real(dp), intent(in) :: targets(:,:)
+
+    !> contains atomic gradient weights, exp. shape: [nAtoms]
+    real(dp), intent(in) :: atomicWeights(:)
 
     !> maps local atom index --> global species index
     integer, intent(in) :: localAtToGlobalSp(:)
@@ -666,9 +673,9 @@ contains
       call this%nets(iGlobalSp)%bprop(lossgrads(:, iAtom), dwTmp, dbTmp)
       do iLayer = 1, size(this%dims)
         dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
-            & dwTmp%dw(iLayer)%array / real(size(input, dim=2), dp)
+            & dwTmp%dw(iLayer)%array * atomicWeights(iAtom) / real(size(input, dim=2), dp)
         dd%db(iGlobalSp)%db(iLayer)%array = dd%db(iGlobalSp)%db(iLayer)%array +&
-            & dbTmp%db(iLayer)%array / real(size(input, dim=2), dp)
+            & dbTmp%db(iLayer)%array * atomicWeights(iAtom) / real(size(input, dim=2), dp)
       end do
     end do
 
