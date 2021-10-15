@@ -12,11 +12,15 @@ input/acsf/autoandmanual
 input/acsf/manual
 input/acsf/multiauto
 
+input/activation/arctan
+input/activation/bent
 input/activation/gaussian
 input/activation/heaviside
 input/activation/linear
+input/activation/lrelu
 input/activation/relu
 input/activation/sigmoid
+input/activation/softplus
 input/activation/tanh
 
 input/atomids/speciesResolved
