@@ -697,6 +697,15 @@ contains
       call getChildValue(node, 'Activation', strBuffer)
       network%activation = tolower(trim(unquote(char(strBuffer))))
 
+      associate (activation => network%activation)
+        if (.not. (activation == 'gaussian' .or. activation == 'relu' .or. activation == 'lrelu'&
+            & .or. activation == 'softplus' .or. activation == 'bent' .or. activation == 'atan'&
+            & .or. activation == 'sigmoid' .or. activation == 'heaviside' .or. activation == 'tanh'&
+            & .or. activation == 'linear')) then
+          call detailedError(node, 'Invalid activation function descriptor obtained.')
+        end if
+      end associate
+
     case default
 
       call detailedError(node, 'Invalid network type.')
@@ -1305,8 +1314,10 @@ contains
     @:ASSERT(tolower(this%network%type) == 'bpnn')
 
     associate (descriptor => this%network%activation)
-      @:ASSERT(descriptor == 'gaussian' .or. descriptor == 'relu' .or. descriptor == 'sigmoid'&
-          & .or. descriptor == 'heaviside' .or. descriptor == 'tanh' .or. descriptor == 'linear')
+      @:ASSERT(descriptor == 'gaussian' .or. descriptor == 'relu' .or. descriptor == 'lrelu'&
+          & .or. descriptor == 'softplus' .or. descriptor == 'bent' .or. descriptor == 'atan'&
+          & .or. descriptor == 'sigmoid' .or. descriptor == 'heaviside' .or. descriptor == 'tanh'&
+          & .or. descriptor == 'linear')
     end associate
 
     if (tolower(this%option%mode) == 'train') then
