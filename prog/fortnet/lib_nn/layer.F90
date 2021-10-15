@@ -13,8 +13,9 @@ module fnet_layer
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
 
-  use fnet_transfer, only : transferFunc, gaussian, gaussianDeriv, relu, reluDeriv, sigmoid,&
-      & sigmoidDeriv, heaviside, heavisideDeriv, tanhf, tanhDeriv, linear, linearDeriv
+  use fnet_transfer, only : transferFunc, gaussian, gaussianDeriv, relu, reluDeriv, lrelu,&
+      & lreluDeriv, softPlus, softPlusDeriv, bentIdentity, bentIdentityDeriv, arctan, arctanDeriv,&
+      & sigmoid, sigmoidDeriv, heaviside, heavisideDeriv, tanhf, tanhDeriv, linear, linearDeriv
   use fnet_random, only : normalXavier
 
   implicit none
@@ -107,6 +108,26 @@ contains
         this%transfer => relu
         this%transferDeriv => reluDeriv
         this%descriptor = 'relu'
+
+      case('lrelu')
+        this%transfer => lrelu
+        this%transferDeriv => lreluDeriv
+        this%descriptor = 'lrelu'
+
+      case('softplus')
+        this%transfer => softPlus
+        this%transferDeriv => softPlusDeriv
+        this%descriptor = 'softplus'
+
+      case('bent')
+        this%transfer => bentIdentity
+        this%transferDeriv => bentIdentityDeriv
+        this%descriptor = 'bent'
+
+      case('atan')
+        this%transfer => arctan
+        this%transferDeriv => arctanDeriv
+        this%descriptor = 'atan'
 
       case('sigmoid')
         this%transfer => sigmoid

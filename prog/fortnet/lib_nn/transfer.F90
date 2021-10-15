@@ -19,6 +19,10 @@ module fnet_transfer
   public :: transferFunc
   public :: gaussian, gaussianDeriv
   public :: relu, reluDeriv
+  public :: lrelu, lreluDeriv
+  public :: softPlus, softPlusDeriv
+  public :: bentIdentity, bentIdentityDeriv
+  public :: arctan, arctanDeriv
   public :: sigmoid, sigmoidDeriv
   public :: heaviside, heavisideDeriv
   public :: tanhf, tanhDeriv
@@ -74,6 +78,62 @@ contains
   end function gaussianDeriv
 
 
+  !> Calculates a SoftPlus transfer for given arguments.
+  pure function softplus(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = log(1.0_dp + exp(xx))
+
+  end function softplus
+
+
+  !> Calculates the derivatives of a SoftPlus transfer.
+  pure function softPlusDeriv(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = 1.0_dp / (1.0_dp + exp(- xx))
+
+  end function softPlusDeriv
+
+
+  !> Calculates a Bent identity transfer for given arguments.
+  pure function bentIdentity(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = (sqrt(xx**2 + 1.0_dp) - 1.0_dp) / 2.0_dp + xx
+
+  end function bentIdentity
+
+
+  !> Calculates the derivatives of a Bent identity transfer.
+  pure function bentIdentityDeriv(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = xx / (2.0_dp * sqrt(xx**2 + 1.0_dp)) + 1.0_dp
+
+  end function bentIdentityDeriv
+
+
   !> Calculates a ReLU transfer for given arguments.
   pure function relu(xx) result(res)
 
@@ -97,13 +157,45 @@ contains
     !> corresponding transfer function values
     real(dp) :: res(size(xx))
 
-    where (xx > 0.0_dp)
+    where (xx >= 0.0_dp)
       res(:) = 1.0_dp
     elsewhere
       res(:) = 0.0_dp
     end where
 
   end function reluDeriv
+
+
+  !> Calculates a leaky ReLU transfer for given arguments.
+  pure function lrelu(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = max(0.01_dp * xx, xx)
+
+  end function lrelu
+
+
+  !> Calculates the derivatives of a leaky ReLU transfer.
+  pure function lreluDeriv(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    where (xx >= 0.0_dp)
+      res(:) = 1.0_dp
+    elsewhere
+      res(:) = 0.01_dp
+    end where
+
+  end function lreluDeriv
 
 
   !> Calculates a logistic, sigmoidal transfer for given arguments.
@@ -192,6 +284,34 @@ contains
     res(:) = 1.0_dp - tanh(xx)**2
 
   end function tanhDeriv
+
+
+  !> Calculates an arcus tangent transfer for given arguments.
+  pure function arctan(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = atan(xx)
+
+  end function arctan
+
+
+  !> Calculates the derivatives of an arcus tangent transfer.
+  pure function arctanDeriv(xx) result(res)
+
+    !> array to calculate the transfer function for
+    real(dp), intent(in) :: xx(:)
+
+    !> corresponding transfer function values
+    real(dp) :: res(size(xx))
+
+    res(:) = 1.0_dp / (xx**2 + 1.0_dp)
+
+  end function arctanDeriv
 
 
   !> Calculates a linear transfer for given arguments.

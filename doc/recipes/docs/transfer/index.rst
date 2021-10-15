@@ -10,9 +10,12 @@ significant difference, depending on the situation or dataset. In order to give
 you a certain freedom in this sense, Fortnet implements the following functions:
 
   - hyperbolic tangent
+  - arcus tangent
   - sigmoid function
+  - softplus function
   - gaussian function
-  - relu function
+  - (leaky) ReLU function
+  - Bent identity function
   - heaviside function
   - linear function
 
@@ -38,6 +41,20 @@ Hyperbolic Tangent
    :align: center
    :alt: Plot of the hyperbolic tangent.
 
+Arcus Tangent
+==================
+::
+
+  Network = BPNN {
+    Hidden = 2 2
+    Activation = atan
+  }
+
+.. figure:: ../_figures/transfer/atan.svg
+   :width: 100%
+   :align: center
+   :alt: Plot of the arcus tangent.
+
 Sigmoid
 =======
 ::
@@ -51,6 +68,20 @@ Sigmoid
    :width: 100%
    :align: center
    :alt: Plot of sigmoid activation function.
+
+SoftPlus
+========
+::
+
+  Network = BPNN {
+    Hidden = 2 2
+    Activation = softplus
+  }
+
+.. figure:: ../_figures/transfer/softplus.svg
+   :width: 100%
+   :align: center
+   :alt: Plot of softplus activation function.
 
 Gaussian
 ========
@@ -79,6 +110,34 @@ ReLU
    :width: 100%
    :align: center
    :alt: Plot of relu activation function.
+
+Leaky ReLU
+==========
+::
+
+  Network = BPNN {
+    Hidden = 2 2
+    Activation = lrelu
+  }
+
+.. figure:: ../_figures/transfer/lrelu.svg
+   :width: 100%
+   :align: center
+   :alt: Plot of leaky ReLU activation function.
+
+Bent Identity
+=============
+::
+
+  Network = BPNN {
+    Hidden = 2 2
+    Activation = bent
+  }
+
+.. figure:: ../_figures/transfer/bent.svg
+   :width: 100%
+   :align: center
+   :alt: Plot of Bent identity activation function.
 
 Heaviside
 =========
