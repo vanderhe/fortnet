@@ -69,25 +69,30 @@ input/shuffle/training/singlespecies/globalTargets
 input/special/deep
 input/special/large
 
-input/weighting/restart/multispecies/atomicTargets/acsfPrec
-input/weighting/restart/multispecies/atomicTargets/noPrec
-input/weighting/restart/multispecies/globalTargets/acsfPrec
-input/weighting/restart/multispecies/globalTargets/noPrec
+input/weighting/datapoints/restart/multispecies/atomicTargets/acsfPrec
+input/weighting/datapoints/restart/multispecies/atomicTargets/noPrec
+input/weighting/datapoints/restart/multispecies/globalTargets/acsfPrec
+input/weighting/datapoints/restart/multispecies/globalTargets/noPrec
 
-input/weighting/restart/singlespecies/atomicTargets/acsfPrec
-input/weighting/restart/singlespecies/atomicTargets/noPrec
-input/weighting/restart/singlespecies/globalTargets/acsfPrec
-input/weighting/restart/singlespecies/globalTargets/noPrec
+input/weighting/datapoints/restart/singlespecies/atomicTargets/acsfPrec
+input/weighting/datapoints/restart/singlespecies/atomicTargets/noPrec
+input/weighting/datapoints/restart/singlespecies/globalTargets/acsfPrec
+input/weighting/datapoints/restart/singlespecies/globalTargets/noPrec
 
-input/weighting/training/multispecies/atomicTargets/acsfPrec
-input/weighting/training/multispecies/atomicTargets/noPrec
-input/weighting/training/multispecies/globalTargets/acsfPrec
-input/weighting/training/multispecies/globalTargets/noPrec
+input/weighting/datapoints/training/multispecies/atomicTargets/acsfPrec
+input/weighting/datapoints/training/multispecies/atomicTargets/noPrec
+input/weighting/datapoints/training/multispecies/globalTargets/acsfPrec
+input/weighting/datapoints/training/multispecies/globalTargets/noPrec
 
-input/weighting/training/singlespecies/atomicTargets/acsfPrec
-input/weighting/training/singlespecies/atomicTargets/noPrec
-input/weighting/training/singlespecies/globalTargets/acsfPrec
-input/weighting/training/singlespecies/globalTargets/noPrec
+input/weighting/datapoints/training/singlespecies/atomicTargets/acsfPrec
+input/weighting/datapoints/training/singlespecies/atomicTargets/noPrec
+input/weighting/datapoints/training/singlespecies/globalTargets/acsfPrec
+input/weighting/datapoints/training/singlespecies/globalTargets/noPrec
+
+input/weighting/gradients/multispecies/atomicTargets
+
+input/weighting/gradients/singlespecies/globalTargets/multiTargets
+input/weighting/gradients/singlespecies/globalTargets/singleTarget
 
 prediction/multispecies/atomicTargets/optimizer/conjgrads
 prediction/multispecies/atomicTargets/optimizer/fire
