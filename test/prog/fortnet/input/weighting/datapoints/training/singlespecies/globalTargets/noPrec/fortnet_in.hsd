@@ -1,0 +1,53 @@
+Network = BPNN {
+
+  Hidden = 2 2
+  Activation = 'sigmoid'
+
+}
+
+Features {
+
+  Mapping = ACSF {
+    Reduce = Yes
+    Standardization = No
+    Function = Auto {
+      AtomID = 0
+      RCut = 4.0
+      NRadial = 5
+      NAngular = 4
+    }
+  }
+
+}
+
+Training = SD {
+
+  Threshold = 1e-20
+  NIterations = 1
+  NPrintout = 1
+  NSaveNet = 1
+  MinDisplacement = 1e-10
+  MaxDisplacement = 1e+04
+  LearningRate = 0.01
+  Loss = 'mse'
+
+  Shuffle = No
+
+}
+
+Data {
+
+  Dataset = '../../../../../../../datasets/fnetdata_si_s_global_weights.hdf5'
+  NetstatFile = 'fortnet.hdf5'
+
+}
+
+Options {
+
+  ReadNetStats = No
+  Mode = 'train'
+
+  RandomSeed = 123456
+  WriteIterationTrajectory = No
+
+}

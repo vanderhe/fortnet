@@ -691,9 +691,12 @@ contains
     case ('validate')
       min = minError(predicts, prog%trainDataset%targets)
       max = maxError(predicts, prog%trainDataset%targets)
-      mse = msLoss(predicts, prog%trainDataset%targets)
-      rms = rmsLoss(predicts, prog%trainDataset%targets)
-      mae = maLoss(predicts, prog%trainDataset%targets)
+      mse = msLoss(predicts, prog%trainDataset%targets, prog%trainDataset%atomicWeights,&
+          & prog%trainDataset%tAtomicTargets)
+      rms = rmsLoss(predicts, prog%trainDataset%targets, prog%trainDataset%atomicWeights,&
+          & prog%trainDataset%tAtomicTargets)
+      mae = maLoss(predicts, prog%trainDataset%targets, prog%trainDataset%atomicWeights,&
+          & prog%trainDataset%tAtomicTargets)
       write(stdout, '(A,/)') 'Validation'
       write(stdout, '(A,E15.6)') 'min. absolute error: ', min
       write(stdout, '(A,E15.6,/)') 'max. absolute error: ', max

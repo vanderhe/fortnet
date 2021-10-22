@@ -11,7 +11,7 @@
 module fnet_loss
 
   use dftbp_accuracy, only : dp
-  use fnet_nestedtypes, only : TPredicts, TRealArray2D
+  use fnet_nestedtypes, only : TPredicts, TRealArray1D, TRealArray2D
 
   implicit none
 
@@ -28,10 +28,10 @@ module fnet_loss
 
   abstract interface
 
-    pure function lossFunc(predicts, targets, weights) result(loss)
+    pure function lossFunc(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
 
       use dftbp_accuracy, only: dp
-      use fnet_nestedtypes, only : TPredicts, TRealArray2D
+      use fnet_nestedtypes, only : TPredicts, TRealArray1D, TRealArray2D
 
       implicit none
 
@@ -40,6 +40,12 @@ module fnet_loss
 
       !> target reference data
       type(TRealArray2D), intent(in) :: targets(:)
+
+      !> contains atomic gradient weights
+      type(TRealArray1D), intent(in) :: atomicWeights(:)
+
+      !> true, if trained on atomic properties
+      logical, intent(in) :: tAtomicTargets
 
       !> optional weighting of individual datapoints
       integer, intent(in), optional :: weights(:)
@@ -360,13 +366,19 @@ contains
 
 
   !> Calculates the mean absolute loss function.
-  pure function maLoss(predicts, targets, weights) result(loss)
+  pure function maLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
+
+    !> contains atomic gradient weights
+    type(TRealArray1D), intent(in) :: atomicWeights(:)
+
+    !> true, if trained on atomic properties
+    logical, intent(in) :: tAtomicTargets
 
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
@@ -394,13 +406,21 @@ contains
     loss = 0.0_dp
     nValues = 0
 
-    do iSys = 1, size(predicts%sys)
-      do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-        tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-        nValues = nValues + weighting(iSys)
+    if (tAtomicTargets) then
+      do iSys = 1, size(predicts%sys)
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + weighting(iSys)
+        end do
       end do
-    end do
+    else
+      do iSys = 1, size(predicts%sys)
+        tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+      end do
+      nValues = sum(weighting)
+    end if
 
     loss = loss / real(nValues, dp)
 
@@ -408,13 +428,19 @@ contains
 
 
   !> Calculates the mean absolute percentage loss function.
-  pure function mapLoss(predicts, targets, weights) result(loss)
+  pure function mapLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
+
+    !> contains atomic gradient weights
+    type(TRealArray1D), intent(in) :: atomicWeights(:)
+
+    !> true, if trained on atomic properties
+    logical, intent(in) :: tAtomicTargets
 
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
@@ -442,13 +468,21 @@ contains
     loss = 0.0_dp
     nValues = 0
 
-    do iSys = 1, size(predicts%sys)
-      do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-        tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-        nValues = nValues + weighting(iSys)
+    if (tAtomicTargets) then
+      do iSys = 1, size(predicts%sys)
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + weighting(iSys)
+        end do
       end do
-    end do
+    else
+      do iSys = 1, size(predicts%sys)
+        tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+      end do
+      nValues = sum(weighting)
+    end if
 
     loss = loss / real(nValues, dp)
 
@@ -456,13 +490,19 @@ contains
 
 
   !> Calculates the mean squared loss function.
-  pure function msLoss(predicts, targets, weights) result(loss)
+  pure function msLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
+
+    !> contains atomic gradient weights
+    type(TRealArray1D), intent(in) :: atomicWeights(:)
+
+    !> true, if trained on atomic properties
+    logical, intent(in) :: tAtomicTargets
 
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
@@ -490,13 +530,21 @@ contains
     loss = 0.0_dp
     nValues = 0
 
-    do iSys = 1, size(predicts%sys)
-      do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-        tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-        nValues = nValues + weighting(iSys)
+    if (tAtomicTargets) then
+      do iSys = 1, size(predicts%sys)
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + weighting(iSys)
+        end do
       end do
-    end do
+    else
+      do iSys = 1, size(predicts%sys)
+        tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+      end do
+      nValues = sum(weighting)
+    end if
 
     loss = loss / real(nValues, dp)
 
@@ -504,13 +552,19 @@ contains
 
 
   !> Calculates the mean squared logarithmic loss function.
-  pure function mslLoss(predicts, targets, weights) result(loss)
+  pure function mslLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
+
+    !> contains atomic gradient weights
+    type(TRealArray1D), intent(in) :: atomicWeights(:)
+
+    !> true, if trained on atomic properties
+    logical, intent(in) :: tAtomicTargets
 
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
@@ -538,13 +592,21 @@ contains
     loss = 0.0_dp
     nValues = 0
 
-    do iSys = 1, size(predicts%sys)
-      do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-        tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-        nValues = nValues + weighting(iSys)
+    if (tAtomicTargets) then
+      do iSys = 1, size(predicts%sys)
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + weighting(iSys)
+        end do
       end do
-    end do
+    else
+      do iSys = 1, size(predicts%sys)
+        tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+      end do
+      nValues = sum(weighting)
+    end if
 
     loss = loss / real(nValues, dp)
 
@@ -552,13 +614,19 @@ contains
 
 
   !> Calculates the root mean square loss function.
-  pure function rmsLoss(predicts, targets, weights) result(loss)
+  pure function rmsLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
     !> target reference data
     type(TRealArray2D), intent(in) :: targets(:)
+
+    !> contains atomic gradient weights
+    type(TRealArray1D), intent(in) :: atomicWeights(:)
+
+    !> true, if trained on atomic properties
+    logical, intent(in) :: tAtomicTargets
 
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
@@ -586,13 +654,21 @@ contains
     loss = 0.0_dp
     nValues = 0
 
-    do iSys = 1, size(predicts%sys)
-      do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-        tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-        nValues = nValues + weighting(iSys)
+    if (tAtomicTargets) then
+      do iSys = 1, size(predicts%sys)
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + weighting(iSys)
+        end do
       end do
-    end do
+    else
+      do iSys = 1, size(predicts%sys)
+        tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
+        loss = loss + real(weighting(iSys), dp) * tmpLoss
+      end do
+      nValues = sum(weighting)
+    end if
 
     loss = loss / real(nValues, dp)
 
