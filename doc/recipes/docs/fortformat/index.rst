@@ -9,7 +9,8 @@ Fortformat
 
 This chapter should serve as a tutorial guiding you through your first dataset
 creation and data extraction after running Fortnet by using two Python classes,
-provided by the ``Fortformat`` Python package:
+provided by the `Fortformat <https://github.com/vanderhe/fortnet-python>`_
+Python package:
 
 .. toctree::
    :maxdepth: 1
@@ -35,35 +36,39 @@ validation or prediction run.
 Installation
 ============
 
-Please note, that this package has been tested for Python 3.X support. It
-additionally needs numerical Python (the `Numpy` module) as well as `h5py`.
+Please note, that this package has been tested for Python 3.X support. Its usage
+additionally requires
 
-Since the ``Fnetdata`` class, among others, expects the so-called `Atoms`
-objects of the Atomic Simulation Environment
-(`ASE <https://wiki.fysik.dtu.dk/ase/>`_) as an input, sooner or later this
-dependency will also have to be satisfied.
+  - `numerical Python <https://numpy.org/doc/stable/reference/>`_ (`numpy`)
+  - `pythonic HDF5 <http://www.h5py.org/>`_ (`h5py`)
+  - `Atomic Simulation Environment <https://wiki.fysik.dtu.dk/ase/>`_ (`ase`)
 
+as well as the `pytest` framework in order to run the regression tests.
 
-System install
---------------
+Via the Python Package Index
+----------------------------
 
-You can install the script package via the standard Python setup mechanism. If
-you want to install it system-wide into your normal Python installation, you
-simply issue
+The package can be downloaded and installed via pip into the active Python
+interpreter (preferably using a virtual python environment) by ::
+
+  pip install fortnet-python
+
+or into the user space issueing::
+
+  pip install --user fortnet-python
+
+Locally from Source
+-------------------
+
+Alternatively, you can install it locally from source, i.e. from the root folder
+of the project::
+
+  python -m pip install .
+
+Testing
+=======
+
+The regression testsuite utilizes the `pytest` framework and may be executed by
 ::
 
-  python setup.py install
-
-at `tools/fortformat/` with an appropriate level of permission.
-
-Local install
--------------
-
-Alternatively, you can install it locally in your home space, e.g.::
-
-  python setup.py install --user
-
-If the local Python install directory is not in your path, you should add this.
-For the bash shell you should include the following line in the .bashrc::
-
-  export PATH=$PATH:/home/user/.local/bin
+  python -m pytest --basetemp=Testing
