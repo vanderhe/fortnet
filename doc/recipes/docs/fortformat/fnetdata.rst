@@ -165,7 +165,7 @@ properties are present (default: False).
 Weighting Datapoints
 ********************
 
-[Input: `recipes/fortformat/fnetdata/weighting/`]
+[Input: `recipes/fortformat/fnetdata/weighting/datapoints/`]
 
 There are countless conceivable situations in which weighting individual
 datapoints makes sense. The detour via the increased insertion of a datapoint is
@@ -192,6 +192,70 @@ onedimensional list or Numpy array of positive integers. If these requirements
 are not met, an error message is issued, so that nothing can terribly go wrong
 (fingers crossed).
 
+
+**************************
+Weighting Atomic Gradients
+**************************
+
+[Input: `recipes/fortformat/fnetdata/weighting/gradients/`]
+
+Further, there might be a need for different weighting of atomic contributions
+in the training process. This allows to change the contribution of specific
+atoms to the training process, as well as to completely `switch off` atoms, if
+the respective target would not be defined. Therefore, ``Fnetdata`` and
+``Fortnet`` offer the possibility of setting atom-resolved weights after a
+Fortformat object has been instantiated. The desired weights can be handed over
+via a setter function. The following code snippet shows what this could look
+like:
+
+.. code-block:: python
+
+  # fix random seed for reproduction purposes
+  np.random.seed(42)
+
+  atomicweights = []
+    .
+    .
+  for ii, atom in enumerate(atoms):
+          .
+	  .
+      # float-valued atomic gradient weighting in interval [1, 10]
+      atomicweights.append(np.asfarray(
+	  np.random.randint(1, 10, len(atom), dtype=int)))
+
+  fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+  fnetdata.atomicweights = atomicweights
+  fnetdata.dump('fnetdata.hdf5')
+
+Alternatively, the weights can be boolean-valued. This allows the contributions
+of individual atoms to be switched `on` or `off`. Currently, these are
+internally converted to floats 0.0 (False) and 1.0 (True), so there is no
+performance advantage. In the future, however, the corresponding gradient
+calculations will be skipped and thus a significant performance gain achieved:
+
+.. code-block:: python
+
+  # fix random seed for reproduction purposes
+  np.random.seed(42)
+  sample = [True, False]
+
+  atomicweights = []
+    .
+    .
+  for ii, atom in enumerate(atoms):
+          .
+	  .
+      # randomly activate/deactivate atomic contributions
+      atomicweights.append(np.random.choice(sample, size=len(atom)))
+
+  fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+  fnetdata.atomicweights = atomicweights
+  fnetdata.dump('fnetdata.hdf5')
+
+For Fortformat to correctly recognize the weights, they must be specified as a
+onedimensional list of lists/numpy arrays of values :math:`\geq` 0. If these
+requirements are not met, an error message is issued, so that nothing can
+terribly go wrong (again, fingers crossed).
 
 .. _sec-fnetdata_extFeatures:
 

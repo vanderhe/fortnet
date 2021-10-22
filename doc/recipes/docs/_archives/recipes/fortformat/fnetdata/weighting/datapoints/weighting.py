@@ -4,7 +4,7 @@
 '''
 Application example of the Fnetdata class, based on a dataset
 that provides global system properties as target values to fit.
-The entire dataset is written to a contiguous fnetdata.xml file,
+The entire dataset is written to a contiguous fnetdata.hdf5 file,
 whereby the individual datapoints are weighted by user-input.
 '''
 
@@ -18,8 +18,8 @@ from ase.io.vasp import read_vasp, read_vasp_out
 def main():
     '''Main driver routine.'''
 
-    inpaths = [os.path.join(os.getcwd(), '../globalTargets/vaspdata', entry)
-               for entry in sorted(os.listdir('../globalTargets/vaspdata'))]
+    inpaths = [os.path.join(os.getcwd(), '../../globalTargets/vaspdata', entry)
+               for entry in sorted(os.listdir('../../globalTargets/vaspdata'))]
 
     # start with homogeneous weighting
     weights = np.ones((31,), dtype=int)
