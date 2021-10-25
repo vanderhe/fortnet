@@ -14,5 +14,6 @@ Fortnet Recipes
    loss/index.rst
    optimizer/index.rst
    analysis/index.rst
+   interfaces/index.rst
    licence.rst
    bibliography.rst
