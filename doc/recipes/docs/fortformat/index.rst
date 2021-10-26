@@ -48,6 +48,10 @@ as well as the `pytest` framework in order to run the regression tests.
 Via the Python Package Index
 ----------------------------
 
+First, make sure you have an up-to-date version of pip installed::
+
+  python -m pip install --upgrade pip
+
 The package can be downloaded and installed via pip into the active Python
 interpreter (preferably using a virtual python environment) by ::
 
