@@ -93,6 +93,8 @@ Mean Absolute Percentage Error
     Loss = mape
   }
 
+.. _sec-loss-regularization:
+
 Regularization
 ==============
 
