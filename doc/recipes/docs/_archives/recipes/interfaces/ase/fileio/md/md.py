@@ -2,15 +2,16 @@
 
 
 '''
-Application example of an Si64 molecular dynamics by invoking
+Application example of an H2 molecular dynamics by invoking
 Fortnet via the file-IO interface to the ASE Python package.
 '''
 
 
-from ase.io import read
+from ase.build import molecule
 from ase.io.trajectory import Trajectory
 from ase.md.langevin import Langevin
-from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
+from ase.md.velocitydistribution import (MaxwellBoltzmannDistribution,
+                                         Stationary, ZeroRotation)
 from ase import units
 from fnetase import Fortnet
 
@@ -18,14 +19,16 @@ from fnetase import Fortnet
 def main():
     '''Main driver routine.'''
 
-    system = read('POSCAR')
+    system = molecule('H2')
 
-    system.calc = Fortnet(label='Si64', atoms=system, restart='fortnet.hdf5',
+    system.calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
                           finiteDiffDelta=1e-02)
 
-    MaxwellBoltzmannDistribution(system, temperature_K=300)
+    MaxwellBoltzmannDistribution(system, temperature_K=200)
+    Stationary(system)
+    ZeroRotation(system)
 
-    dyn = Langevin(system, 1.0 * units.fs, friction=1e-02, temperature_K=300)
+    dyn = Langevin(system, 1.0 * units.fs, friction=1e-02, temperature_K=200)
 
     def printenergy(atoms=system):
         '''Prints the potential, kinetic and total energy.'''
@@ -35,13 +38,13 @@ def main():
               'Etot = %.3feV' % (epot, ekin, ekin / (1.5 * units.kB),
                                  epot + ekin))
 
-    dyn.attach(printenergy, interval=1)
+    dyn.attach(printenergy, interval=10)
 
     traj = Trajectory('md.traj', 'w', system)
     dyn.attach(traj.write, interval=1)
 
     printenergy()
-    dyn.run(10)
+    dyn.run(200)
 
 
 if __name__ == '__main__':

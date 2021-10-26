@@ -9,6 +9,12 @@ For calculations without heavy file-IO, i.e. systems whose wallclock time is
 dominated by the actual network evaluation (e.g. due to large system sizes), the
 communication between Fortnet and external software via file-IO may be suitable.
 
+.. note::
+
+   For simulations of small geometries it might be preferable to use a serial
+   version of Fortnet, since the overhead in MPI process generation and data
+   broadcasting will reverse the speed advantage of an MPI-parallelized build.
+
 Calling Fortnet via ASE
 =======================
 
@@ -59,6 +65,13 @@ of the system can be read out directly by ASE:
 
 The script above causes ASE to create an input file (`fortnet_in.hsd`) with the
 specified options and invokes Fortnet in the corresponding directory.
+
+.. warning::
+
+   For simulations based on the computation of atomic forces, it is strongly
+   recommended to use :ref:`regularized networks <sec-loss-regularization>`,
+   otherwise the system can/will blow up, especially for geometry optimizations
+   and molecular dynamics outlined below.
 
 Geometry Optimization by ASE
 ============================
@@ -118,8 +131,8 @@ Molecular Dynamics by ASE
 Apart from the invocation of Fortnet via file-IO, the use of Fortnet as an
 energy/force engine in conjunction with an external molecular dynamics driver is
 possible. To do so, again, set the required environment variable (see
-explanation above) and consider an :math:`\mathrm{Si}_{64}` bulk structure,
-read in from a `POSCAR` file.
+explanation above) and consider an :math:`\mathrm{H}_2` molecule from the
+G2-database.
 
 Similar to the previous section, the calculator gets instantiated. Subsequently,
 a Maxwell-Boltzmann distribution is used to initialize atomic velocities at the
@@ -130,25 +143,27 @@ interval.
 
 .. code-block:: python
 
-  from ase.io import read
+  from ase.build import molecule
   from ase.io.trajectory import Trajectory
   from ase.md.langevin import Langevin
-  from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
+  from ase.md.velocitydistribution import (MaxwellBoltzmannDistribution,
+					   Stationary, ZeroRotation)
   from ase import units
   from fnetase import Fortnet
-
 
   def main():
       '''Main driver routine.'''
 
-      system = read('POSCAR')
+      system = molecule('H2')
 
-      system.calc = Fortnet(label='Si64', atoms=system, restart='fortnet.hdf5',
+      system.calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
 			    finiteDiffDelta=1e-02)
 
-      MaxwellBoltzmannDistribution(system, temperature_K=300)
+      MaxwellBoltzmannDistribution(system, temperature_K=200)
+      Stationary(system)
+      ZeroRotation(system)
 
-      dyn = Langevin(system, 1.0 * units.fs, friction=1e-02, temperature_K=300)
+      dyn = Langevin(system, 1.0 * units.fs, friction=1e-02, temperature_K=200)
 
       def printenergy(atoms=system):
 	  '''Prints the potential, kinetic and total energy.'''
@@ -158,14 +173,13 @@ interval.
 		'Etot = %.3feV' % (epot, ekin, ekin / (1.5 * units.kB),
 				   epot + ekin))
 
-      dyn.attach(printenergy, interval=1)
+      dyn.attach(printenergy, interval=10)
 
       traj = Trajectory('md.traj', 'w', system)
       dyn.attach(traj.write, interval=1)
 
       printenergy()
-      dyn.run(10)
-
+      dyn.run(200)
 
   if __name__ == '__main__':
       main()
