@@ -533,21 +533,26 @@ contains
     end if
 
     if (analysis%tForces) then
-      call TGeometriesForFiniteDiff_init(forcesGeos, trainDataset%geos, analysis%delta)
-      nTotGeometries = 0
-      do iGeo = 1, size(forcesGeos%geos)
-        nTotGeometries = nTotGeometries + 6 * size(forcesGeos%geos(iGeo)%atom)
-      end do
-      allocate(localAtToAtNum(nTotGeometries))
-      ind = 1
-      do iGeo = 1, size(forcesGeos%geos)
-        do ii = 1, 6 * size(forcesGeos%geos(iGeo)%atom)
-          localAtToAtNum(ind+ii-1)%array = trainDataset%localAtToAtNum(iGeo)%array
+      if (prog%inp%analysis%forceMethod == 'finitedifferences') then
+        call TGeometriesForFiniteDiff_init(forcesGeos, trainDataset%geos, analysis%delta)
+        nTotGeometries = 0
+        do iGeo = 1, size(forcesGeos%geos)
+          nTotGeometries = nTotGeometries + 6 * size(forcesGeos%geos(iGeo)%atom)
         end do
-        ind = ind + 6 * size(forcesGeos%geos(iGeo)%atom)
-      end do
-      call forcesGeos%serialize(forcesSerializedGeos)
-      call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec)
+        allocate(localAtToAtNum(nTotGeometries))
+        ind = 1
+        do iGeo = 1, size(forcesGeos%geos)
+          do ii = 1, 6 * size(forcesGeos%geos(iGeo)%atom)
+            localAtToAtNum(ind+ii-1)%array = trainDataset%localAtToAtNum(iGeo)%array
+          end do
+          ind = ind + 6 * size(forcesGeos%geos(iGeo)%atom)
+        end do
+        call forcesGeos%serialize(forcesSerializedGeos)
+        call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec)
+      elseif (prog%inp%analysis%forceMethod == 'analytical') then
+        call forcesAcsf%calculatePrime(trainDataset%geos, env, trainDataset%localAtToAtNum,&
+            & extFeaturesInp=trainDataset%extFeatures)
+      end if
     end if
 
     write(stdout, '(A)') 'done'
@@ -597,7 +602,7 @@ contains
     !> min. and max. deviation of predictions, in comparison to targets
     real(dp) :: min, max
 
-    !> network predictions during the training
+    !> contains Jacobians of multiple systems
     type(TJacobians) :: jacobian
 
   #:if WITH_MPI
@@ -681,8 +686,16 @@ contains
       write(stdOut, '(A)') 'done'
       if (prog%inp%analysis%tForces) then
         write(stdOut, '(A)', advance='no') 'Calculate forces...'
-        forces = forceAnalysis(bpnn, forcesGeos, forcesAcsf, prog%env,&
-            & prog%trainDataset%localAtToGlobalSp, prog%inp%analysis%delta)
+        if (prog%inp%analysis%forceMethod == 'finitedifferences') then
+          forces = forceAnalysis(bpnn, forcesGeos, forcesAcsf, prog%env,&
+              & prog%trainDataset%localAtToGlobalSp, prog%inp%analysis%delta)
+        elseif (prog%inp%analysis%forceMethod == 'analytical') then
+          jacobian = bpnn%nJacobian(prog%features%trainFeatures, prog%env,&
+              & prog%trainDataset%localAtToGlobalSp)
+          forces = forceAnalysis(bpnn, prog%features%trainFeatures, jacobian, forcesAcsf, prog%env,&
+              & prog%trainDataset%localAtToGlobalSp)
+          ! print *, shape(jacobian%sys(1)%atom(1)%array)
+        end if
         write(stdOut, '(A,/)') 'done'
       else
         write(stdOut, '(A)') ''
@@ -708,10 +721,6 @@ contains
       write(stdout, '(A,E15.6,/)') 'root mean squared error: ', rms
       write(stdout, '(A,/)') repeat('-', 80)
     end select
-
-    jacobian = bpnn%nJacobian(prog%features%trainFeatures, prog%env,&
-        & prog%trainDataset%localAtToGlobalSp)
-    print *, shape(jacobian%sys(1)%atom(1)%array)
 
   end subroutine runCore
 

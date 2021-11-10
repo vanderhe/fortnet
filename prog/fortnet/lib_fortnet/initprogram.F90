@@ -564,6 +564,8 @@ contains
             call detailedError(tmp, 'Invalid delta parameter of finite differences, must be '&
                 & // 'greater than zero.')
           end if
+        case ('analytical')
+          ! forces calculated based on analytic gradients
         case default
           analysis%tForces = .false.
           call detailedError(forcenode, 'Invalid method specified to calculate atomic forces.')
