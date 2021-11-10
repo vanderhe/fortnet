@@ -27,7 +27,7 @@ module fnet_nestedtypes
   private
 
   public :: TJacobian, TJacobians
-  public :: TIntArray1D, TIntArray2D, TRealArray1D, TRealArray2D
+  public :: TIntArray1D, TIntArray2D, TRealArray1D, TRealArray2D, TRealArray3D
   public :: TBiasDerivs, TBiasDerivs_init, TWeightDerivs, TWeightDerivs_init
   public :: TWrapSteepDesc, TWrapConjGrad, TWrapLbfgs, TWrapFire
   public :: TSingleLayerStruc, TMultiLayerStruc, TMultiLayerStruc_init
@@ -66,6 +66,14 @@ module fnet_nestedtypes
     real(dp), allocatable :: array(:,:)
 
   end type TRealArray2D
+
+
+  type :: TRealArray3D
+
+    !> threedimensional real array
+    real(dp), allocatable :: array(:,:,:)
+
+  end type TRealArray3D
 
 
   type :: TBiasDerivs

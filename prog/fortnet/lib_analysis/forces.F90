@@ -14,7 +14,7 @@ module fnet_forces
   use dftbp_accuracy, only: dp
   use dftbp_typegeometry, only : TGeometry
 
-  use fnet_nestedtypes, only : TEnv, TPredicts, TIntArray1D, TRealArray2D
+  use fnet_nestedtypes, only : TEnv, TPredicts, TIntArray1D, TRealArray2D, TJacobians
   use fnet_bpnn, only : TBpnn
   use fnet_acsf, only : TAcsf
 
@@ -72,6 +72,11 @@ module fnet_forces
     procedure :: serialize => TGeometriesForFiniteDiff_serialize
 
   end type TGeometriesForFiniteDiff
+
+
+  interface forceAnalysis
+    module procedure :: forceAnalysis_finiteDiff, forceAnalysis_analytical
+  end interface forceAnalysis
 
 
 contains
@@ -181,7 +186,7 @@ contains
 
 
   !> Predicts points of energy hypersurface and calculates forces based on the central difference.
-  function forceAnalysis(bpnn, forcesGeos, forcesAcsf, env, localAtToGlobalSp, delta)&
+  function forceAnalysis_finiteDiff(bpnn, forcesGeos, forcesAcsf, env, localAtToGlobalSp, delta)&
       & result(resForces)
 
     !> representation of a Behler-Parrinello neural network
@@ -205,7 +210,7 @@ contains
     !> extended index mapping local atom --> global species index
     type(TIntArray1D), allocatable :: localAtToGlobalSpExtended(:)
 
-    !> network predictions during the training
+    !> network predictions for rattled geometries with one perturbed atom
     type(TPredicts) :: predicts, resPredicts
 
     !> obtained atomic forces
@@ -307,6 +312,115 @@ contains
     resForces = forces
   #:endif
 
-  end function forceAnalysis
+  end function forceAnalysis_finiteDiff
+
+
+  !> Calculates forces based on the BPNN's Jacobian matrix and analytical ACSF derivatives.
+  function forceAnalysis_analytical(bpnn, features, jacobian, forcesAcsf, env, localAtToGlobalSp)&
+      & result(resForces)
+
+    !> representation of a Behler-Parrinello neural network
+    type(TBpnn), intent(in) :: bpnn
+
+    !> atomic features as network input
+    type(TRealArray2D), intent(in) :: features(:)
+
+    !> contains Jacobians of multiple systems
+    type(TJacobians), intent(in) :: jacobian
+
+    !> contains ACSF derivatives, exp. shape: [forcesAcsf%vals%vals(iSys)%array(3, nAcsf, nAtom)]
+    type(TAcsf), intent(in) :: forcesAcsf
+
+    !> if compiled with mpi enabled, contains mpi communicator
+    type(TEnv), intent(in) :: env
+
+    !> index mapping local atom --> global species index
+    type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
+
+    !> network predictions for rattled geometries with one perturbed atom
+    type(TPredicts) :: predicts, resPredicts
+
+    !> obtained atomic forces
+    type(TForces) :: forces, resForces
+
+    !> true, if current process is the lead
+    logical :: tLead
+
+    !> auxiliary variables
+    integer :: iSys, iAtom, iAcsf, iCoord, iStart, iEnd
+
+  #:if WITH_MPI
+    tLead = env%globalMpiComm%lead
+    call getStartAndEndIndex(size(features), env%globalMpiComm%size, env%globalMpiComm%rank,&
+        & iStart, iEnd)
+  #:else
+    tLead = .true.
+    iStart = 1
+    iEnd = size(features)
+  #:endif
+
+    ! prepare structure that stores the predicted hypersurface of rattled geometries
+    allocate(predicts%sys(size(features)))
+    do iSys = 1, size(features)
+      allocate(predicts%sys(iSys)%array(bpnn%dims(size(bpnn%dims)), 1))
+      predicts%sys(iSys)%array(:,:) = 0.0_dp
+    end do
+    resPredicts = predicts
+
+    do iSys = iStart, iEnd
+      predicts%sys(iSys)%array(:,:) = bpnn%iPredict(features(iSys)%array,&
+          & localAtToGlobalSp(iSys)%array, .false.)
+    end do
+
+  #:if WITH_MPI
+    do iSys = 1, size(features)
+      call mpifx_allreduce(env%globalMpiComm, predicts%sys(iSys)%array,&
+          & resPredicts%sys(iSys)%array, MPI_SUM)
+    end do
+    ! wait for all the predictions to finish
+    call mpifx_barrier(env%globalMpiComm)
+  #:else
+    resPredicts = predicts
+  #:endif
+
+    ! prepare structure that stores the atomic forces
+    allocate(forces%geos(size(features)))
+    do iSys = 1, size(features)
+      allocate(forces%geos(iSys)%array(3 * bpnn%dims(size(bpnn%dims)),&
+          & size(features(iSys)%array, dim=2)))
+      forces%geos(iSys)%array(:,:) = 0.0_dp
+    end do
+    resForces = forces
+
+  #:if WITH_MPI
+    call getStartAndEndIndex(size(features), env%globalMpiComm%size, env%globalMpiComm%rank,&
+        & iStart, iEnd)
+  #:else
+    iStart = 1
+    iEnd = size(features)
+  #:endif
+
+    do iSys = iStart, iEnd
+      do iAtom = 1, size(features(iSys)%array, dim=2)
+        do iAcsf = 1, size(features(iSys)%array, dim=1)
+          do iCoord = 1, 3
+            forces%geos(iSys)%array(iCoord::3, iAtom) = forces%geos(iSys)%array(iCoord::3, iAtom)&
+                & - jacobian%sys(iSys)%atom(iAtom)%array(:, iAcsf)&
+                & * forcesAcsf%valsPrime%vals(iSys)%array(iCoord, iAcsf, iAtom)
+          end do
+        end do
+      end do
+    end do
+
+  #:if WITH_MPI
+    do iSys = 1, size(features)
+      call mpifx_allreduce(env%globalMpiComm, forces%geos(iSys)%array, resForces%geos(iSys)%array,&
+          & MPI_SUM)
+    end do
+  #:else
+    resForces = forces
+  #:endif
+
+  end function forceAnalysis_analytical
 
 end module fnet_forces
