@@ -21,7 +21,7 @@ module fnet_acsf
   use dftbp_dynneighlist, only : TDynNeighList, TDynNeighList_init
   use dftbp_dynneighlist, only : TNeighIterator, TNeighIterator_init
 
-  use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TRealArray3D, TEnv
+  use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TRealArray4D, TEnv
   use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
   use fnet_hdf5fx, only : h5ltfx_read_dataset_double_f, h5ltfxmake_dataset_double_f
 
@@ -100,7 +100,7 @@ module fnet_acsf
   type :: TMultiAcsfPrimeVals
 
     !> array of ACSF derivative value instances
-    type(TRealArray3D), allocatable :: vals(:)
+    type(TRealArray4D), allocatable :: vals(:)
 
   end type TMultiAcsfPrimeVals
 
@@ -434,8 +434,8 @@ contains
     allocate(this%vals(size(geos)))
 
     do iSys = 1, size(geos)
-      allocate(this%vals(iSys)%array(3, nAcsfVals, geos(iSys)%nAtom))
-      this%vals(iSys)%array(:,:,:) = 0.0_dp
+      allocate(this%vals(iSys)%array(3, nAcsfVals, geos(iSys)%nAtom, geos(iSys)%nAtom))
+      this%vals(iSys)%array(:,:,:,:) = 0.0_dp
     end do
 
   end subroutine TMultiAcsfPrimeVals_Init
@@ -669,9 +669,9 @@ contains
     call TMultiAcsfPrimeVals_init(this%valsPrime, geos, size(this%gFunctions%func))
 
     lpSystem: do iSys = iStart, iEnd
-      if (.not. allocated(extFeatures(iSys)%array)) allocate(extFeatures(iSys)%array(0,0))
+      ! if (.not. allocated(extFeatures(iSys)%array)) allocate(extFeatures(iSys)%array(0,0))
       call iGeoAcsfPrime(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func,&
-          & localAtToAtNum(iSys)%array, extFeatures(iSys)%array)
+          & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
     end do lpSystem
 
   #:if WITH_MPI
@@ -806,8 +806,8 @@ contains
       do iAcsf = 1, size(gFunctions)
 
         call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
-            & extFeatures(gFunctions(iAcsf)%atomId, :), geo1, geo2, iAtomOut1, atomId1, atomId2,&
-            & atomIds1, atomIds2, neighDists1, neighDists2, neighCoords1, neighCoords2)
+            & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
+            & neighDists1, neighDists2, neighCoords1, neighCoords2)
 
         select case (gFunctions(iAcsf)%type)
         case ('g1')
@@ -842,7 +842,7 @@ contains
   subroutine iGeoAcsfPrime(this, geo, gFunctions, localAtToAtNum, extFeatures)
 
     !> symmetry function derivative instance of geometry
-    type(TRealArray3D), intent(inout) :: this
+    type(TRealArray4D), intent(inout) :: this
 
     !> system geometry container
     type(TGeometry), intent(in) :: geo
@@ -854,7 +854,7 @@ contains
     integer, intent(in) :: localAtToAtNum(:)
 
     !> atom dependent scaling parameters for cutoff function
-    real(dp), intent(in) :: extFeatures(:,:)
+    real(dp), intent(in), optional :: extFeatures(:,:)
 
     !> geometries reduced to atoms of a single species
     type(TGeometry) :: geo1, geo2
@@ -869,41 +869,73 @@ contains
     real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
 
     !> auxiliary variables
-    integer :: iAtom, iAcsf, iAtomOut1
+    integer :: iAtom, iForceAtom, iAcsf, iAtomOut1
 
-    do iAtom = 1, geo%nAtom
-      do iAcsf = 1, size(gFunctions)
+    lpForceAtom: do iForceAtom = 1, geo%nAtom
+      lpAtom: do iAtom = 1, geo%nAtom
+        ! prevent cancellation of summands
+        if (iAtom == iForceAtom) cycle lpAtom
+        lpAcsf: do iAcsf = 1, size(gFunctions)
 
-        call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
-            & extFeatures(gFunctions(iAcsf)%atomId, :), geo1, geo2, iAtomOut1, atomId1, atomId2,&
-            & atomIds1, atomIds2, neighDists1, neighDists2, neighCoords1, neighCoords2)
+          ! if (iForceAtom == iAtom) then
+          !   call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
+          !       & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
+          !       & neighDists1, neighDists2, neighCoords1, neighCoords2)
+          !   select case (gFunctions(iAcsf)%type)
+          !   case ('g1')
+          !     this%array(:, iAcsf, iAtom, iForceAtom) = g1PrimeSelf(geo%coords(:, iAtom),&
+          !         & neighCoords1, neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%rCut)
+          !   case ('g2')
+          !     ! dummy derivatives for now
+          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+          !   case ('g3')
+          !     ! dummy derivatives for now
+          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+          !   case ('g4')
+          !     ! dummy derivatives for now
+          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+          !   case ('g5')
+          !     ! dummy derivatives for now
+          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+          !   case default
+          !     call error('Invalid function type, aborting ACSF calculation.')
+          !   end select
 
-        select case (gFunctions(iAcsf)%type)
-        case ('g1')
-          this%array(:, iAcsf, iAtom) = g1Prime(neighDists1, atomId1, atomIds1,&
-              & gFunctions(iAcsf)%rCut)
-        case ('g2')
-          this%array(:, iAcsf, iAtom) = g2Prime(neighDists1, atomId1, atomIds1,&
-              & gFunctions(iAcsf)%eta, gFunctions(iAcsf)%rs, gFunctions(iAcsf)%rCut)
-        case ('g3')
-          this%array(:, iAcsf, iAtom) = g3Prime(neighDists1, atomId1, atomIds1,&
-              & gFunctions(iAcsf)%kappa, gFunctions(iAcsf)%rCut)
-        case ('g4')
-          this%array(:, iAcsf, iAtom) = g4Prime(geo1%coords(:, iAtomOut1), neighCoords1,&
-              & neighCoords2, neighDists1, neighDists2, atomId1, atomIds1, atomId2, atomIds2,&
-              & gFunctions(iAcsf)%xi, gFunctions(iAcsf)%lambda, gFunctions(iAcsf)%eta,&
-              & gFunctions(iAcsf)%rCut)
-        case ('g5')
-          this%array(:, iAcsf, iAtom) = g5Prime(geo1%coords(:, iAtomOut1), neighCoords1,&
-              & neighCoords2, neighDists1, neighDists2, atomId1, atomIds1, atomId2, atomIds2,&
-              & gFunctions(iAcsf)%xi, gFunctions(iAcsf)%lambda, gFunctions(iAcsf)%eta,&
-              & gFunctions(iAcsf)%rCut)
-        case default
-          call error('Invalid function type, aborting ACSF calculation.')
-        end select
+          if (distance(geo, iAtom, iForceAtom) <= gFunctions(iAcsf)%rCut) then
+            select case (gFunctions(iAcsf)%type)
+            case ('g1')
+              if (.not. present(extFeatures)) then
+                atomId1 = 1.0_dp
+                atomId2 = 1.0_dp
+              else
+                atomId1 = extFeatures(gFunctions(iAcsf)%atomId, iAtom)
+                atomId2 = extFeatures(gFunctions(iAcsf)%atomId, iForceAtom)                
+              end if
+              this%array(:, iAcsf, iAtom, iForceAtom) = g1Prime(geo, iAtom, iForceAtom, atomId1,&
+                  & atomId2, gFunctions(iAcsf)%rCut)
+            case ('g2')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case ('g3')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case ('g4')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case ('g5')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case default
+              call error('Invalid function type, aborting ACSF calculation.')
+            end select
+          else
+            ! atom to calculate forces for wasn't in the cutoff sphere
+            this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+          end if
 
-      end do
-    end do
+        end do lpAcsf
+      end do lpAtom
+    end do lpForceAtom
 
   end subroutine iGeoAcsfPrime
 
@@ -926,7 +958,7 @@ contains
     integer, intent(in) :: localAtToAtNum(:)
 
     !> atom dependent scaling parameters for cutoff function
-    real(dp), intent(in) :: extFeatures(:)
+    real(dp), intent(in) :: extFeatures(:,:)
 
     !> geometries reduced to atoms of a single species
     type(TGeometry), intent(out) :: geo1, geo2
@@ -970,9 +1002,9 @@ contains
       iAtomOut1 = iAtom
       iAtomOut2 = iAtomOut1
       if (gFunction%atomId > 0) then
-        atomId1 = extFeatures(iAtom)
+        atomId1 = extFeatures(gFunction%atomId, iAtom)
         atomId2 = atomId1
-        atomIds1 = extFeatures
+        atomIds1 = extFeatures(gFunction%atomId, :)
         atomIds2 = atomIds1
       else
         atomId1 = 1.0_dp
@@ -995,8 +1027,8 @@ contains
       call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(1)], geo1,&
           & iAtomOut1, tKeep=tKeep1)
       if (gFunction%atomId > 0) then
-        atomId1 = extFeatures(iAtomOut1)
-        atomIds1 = extFeatures(tKeep1)
+        atomId1 = extFeatures(gFunction%atomId, iAtomOut1)
+        atomIds1 = extFeatures(gFunction%atomId, tKeep1)
       else
         atomId1 = 1.0_dp
         if (allocated(atomIds1)) deallocate(atomIds1)
@@ -1012,8 +1044,8 @@ contains
       call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(2)], geo2,&
           & iAtomOut2, tKeep=tKeep2)
       if (gFunction%atomId > 0) then
-        atomId2 = extFeatures(iAtomOut2)
-        atomIds2 = extFeatures(tKeep2)
+        atomId2 = extFeatures(gFunction%atomId, iAtomOut2)
+        atomIds2 = extFeatures(gFunction%atomId, tKeep2)
       else
         atomId2 = 1.0_dp
         if (allocated(atomIds2)) deallocate(atomIds2)
@@ -1404,10 +1436,17 @@ contains
 
 
   !> Calculates the G1 derivative w.r.t. the three spatial components.
-  pure function g1Prime(rr, atomId, atomIds, rcut)
+  !> Covers the case iForceAtom == iAtom, therefore has to regard the whole neighborlist.
+  pure function g1PrimeSelf(atomCoords, neighCoords, neighDists, atomId, atomIds, rcut)
 
-    !> array of atom distances in cutoff range
-    real(dp), intent(in) :: rr(:)
+    !> coordinates of reference atom
+    real(dp), intent(in) :: atomCoords(:)
+
+    !> coordinates of neighboring atoms
+    real(dp), intent(in) :: neighCoords(:,:)
+
+    !> distances of reference atom to neighboring atoms
+    real(dp), intent(in) :: neighDists(:)
 
     !> atom ID of center atom
     real(dp), intent(in) :: atomId
@@ -1419,13 +1458,58 @@ contains
     real(dp), intent(in) :: rcut
 
     !> corresponding symmetry function derivatives
-    real(dp) :: g1Prime
+    real(dp) :: g1PrimeSelf(3)
 
-    if (size(rr) == 0) then
-      g1Prime = 0.0_dp
-    else
-      g1Prime = 0.0_dp
+    !> auxiliary variable
+    integer :: jj
+
+    g1PrimeSelf = 0.0_dp
+
+    if (.not. ((size(neighDists) == 0))) then
+
+      do jj = 1, size(neighCoords, dim=2)
+        ! calculate G1 derivatives
+        g1PrimeSelf = g1PrimeSelf - (atomCoords - neighCoords(:, jj))&
+            & * sin(pi * neighDists(jj) / rcut) / neighDists(jj)
+      end do
+
+      ! multiply with constant prefactor
+      g1PrimeSelf = - pi / (2.0_dp * rcut) * g1PrimeSelf
+
     end if
+
+  end function g1PrimeSelf
+
+
+  !> Calculates the G1 derivative w.r.t. the three spatial components.
+  !> Covers the case iForceAtom /= iAtom, therefore only a single term has to be regarded.
+  pure function g1Prime(geo, iAtom, iForceAtom, atomId, forceAtomId, rcut)
+
+    !> system geometry container
+    type(TGeometry), intent(in) :: geo
+
+    !> index of center atom of G-function and atom to calculate force components for
+    integer, intent(in) :: iAtom, iForceAtom
+
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId
+
+    !> atom ID of force atom
+    real(dp), intent(in) :: forceAtomId
+
+    !> cutoff radius
+    real(dp), intent(in) :: rcut
+
+    !> distance between center atom of G-function and force atom
+    real(dp) :: dist
+
+    !> corresponding symmetry function derivatives
+    real(dp) :: g1Prime(3)
+
+    dist = distance(geo, iAtom, iForceAtom)
+
+    g1Prime(:) = (pi * (geo%coords(:, iAtom) - geo%coords(:, iForceAtom)) * sin(pi * dist / rcut))&
+        & / (2.0_dp * rcut * dist)
 
   end function g1Prime
 
