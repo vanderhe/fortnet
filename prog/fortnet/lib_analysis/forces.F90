@@ -347,7 +347,7 @@ contains
     logical :: tLead
 
     !> auxiliary variables
-    integer :: iSys, iAtom, iAcsf, iCoord, iStart, iEnd
+    integer :: iSys, iAtom, iForceAtom, iAcsf, iCoord, iStart, iEnd
 
   #:if WITH_MPI
     tLead = env%globalMpiComm%lead
@@ -367,11 +367,22 @@ contains
     end do
     resPredicts = predicts
 
+    ! prepare structure that stores the atomic forces
+    allocate(forces%geos(size(features)))
+    do iSys = 1, size(features)
+      allocate(forces%geos(iSys)%array(3 * bpnn%dims(size(bpnn%dims)),&
+          & size(features(iSys)%array, dim=2)))
+      forces%geos(iSys)%array(:,:) = 0.0_dp
+    end do
+    resForces = forces
+
+    ! calculate network predictions
     do iSys = iStart, iEnd
       predicts%sys(iSys)%array(:,:) = bpnn%iPredict(features(iSys)%array,&
           & localAtToGlobalSp(iSys)%array, .false.)
     end do
 
+    ! sync network predictions
   #:if WITH_MPI
     do iSys = 1, size(features)
       call mpifx_allreduce(env%globalMpiComm, predicts%sys(iSys)%array,&
@@ -383,35 +394,23 @@ contains
     resPredicts = predicts
   #:endif
 
-    ! prepare structure that stores the atomic forces
-    allocate(forces%geos(size(features)))
-    do iSys = 1, size(features)
-      allocate(forces%geos(iSys)%array(3 * bpnn%dims(size(bpnn%dims)),&
-          & size(features(iSys)%array, dim=2)))
-      forces%geos(iSys)%array(:,:) = 0.0_dp
-    end do
-    resForces = forces
+    ! calculate atomic forces
+    lpSys: do iSys = iStart, iEnd
+      lpForceAtom: do iForceAtom = 1, size(features(iSys)%array, dim=2)
+        lpAtom: do iAtom = 1, size(features(iSys)%array, dim=2)
+          lpAcsf: do iAcsf = 1, size(features(iSys)%array, dim=1)
+            lpCoord: do iCoord = 1, 3
+              forces%geos(iSys)%array(iCoord::3, iForceAtom)&
+                  & = forces%geos(iSys)%array(iCoord::3, iForceAtom)&
+                  & - jacobian%sys(iSys)%atom(iAtom)%array(:, iAcsf)&
+                  & * forcesAcsf%valsPrime%vals(iSys)%array(iCoord, iAcsf, iAtom, iForceAtom)
+            end do lpCoord
+          end do lpAcsf
+        end do lpAtom
+      end do lpForceAtom
+    end do lpSys
 
-  #:if WITH_MPI
-    call getStartAndEndIndex(size(features), env%globalMpiComm%size, env%globalMpiComm%rank,&
-        & iStart, iEnd)
-  #:else
-    iStart = 1
-    iEnd = size(features)
-  #:endif
-
-    do iSys = iStart, iEnd
-      do iAtom = 1, size(features(iSys)%array, dim=2)
-        do iAcsf = 1, size(features(iSys)%array, dim=1)
-          do iCoord = 1, 3
-            forces%geos(iSys)%array(iCoord::3, iAtom) = forces%geos(iSys)%array(iCoord::3, iAtom)&
-                & - jacobian%sys(iSys)%atom(iAtom)%array(:, iAcsf)&
-                & * forcesAcsf%valsPrime%vals(iSys)%array(iCoord, iAcsf, iAtom)
-          end do
-        end do
-      end do
-    end do
-
+    ! sync atomic forces
   #:if WITH_MPI
     do iSys = 1, size(features)
       call mpifx_allreduce(env%globalMpiComm, forces%geos(iSys)%array, resForces%geos(iSys)%array,&
