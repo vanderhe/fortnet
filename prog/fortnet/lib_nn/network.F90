@@ -167,9 +167,8 @@ contains
       this%layers(ii)%aa = this%layers(ii)%transfer(this%layers(ii)%aarg)
     end do
 
-    state = this%layers
-
-    call this%getOutput(out)
+    if (present(state)) state = this%layers
+    if (present(out)) call this%getOutput(out)
 
   end subroutine TNetwork_fprop
 
@@ -210,20 +209,17 @@ contains
       deriv = this%layers(ii)%transferDeriv(aarg)
 
       if (allocated(diagDeriv)) deallocate(diagDeriv)
-      ! allocate(diagDeriv(size(this%layers(ii)%transferDeriv(aarg)),&
-      !     & size(this%layers(ii)%transferDeriv(aarg))))
       allocate(diagDeriv(size(deriv), size(deriv)))
+      diagDeriv(:,:) = 0.0_dp
       do jj = 1, size(this%layers(ii)%transferDeriv(aarg))
         diagDeriv(jj, jj) = deriv(jj)
       end do
 
-      ! jacobi = matmul(matmul(diagDeriv, this%layers(ii - 1)%ww), jacobi)
       jacobi = matmul(diagDeriv, matmul(transpose(this%layers(ii - 1)%ww), jacobi))
 
     end do
 
   end function TNetwork_fdevi
-
 
 
   !> Determines the gradients in weight-bias space by a simple back-propagation algorithm.
