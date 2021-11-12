@@ -694,7 +694,6 @@ contains
               & prog%trainDataset%localAtToGlobalSp)
           forces = forceAnalysis(bpnn, prog%features%trainFeatures, jacobian, forcesAcsf, prog%env,&
               & prog%trainDataset%localAtToGlobalSp)
-          ! print *, shape(jacobian%sys(1)%atom(1)%array)
         end if
         write(stdOut, '(A,/)') 'done'
       else

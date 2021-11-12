@@ -126,6 +126,7 @@ module fnet_acsf
 
     procedure :: getMeansAndVariances => TAcsf_getMeansAndVariances
     procedure :: applyZscore => TAcsf_applyZscore
+    procedure :: applyZscorePrime => TAcsf_applyZscorePrime
     procedure :: calculate => TAcsf_calculate
     procedure :: calculatePrime => TAcsf_calculatePrime
     procedure :: fromFile => TAcsf_fromFile
@@ -493,7 +494,7 @@ contains
     class(TAcsf), intent(inout) :: this
 
     !> auxiliary variables
-    integer :: iGeo, iAtom, iAcsf
+    integer :: iGeo, iAcsf
 
     if (.not. allocated(this%zPrec)) then
       call error('Cannot apply z-score standardization without means and variances.')
@@ -501,18 +502,39 @@ contains
 
     ! apply z-score standardization to ACSF mappings
     do iGeo = 1, size(this%vals%vals)
-      do iAtom = 1, size(this%vals%vals(iGeo)%array, dim=2)
-        do iAcsf = 1, size(this%vals%vals(iGeo)%array, dim=1)
-          if (this%zPrec(iAcsf, 2) < 1e-08_dp) then
-            cycle
-          end if
-          this%vals%vals(iGeo)%array(iAcsf, iAtom) = (this%vals%vals(iGeo)%array(iAcsf, iAtom) -&
-              & this%zPrec(iAcsf, 1)) / this%zPrec(iAcsf, 2)
-        end do
+      do iAcsf = 1, size(this%vals%vals(iGeo)%array, dim=1)
+        if (this%zPrec(iAcsf, 2) < 1e-08_dp) cycle
+        this%vals%vals(iGeo)%array(iAcsf, :) = (this%vals%vals(iGeo)%array(iAcsf, :) -&
+            & this%zPrec(iAcsf, 1)) / this%zPrec(iAcsf, 2)
       end do
     end do
 
   end subroutine TAcsf_applyZscore
+
+
+  !> Account for possible z-score preconditioning in the ACSF derivatives.
+  subroutine TAcsf_applyZscorePrime(this)
+
+    !> representation of ACSF mappings
+    class(TAcsf), intent(inout) :: this
+
+    !> auxiliary variables
+    integer :: iGeo, iAcsf
+
+    if (.not. allocated(this%zPrec)) then
+      call error('Cannot apply z-score standardization without means and variances.')   
+    end if
+
+    ! apply z-score standardization to ACSF derivatives
+    do iGeo = 1, size(this%valsPrime%vals)
+      do iAcsf = 1, size(this%valsPrime%vals(iGeo)%array, dim=2)
+        if (this%zPrec(iAcsf, 2) < 1e-08_dp) cycle
+        this%valsPrime%vals(iGeo)%array(:, iAcsf, :, :)&
+            & = this%valsPrime%vals(iGeo)%array(:, iAcsf, :, :) / this%zPrec(iAcsf, 2)
+      end do
+    end do
+
+  end subroutine TAcsf_applyZscorePrime
 
 
   !> Calculates ACSF mappings for given geometries.
@@ -669,7 +691,6 @@ contains
     call TMultiAcsfPrimeVals_init(this%valsPrime, geos, size(this%gFunctions%func))
 
     lpSystem: do iSys = iStart, iEnd
-      ! if (.not. allocated(extFeatures(iSys)%array)) allocate(extFeatures(iSys)%array(0,0))
       call iGeoAcsfPrime(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func,&
           & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
     end do lpSystem
@@ -683,6 +704,10 @@ contains
   #:else
     this%valsPrime = tmpValsPrime
   #:endif
+
+    if (tLead .and. this%tZscore) then
+      call this%applyZscorePrime()
+    end if
 
   #:if WITH_MPI
     do iSys = 1, size(this%valsPrime%vals)
@@ -873,35 +898,34 @@ contains
 
     lpForceAtom: do iForceAtom = 1, geo%nAtom
       lpAtom: do iAtom = 1, geo%nAtom
-        ! prevent cancellation of summands
-        if (iAtom == iForceAtom) cycle lpAtom
         lpAcsf: do iAcsf = 1, size(gFunctions)
 
-          ! if (iForceAtom == iAtom) then
-          !   call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
-          !       & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
-          !       & neighDists1, neighDists2, neighCoords1, neighCoords2)
-          !   select case (gFunctions(iAcsf)%type)
-          !   case ('g1')
-          !     this%array(:, iAcsf, iAtom, iForceAtom) = g1PrimeSelf(geo%coords(:, iAtom),&
-          !         & neighCoords1, neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%rCut)
-          !   case ('g2')
-          !     ! dummy derivatives for now
-          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-          !   case ('g3')
-          !     ! dummy derivatives for now
-          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-          !   case ('g4')
-          !     ! dummy derivatives for now
-          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-          !   case ('g5')
-          !     ! dummy derivatives for now
-          !     this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-          !   case default
-          !     call error('Invalid function type, aborting ACSF calculation.')
-          !   end select
+          if (iForceAtom == iAtom) then
+            call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
+                & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
+                & neighDists1, neighDists2, neighCoords1, neighCoords2)
+            select case (gFunctions(iAcsf)%type)
+            case ('g1')
+              this%array(:, iAcsf, iAtom, iForceAtom) = g1PrimeSelf(geo%coords(:, iAtom),&
+                  & neighCoords1, neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%rCut)
+            case ('g2')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case ('g3')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case ('g4')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case ('g5')
+              ! dummy derivatives for now
+              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+            case default
+              call error('Invalid function type, aborting ACSF calculation.')
+            end select
 
-          if (distance(geo, iAtom, iForceAtom) <= gFunctions(iAcsf)%rCut) then
+          elseif (distance(geo, iAtom, iForceAtom) <= gFunctions(iAcsf)%rCut) then
+
             select case (gFunctions(iAcsf)%type)
             case ('g1')
               if (.not. present(extFeatures)) then
@@ -928,9 +952,11 @@ contains
             case default
               call error('Invalid function type, aborting ACSF calculation.')
             end select
+
           else
             ! atom to calculate forces for wasn't in the cutoff sphere
             this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+
           end if
 
         end do lpAcsf
@@ -1469,12 +1495,12 @@ contains
 
       do jj = 1, size(neighCoords, dim=2)
         ! calculate G1 derivatives
-        g1PrimeSelf = g1PrimeSelf - (atomCoords - neighCoords(:, jj))&
+        g1PrimeSelf = g1PrimeSelf + atomIds(jj) * (atomCoords - neighCoords(:, jj))&
             & * sin(pi * neighDists(jj) / rcut) / neighDists(jj)
       end do
 
       ! multiply with constant prefactor
-      g1PrimeSelf = - pi / (2.0_dp * rcut) * g1PrimeSelf
+      g1PrimeSelf = - pi * atomId / (2.0_dp * rcut) * g1PrimeSelf
 
     end if
 
@@ -1508,8 +1534,8 @@ contains
 
     dist = distance(geo, iAtom, iForceAtom)
 
-    g1Prime(:) = (pi * (geo%coords(:, iAtom) - geo%coords(:, iForceAtom)) * sin(pi * dist / rcut))&
-        & / (2.0_dp * rcut * dist)
+    g1Prime(:) = (pi * atomId * forceAtomId * (geo%coords(:, iAtom) - geo%coords(:, iForceAtom))&
+        & * sin(pi * dist / rcut)) / (2.0_dp * rcut * dist)
 
   end function g1Prime
 
