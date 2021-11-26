@@ -1396,10 +1396,9 @@ contains
               & atomId2, atomIds2(kk), rcut) * cutoff(distjk, atomIds1(jj), atomIds2(kk), rcut)
         end do
       end do
+    end do
 
-      g4 = g4 * 2.0_dp**(1.0_dp - xi)
-
-    end if
+    g4 = g4 * 2.0_dp**(1.0_dp - xi)
 
   end function g4
 
