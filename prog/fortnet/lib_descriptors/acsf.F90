@@ -1392,9 +1392,9 @@ contains
           g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
               & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
               & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2))&
-              & * cutoff(neighDists1(jj), atomId1, atomIds1(jj), rcut) * cutoff(neighDists2(kk),&
-              & atomId2, atomIds2(kk), rcut) * cutoff(neighDists2(kk), atomIds1(jj), atomIds2(kk),&
-              & rcut)
+              & * cutoff(neighDists1(jj), atomId1     , atomIds1(jj), rcut) *
+              &   cutoff(neighDists2(kk), atomId2     , atomIds2(kk), rcut) * 
+              &   cutoff(distjk         , atomIds1(jj), atomIds2(kk), rcut)
         end do
       end do
 
