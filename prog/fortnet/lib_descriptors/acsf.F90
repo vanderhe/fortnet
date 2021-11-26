@@ -1382,25 +1382,23 @@ contains
 
     g4 = 0.0_dp
 
-    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
+    if ((size(neighDists1) == 0) .and. (size(neighDists2) == 0)) return
 
-      do jj = 1, size(neighCoords1, dim=2)
-        do kk = 1, size(neighCoords2, dim=2)
-          ! calculate distance between atom j of species 1 and atom k of species 2
-          distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
-          ! calculate G4 function contribution
-          g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
-              & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
-              & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2))&
-              & * cutoff(neighDists1(jj), atomId1     , atomIds1(jj), rcut) *
-              &   cutoff(neighDists2(kk), atomId2     , atomIds2(kk), rcut) * 
-              &   cutoff(distjk         , atomIds1(jj), atomIds2(kk), rcut)
-        end do
+    do jj = 1, size(neighCoords1, dim=2)
+      do kk = 1, size(neighCoords2, dim=2)
+        ! calculate distance between atom j of species 1 and atom k of species 2
+        distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
+        ! calculate G4 function contribution
+        g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj), neighCoords2(:, kk), 
+            &   neighDists1(jj), neighDists2(kk))))**xi &
+            & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2)) &
+            & * cutoff(neighDists1(jj), atomId1     , atomIds1(jj), rcut) *
+            &   cutoff(neighDists2(kk), atomId2     , atomIds2(kk), rcut) * 
+            &   cutoff(distjk         , atomIds1(jj), atomIds2(kk), rcut)
       end do
+    end do
 
-      g4 = g4 * 2.0_dp**(1.0_dp - xi)
-
-    end if
+    g4 = g4 * 2.0_dp**(1.0_dp - xi)
 
   end function g4
 
