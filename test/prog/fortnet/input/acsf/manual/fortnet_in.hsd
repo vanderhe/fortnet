@@ -32,6 +32,13 @@ Features {
       Eta = 1.4
       Lambda = 1.0
     }
+    Function = G4 {
+      AtomID = 0
+      RCut = 4.0
+      Xi = 16.0
+      Eta = 1.4
+      Lambda = -1.0
+    }
     Function = G5 {
       AtomID = 0
       RCut = 4.0
