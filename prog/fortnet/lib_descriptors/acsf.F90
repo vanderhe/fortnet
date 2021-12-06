@@ -37,7 +37,6 @@ module fnet_acsf
   public :: TAcsf, TAcsf_init, TMultiAcsfVals, TMultiAcsfPrimeVals
   public :: TGFunction, TGFunction_init, TGFunctions
 
-
   type :: TGFunction
 
     !> type of function
@@ -141,6 +140,16 @@ module fnet_acsf
   !> Chunk size to use when obtaining neighbours dynamically via an iterator
   !> (used to artificially restrict memory usage to a certain amount)
   integer, parameter :: iterChunkSize = 1000
+  
+  interface
+    module subroutine GeoAcsfGrad(this, geo, gFunctions, localAtToAtNum, extFeatures)
+      type(TRealArray4D), intent(inout) :: this
+      type(TGeometry)   , intent(in)    :: geo               !> system geometry container
+      type(TGFunction), intent(in)      :: gFunctions(:)     !> list of multiple G-functions
+      integer, intent(in)               :: localAtToAtNum(:) !> index mapping local atom --> atomic number
+      real(dp), intent(in), optional    :: extFeatures(:,:)
+    end subroutine GeoAcsfGrad
+  end interface
 
 
 contains
@@ -691,8 +700,10 @@ contains
     call TMultiAcsfPrimeVals_init(this%valsPrime, geos, size(this%gFunctions%func))
 
     lpSystem: do iSys = iStart, iEnd
-      call iGeoAcsfPrime(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func,&
-          & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
+      !call iGeoAcsfPrime(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func,&
+      !    & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
+      call GeoAcsfGrad(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func, &
+                       & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
     end do lpSystem
 
   #:if WITH_MPI
@@ -825,7 +836,7 @@ contains
     real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
 
     !> auxiliary variables
-    integer :: iAtom, iAcsf, iAtomOut1
+    integer :: iAtom, iAcsf, iAtomOut1, i, j
 
     do iAtom = 1, geo%nAtom
       do iAcsf = 1, size(gFunctions)
@@ -833,6 +844,20 @@ contains
         call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
             & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
             & neighDists1, neighDists2, neighCoords1, neighCoords2)
+        
+        ! DEBUG
+        if (gFunctions(iAcsf)%type == 'g1') then
+          if (iAtom == 14) then
+            write(*,*)
+            do i = 1, size(neighCoords1, dim=2)
+              do j = 1, 3
+                write(*,'(F15.12, 2X)', advance='no') neighCoords1(j,i)
+              end do
+              write(*,*)
+            end do
+            call error('debugging...')
+          end if
+        end if
 
         select case (gFunctions(iAcsf)%type)
         case ('g1')
@@ -864,6 +889,11 @@ contains
 
 
   !> Calculates ACSF derivatives for a single geometry.
+!  
+!  name: iGeoAcsfPrime
+!  @param
+!  @return
+!  
   subroutine iGeoAcsfPrime(this, geo, gFunctions, localAtToAtNum, extFeatures)
 
     !> symmetry function derivative instance of geometry
@@ -965,11 +995,10 @@ contains
 
   end subroutine iGeoAcsfPrime
 
-
   !> Builds the G-function specific neighborlist for a given atom and geometry.
   subroutine buildGFunctionNeighborlists(iAtom, geo, gFunction, localAtToAtNum, extFeatures, geo1,&
       & geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2, neighDists1, neighDists2,&
-      & neighCoords1, neighCoords2)
+      & neighCoords1, neighCoords2, atomIndices1_, atomIndices2_)
 
     !> atom index to calculate ACSF mapping force
     integer, intent(in) :: iAtom
@@ -1003,9 +1032,12 @@ contains
 
     !> neighbor coordinates
     real(dp), intent(out), allocatable :: neighCoords1(:,:), neighCoords2(:,:)
-
+    
+    !> neighbour atom indices (dummy)
+    integer,  intent(out), optional, allocatable :: atomIndices1_(:), atomIndices2_(:)
+    
     !> neighbor atom indices
-    integer, allocatable :: atomIndices1(:), atomIndices2(:)
+    integer,  allocatable :: atomIndices1(:), atomIndices2(:)
 
     !> masks to determine which atoms to keep while reducing the geometry
     integer, allocatable :: tKeep1(:), tKeep2(:)
@@ -1022,14 +1054,15 @@ contains
     else
       tSpeciesResolved = .true.
     end if
+    
     if (.not. tSpeciesResolved) then
       geo1 = geo
       geo2 = geo1
       iAtomOut1 = iAtom
       iAtomOut2 = iAtomOut1
       if (gFunction%atomId > 0) then
-        atomId1 = extFeatures(gFunction%atomId, iAtom)
-        atomId2 = atomId1
+        atomId1  = extFeatures(gFunction%atomId, iAtom)
+        atomId2  = atomId1
         atomIds1 = extFeatures(gFunction%atomId, :)
         atomIds2 = atomIds1
       else
@@ -1043,45 +1076,52 @@ contains
         atomIds2(:) = 1.0_dp
       end if
       call buildNeighborlist(geo1, gFunction%rCut, iAtom, neighDists1, neighCoords1, atomIndices1)
-      neighDists2 = neighDists1
+      neighDists2  = neighDists1
       neighCoords2 = neighCoords1
       atomIndices2 = atomIndices1
       atomIds1 = atomIds1(atomIndices1)
       atomIds2 = atomIds1
+      
     else
       ! reduce geometry to a given species
-      call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(1)], geo1,&
-          & iAtomOut1, tKeep=tKeep1)
+      call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(1)], geo1, iAtomOut1, tKeep=tKeep1)
       if (gFunction%atomId > 0) then
-        atomId1 = extFeatures(gFunction%atomId, iAtomOut1)
+        atomId1  = extFeatures(gFunction%atomId, iAtomOut1)
         atomIds1 = extFeatures(gFunction%atomId, tKeep1)
-      else
+       else
         atomId1 = 1.0_dp
         if (allocated(atomIds1)) deallocate(atomIds1)
         allocate(atomIds1(geo1%nAtom))
         atomIds1(:) = 1.0_dp
       end if
-      call buildNeighborlist(geo1, gFunction%rCut, iAtomOut1, neighDists1, neighCoords1,&
-          & atomIndices1)
+      call buildNeighborlist(geo1, gFunction%rCut, iAtomOut1, neighDists1, neighCoords1, atomIndices1)
       atomIds1 = atomIds1(atomIndices1)
-    end if
-    ! for angular functions species tupels, i.e. pairs of atomic numbers are required
-    if (gFunction%tAngular .and. tSpeciesResolved) then
-      call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(2)], geo2,&
-          & iAtomOut2, tKeep=tKeep2)
-      if (gFunction%atomId > 0) then
-        atomId2 = extFeatures(gFunction%atomId, iAtomOut2)
-        atomIds2 = extFeatures(gFunction%atomId, tKeep2)
-      else
-        atomId2 = 1.0_dp
-        if (allocated(atomIds2)) deallocate(atomIds2)
-        allocate(atomIds2(geo2%nAtom))
-        atomIds2(:) = 1.0_dp
+      
+      ! for angular functions species tupels, i.e. pairs of atomic numbers are required
+      if (gFunction%tAngular) then
+        call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(2)], geo2, iAtomOut2, tKeep=tKeep2)
+        if (gFunction%atomId > 0) then
+          atomId2  = extFeatures(gFunction%atomId, iAtomOut2)
+          atomIds2 = extFeatures(gFunction%atomId, tKeep2)
+         else
+          atomId2  = 1.0_dp
+          if (allocated(atomIds2)) deallocate(atomIds2)
+          allocate(atomIds2(geo2%nAtom))
+          atomIds2(:) = 1.0_dp
+        end if
+        call buildNeighborlist(geo2, gFunction%rCut, iAtomOut2, neighDists2, neighCoords2, atomIndices2)
+        atomIds2 = atomIds2(atomIndices2)
+       else
+        atomId2  = atomId1
+        atomIds2 = atomIds1
+        atomIndices2 = atomIndices1
+        tKeep2 = tKeep1
       end if
-      call buildNeighborlist(geo2, gFunction%rCut, iAtomOut2, neighDists2, neighCoords2,&
-          & atomIndices2)
-      atomIds2 = atomIds2(atomIndices2)
+      
     end if
+    
+    if (present(atomIndices1_)) atomIndices1_ = tKeep1(atomIndices1)
+    if (present(atomIndices2_)) atomIndices2_ = tKeep2(atomIndices2)
 
   end subroutine buildGFunctionNeighborlists
 
@@ -1389,11 +1429,11 @@ contains
         ! calculate distance between atom j of species 1 and atom k of species 2
         distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
         ! calculate G4 function contribution
-        g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj), neighCoords2(:, kk), 
-            &   neighDists1(jj), neighDists2(kk))))**xi &
-            & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2)) &
-            & * cutoff(neighDists1(jj), atomId1     , atomIds1(jj), rcut) *
-            &   cutoff(neighDists2(kk), atomId2     , atomIds2(kk), rcut) * 
+        g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj), neighCoords2(:, kk), &
+                                                           &   neighDists1(jj), neighDists2(kk))))**xi &
+            & * exp(-eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2)) &
+            & * cutoff(neighDists1(jj), atomId1     , atomIds1(jj), rcut) * &
+            &   cutoff(neighDists2(kk), atomId2     , atomIds2(kk), rcut) * &
             &   cutoff(distjk         , atomIds1(jj), atomIds2(kk), rcut)
       end do
     end do
