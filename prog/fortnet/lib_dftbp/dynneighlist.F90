@@ -33,7 +33,7 @@ module dftbp_dynneighlist
     !> Cutoff for neighbour generation
     real(dp) :: cutoff
 
-    !> Nr. of atoms 
+    !> Nr. of atoms
     integer :: nAtom
 
     !> Coordinates of atoms (folded into unit cell, if periodic)
@@ -101,7 +101,7 @@ module dftbp_dynneighlist
 
     !> Whether current iterations belong to central cell
     logical :: isCentral
-    
+
   contains
 
     procedure :: getNextNeighbours => TNeighIterator_getNextNeighbours
@@ -285,6 +285,7 @@ contains
         end if
         if (this%tFinished) exit
         this%iAtom2 = this%iAtom1
+        iAtom2 = this%iAtom1
       end if
 
       neighCoords(:) = this%neighList%coords0(:, iAtom2) + this%cellVec
