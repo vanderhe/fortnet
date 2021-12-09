@@ -299,6 +299,9 @@ contains
     !> true, if current mpi process is the lead
     logical :: tLead
 
+    ! make sure that allocatables are assigned
+    this%inp%training%lossType = ''
+
   #:if WITH_MPI
     tLead = this%env%globalMpiComm%lead
   #:else
