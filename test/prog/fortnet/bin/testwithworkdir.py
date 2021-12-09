@@ -21,8 +21,8 @@ import h5py
 import numpy as np
 
 
-ATOL = 1e-06
-RTOL = 1e-05
+ATOL = 1e-10
+RTOL = 1e-09
 
 NETSTAT = 'fortnet.hdf5'
 FNETOUT = 'fnetout.hdf5'

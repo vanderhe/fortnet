@@ -21,7 +21,7 @@
 set(Fortran_FLAGS "${CMAKE_Fortran_FLAGS}"
   CACHE STRING "Build type independent Fortran compiler flags")
 
-set(Fortran_FLAGS_RELEASE "-O2 -ip -heap-arrays 10"
+set(Fortran_FLAGS_RELEASE "-O1 -fp-model precise -ip -heap-arrays 10"
   CACHE STRING "Fortran compiler flags for Release build")
 
 set(Fortran_FLAGS_RELWITHDEBINFO "-g ${Fortran_FLAGS_RELEASE}"
