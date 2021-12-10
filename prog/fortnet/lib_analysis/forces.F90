@@ -114,7 +114,7 @@ contains
         this%geos(iGeo)%atom(iAtom)%coord(6)%coords(3, iAtom)&
             & = this%geos(iGeo)%atom(iAtom)%coord(6)%coords(3, iAtom) + delta
       end do
-    end do    
+    end do
 
   end subroutine TGeometriesForFiniteDiff_init
 
