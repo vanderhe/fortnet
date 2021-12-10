@@ -1033,7 +1033,7 @@ contains
     end do
 
     ! close the bpnn group
-    call h5gclose_f(bpnn_id, iErr)    
+    call h5gclose_f(bpnn_id, iErr)
 
     ! close the netstat group
     call h5gclose_f(netstat_id, iErr)
@@ -1174,7 +1174,7 @@ contains
     end do
 
     ! close the bpnn group
-    call h5gclose_f(bpnn_id, iErr)    
+    call h5gclose_f(bpnn_id, iErr)
 
     ! close the netstat group
     call h5gclose_f(netstat_id, iErr)

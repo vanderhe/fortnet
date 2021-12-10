@@ -420,7 +420,7 @@ contains
       call error('Container for acsf means and variances is already allocated.')
     else
       allocate(this%zPrec(size(this%gFunctions%func), 2))
-      this%zPrec(:,:) = 0.0_dp      
+      this%zPrec(:,:) = 0.0_dp
     end if
 
     nTotAtoms = 0
@@ -459,7 +459,7 @@ contains
     integer :: iGeo, iAtom, iAcsf
 
     if (.not. allocated(this%zPrec)) then
-      call error('Cannot apply z-score standardization without means and variances.')   
+      call error('Cannot apply z-score standardization without means and variances.')
     end if
 
     ! apply z-score standardization to ACSF mappings
@@ -1585,7 +1585,7 @@ contains
     end if
 
     ! close the mapping group
-    call h5gclose_f(mapping_id, iErr)    
+    call h5gclose_f(mapping_id, iErr)
 
     ! close the netstat group
     call h5gclose_f(netstat_id, iErr)

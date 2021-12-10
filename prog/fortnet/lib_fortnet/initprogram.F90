@@ -1095,7 +1095,7 @@ contains
           call getChildValue(child, '', tmp)
           call getNodeName(tmp, strBuffer2)
           type = tolower(trim(char(strBuffer2)))
-          
+
           ! get cutoff radius and convert Angstrom to Bohr
           call getChildValue(tmp, 'RCut', rCut)
           if (rCut <= 0.0_dp) then
@@ -1108,7 +1108,7 @@ contains
           if (atomId < 0) then
             call detailedError(tmp, 'Specified AtomID below zero.')
           end if
-          
+
           select case (type)
           case ('auto')
             ! settings for automatic function and parameter generation

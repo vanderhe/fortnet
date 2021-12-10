@@ -198,7 +198,7 @@ contains
   end subroutine TPredicts_init
 
 
-  !> Initialises an MPI environment. 
+  !> Initialises an MPI environment.
   subroutine TEnv_init(this)
 
     !> mpi environment instance

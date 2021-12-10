@@ -43,7 +43,7 @@ contains
 
     !> auxiliary variables
     integer :: ii, rndpos, tmp
- 
+
     do ii = size(array), 2, -1
       call getRandom(rndGen, rnd)
       rndpos = int(rnd * ii) + 1
