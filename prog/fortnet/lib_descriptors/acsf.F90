@@ -18,8 +18,8 @@ module fnet_acsf
   use dftbp_constants, only: pi
   use dftbp_charmanip, only : i2c, tolower
   use dftbp_typegeometry, only : TGeometry
-  use dftbp_dynneighlist, only : TDynNeighList, TDynNeighList_init
-  use dftbp_dynneighlist, only : TNeighIterator, TNeighIterator_init
+  use dftbp_dynneighlist, only : TDynNeighList, TDynNeighList_init, TNeighIterator,&
+      & TNeighIterator_init
 
   use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TRealArray4D, TEnv
   use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
@@ -140,16 +140,6 @@ module fnet_acsf
   !> Chunk size to use when obtaining neighbours dynamically via an iterator
   !> (used to artificially restrict memory usage to a certain amount)
   integer, parameter :: iterChunkSize = 1000
-  
-  interface
-    module subroutine GeoAcsfGrad(this, geo, gFunctions, localAtToAtNum, extFeatures)
-      type(TRealArray4D), intent(inout) :: this
-      type(TGeometry)   , intent(in)    :: geo               !> system geometry container
-      type(TGFunction), intent(in)      :: gFunctions(:)     !> list of multiple G-functions
-      integer, intent(in)               :: localAtToAtNum(:) !> index mapping local atom --> atomic number
-      real(dp), intent(in), optional    :: extFeatures(:,:)
-    end subroutine GeoAcsfGrad
-  end interface
 
 
 contains
@@ -531,7 +521,7 @@ contains
     integer :: iGeo, iAcsf
 
     if (.not. allocated(this%zPrec)) then
-      call error('Cannot apply z-score standardization without means and variances.')   
+      call error('Cannot apply z-score standardization without means and variances.')
     end if
 
     ! apply z-score standardization to ACSF derivatives
@@ -700,10 +690,8 @@ contains
     call TMultiAcsfPrimeVals_init(this%valsPrime, geos, size(this%gFunctions%func))
 
     lpSystem: do iSys = iStart, iEnd
-      !call iGeoAcsfPrime(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func,&
-      !    & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
-      call GeoAcsfGrad(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func, &
-                       & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
+      call iGeoAcsfGrad(tmpValsPrime%vals(iSys), geos(iSys), this%gFunctions%func,&
+          & localAtToAtNum(iSys)%array, extFeatures=extFeatures(iSys)%array)
     end do lpSystem
 
   #:if WITH_MPI
@@ -836,7 +824,7 @@ contains
     real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
 
     !> auxiliary variables
-    integer :: iAtom, iAcsf, iAtomOut1, i, j
+    integer :: iAtom, iAcsf, iAtomOut1
 
     do iAtom = 1, geo%nAtom
       do iAcsf = 1, size(gFunctions)
@@ -844,38 +832,6 @@ contains
         call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
             & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
             & neighDists1, neighDists2, neighCoords1, neighCoords2)
-        
-        ! DEBUG
-!~         if (gFunctions(iAcsf)%type == 'g1') then
-!~           if (iAtom == 14) then
-!~             write(*,*) 'coordinates: '
-!~             do i = 1, size(geo%coords, dim=2)
-!~               write(*,'(I3,3X)', advance='no') geo%species(i)
-!~               do j = 1, 3
-!~                 write(*,'(F15.12, 2X)', advance='no') geo%coords(j,i)
-!~               end do
-!~               write(*,*)
-!~             end do
-!~             write(*,*)
-!~             write(*,*) 'lattice: '
-!~             do i = 1, 3
-!~               do j = 1, 3
-!~                 write(*,'(F15.12, 2X)', advance='no') geo%latVecs(j,i)
-!~               end do
-!~               write(*,*)
-!~             end do
-!~             write(*,*)
-            
-!~             do i = 1, size(neighCoords1, dim=2)
-!~               !write(*,) 
-!~               do j = 1, 3
-!~                 write(*,'(F15.12, 2X)', advance='no') neighCoords1(j,i)
-!~               end do
-!~               write(*,*)
-!~             end do
-!~             call error('debugging...')
-!~           end if
-!~         end if
 
         select case (gFunctions(iAcsf)%type)
         case ('g1')
@@ -907,12 +863,7 @@ contains
 
 
   !> Calculates ACSF derivatives for a single geometry.
-!  
-!  name: iGeoAcsfPrime
-!  @param
-!  @return
-!  
-  subroutine iGeoAcsfPrime(this, geo, gFunctions, localAtToAtNum, extFeatures)
+  subroutine iGeoAcsfGrad(this, geo, gFunctions, localAtToAtNum, extFeatures)
 
     !> symmetry function derivative instance of geometry
     type(TRealArray4D), intent(inout) :: this
@@ -941,77 +892,42 @@ contains
     !> neighbor coordinates and squared distances
     real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
 
+    !> global indices of neighboring atoms in the reduced geometry
+    integer, allocatable  :: atomIndices1(:), atomIndices2(:)
+
     !> auxiliary variables
-    integer :: iAtom, iForceAtom, iAcsf, iAtomOut1
+    integer :: iAtom, iAcsf, iAtomOut1
 
-    lpForceAtom: do iForceAtom = 1, geo%nAtom
-      lpAtom: do iAtom = 1, geo%nAtom
-        lpAcsf: do iAcsf = 1, size(gFunctions)
+    do iAtom = 1, geo%nAtom
+      do iAcsf = 1, size(gFunctions)
 
-          if (iForceAtom == iAtom) then
-            call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
-                & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
-                & neighDists1, neighDists2, neighCoords1, neighCoords2)
-            select case (gFunctions(iAcsf)%type)
-            case ('g1')
-              this%array(:, iAcsf, iAtom, iForceAtom) = g1PrimeSelf(geo%coords(:, iAtom),&
-                  & neighCoords1, neighDists1, atomId1, atomIds1, gFunctions(iAcsf)%rCut)
-            case ('g2')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case ('g3')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case ('g4')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case ('g5')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case default
-              call error('Invalid function type, aborting ACSF calculation.')
-            end select
+        call buildGFunctionNeighborlists(iAtom, geo, gFunctions(iAcsf), localAtToAtNum,&
+            & extFeatures, geo1, geo2, iAtomOut1, atomId1, atomId2, atomIds1, atomIds2,&
+            & neighDists1, neighDists2, neighCoords1, neighCoords2, atomIndices1_=atomIndices1,&
+            & atomIndices2_=atomIndices2)
 
-          elseif (distance(geo, iAtom, iForceAtom) <= gFunctions(iAcsf)%rCut) then
+        this%array(:, iAcsf, iAtom, atomIndices1) = gFuncGrad(gFunctions(iAcsf),&
+            & geo%coords(:,iAtom), AtomId1, neighCoords1, neighDists1, atomIds1, neighCoords2,&
+            & neighDists2, atomIds2)
 
-            select case (gFunctions(iAcsf)%type)
-            case ('g1')
-              if (.not. present(extFeatures)) then
-                atomId1 = 1.0_dp
-                atomId2 = 1.0_dp
-              else
-                atomId1 = extFeatures(gFunctions(iAcsf)%atomId, iAtom)
-                atomId2 = extFeatures(gFunctions(iAcsf)%atomId, iForceAtom)                
-              end if
-              this%array(:, iAcsf, iAtom, iForceAtom) = g1Prime(geo, iAtom, iForceAtom, atomId1,&
-                  & atomId2, gFunctions(iAcsf)%rCut)
-            case ('g2')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case ('g3')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case ('g4')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case ('g5')
-              ! dummy derivatives for now
-              this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
-            case default
-              call error('Invalid function type, aborting ACSF calculation.')
-            end select
+        this%array(:, iAcsf, iAtom, iAtom) = - sum(this%array(:, iAcsf, iAtom, atomIndices1), dim=2)
 
-          else
-            ! atom to calculate forces for wasn't in the cutoff sphere
-            this%array(:, iAcsf, iAtom, iForceAtom) = 0.0_dp
+        if (gFunctions(iAcsf)%tAngular) then
+          if (gFunctions(iAcsf)%atomicNumbers(1) /= gFunctions(iAcsf)%atomicNumbers(2)) then
+            this%array(:, iAcsf, iAtom, atomIndices2) = gFuncGrad(gFunctions(iAcsf),&
+                & geo%coords(:,iAtom), AtomId1, neighCoords2, neighDists2, atomIds2, neighCoords1,&
+                & neighDists1, atomIds1)
 
+            this%array(:, iAcsf, iAtom, iAtom) = this%array(:, iAcsf, iAtom, iAtom)&
+                & - sum(this%array(:, iAcsf, iAtom, atomIndices2), dim=2)
           end if
+        end if
 
-        end do lpAcsf
-      end do lpAtom
-    end do lpForceAtom
+      end do
+    end do
 
-  end subroutine iGeoAcsfPrime
+  end subroutine iGeoAcsfGrad
+
 
   !> Builds the G-function specific neighborlist for a given atom and geometry.
   subroutine buildGFunctionNeighborlists(iAtom, geo, gFunction, localAtToAtNum, extFeatures, geo1,&
@@ -1050,10 +966,10 @@ contains
 
     !> neighbor coordinates
     real(dp), intent(out), allocatable :: neighCoords1(:,:), neighCoords2(:,:)
-    
+
     !> neighbour atom indices (dummy)
     integer,  intent(out), optional, allocatable :: atomIndices1_(:), atomIndices2_(:)
-    
+
     !> neighbor atom indices
     integer,  allocatable :: atomIndices1(:), atomIndices2(:)
 
@@ -1071,7 +987,7 @@ contains
     else
       tSpeciesResolved = .true.
     end if
-    
+
     if (.not. tSpeciesResolved) then
       geo1 = geo
       geo2 = geo1
@@ -1098,20 +1014,14 @@ contains
       atomIndices2 = atomIndices1
       atomIds1 = atomIds1(atomIndices1)
       atomIds2 = atomIds1
-      
-!~       if (present(atomIndices1_))  write(*,*) ' debugging... atomIndices1 = ', atomIndices1
-!~       if (present(atomIndices2_))  write(*,*) ' debugging... atomIndices2 = ', atomIndices2
-      
+
       if (present(atomIndices1_)) atomIndices1_ = atomIndices1
       if (present(atomIndices2_)) atomIndices2_ = atomIndices2
-      
-!~       if (present(atomIndices1_))  write(*,*) ' debugging... atomIndices1_ = ', atomIndices1_
-!~       if (present(atomIndices2_))  write(*,*) ' debugging... atomIndices2_ = ', atomIndices2_
-      
-      
+
     else
       ! reduce geometry to a given species
-      call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(1)], geo1, iAtomOut1, tKeep=tKeep1)
+      call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(1)], geo1,&
+          & iAtomOut1, tKeep=tKeep1)
       if (gFunction%atomId > 0) then
         atomId1  = extFeatures(gFunction%atomId, iAtomOut1)
         atomIds1 = extFeatures(gFunction%atomId, tKeep1)
@@ -1121,12 +1031,14 @@ contains
         allocate(atomIds1(geo1%nAtom))
         atomIds1(:) = 1.0_dp
       end if
-      call buildNeighborlist(geo1, gFunction%rCut, iAtomOut1, neighDists1, neighCoords1, atomIndices1)
+      call buildNeighborlist(geo1, gFunction%rCut, iAtomOut1, neighDists1, neighCoords1,&
+          & atomIndices1)
       atomIds1 = atomIds1(atomIndices1)
-      
+
       ! for angular functions species tupels, i.e. pairs of atomic numbers are required
       if (gFunction%tAngular) then
-        call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(2)], geo2, iAtomOut2, tKeep=tKeep2)
+        call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(2)], geo2,&
+            & iAtomOut2, tKeep=tKeep2)
         if (gFunction%atomId > 0) then
           atomId2  = extFeatures(gFunction%atomId, iAtomOut2)
           atomIds2 = extFeatures(gFunction%atomId, tKeep2)
@@ -1136,7 +1048,8 @@ contains
           allocate(atomIds2(geo2%nAtom))
           atomIds2(:) = 1.0_dp
         end if
-        call buildNeighborlist(geo2, gFunction%rCut, iAtomOut2, neighDists2, neighCoords2, atomIndices2)
+        call buildNeighborlist(geo2, gFunction%rCut, iAtomOut2, neighDists2, neighCoords2,&
+            & atomIndices2)
         atomIds2 = atomIds2(atomIndices2)
        else
         atomId2  = atomId1
@@ -1144,12 +1057,12 @@ contains
         atomIndices2 = atomIndices1
         tKeep2 = tKeep1
       end if
-      
+
       if (present(atomIndices1_)) atomIndices1_ = tKeep1(atomIndices1)
       if (present(atomIndices2_)) atomIndices2_ = tKeep2(atomIndices2)
-      
+
     end if
-    
+
   end subroutine buildGFunctionNeighborlists
 
 
@@ -1264,7 +1177,36 @@ contains
 
 
   !> Calculates the cutoff function for a given interatomic distance.
+  !! Explicitly checks for rr < rcut.
   pure function cutoff(rr, atomId1, atomId2, rcut) result(res)
+
+    !> atom distance
+    real(dp), intent(in) :: rr
+
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId1
+
+    !> atom ID of neighbor
+    real(dp), intent(in) :: atomId2
+
+    !> cutoff radius
+    real(dp), intent(in) :: rcut
+
+    !> resulting cutoff function value
+    real(dp) :: res
+
+    if (rr > rcut) then
+      res = 0.0_dp
+    else
+      res = 0.5_dp * atomId1 * atomId2 * (cos(pi * rr / rcut) + 1.0_dp)
+    end if
+
+  end function cutoff
+
+
+  !> Calculates the cutoff function for a given interatomic distance.
+  !! Assumes that rr < rcut. For performance reasons, there is no explicit check!
+  pure function cutoffWoCheck(rr, atomId1, atomId2, rcut) result(res)
 
     !> atom distance (in cutoff range)
     real(dp), intent(in) :: rr
@@ -1278,16 +1220,40 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> corresponding activation function values
+    !> resulting cutoff function value
     real(dp) :: res
 
-    if (rr > rcut) then
-      res = 0.0_dp
-    else
-      res = 0.5_dp * atomId1 * atomId2 * (cos(pi * rr / rcut) + 1.0_dp)
-    end if
+    res = 0.5_dp * atomId1 * atomId2 * (cos(pi * rr / rcut) + 1.0_dp)
 
-  end function cutoff
+  end function cutoffWoCheck
+
+
+  !> Calculates the n-th derivative of the cutoff function.
+  pure function dfCutoffWoCheck(rr, atomId1, atomId2, rcut, deriv) result(res)
+
+    !> atom distance (in cutoff range)
+    real(dp), intent(in) :: rr
+
+    !> atom ID of center atom
+    real(dp), intent(in) :: atomId1
+
+    !> atom ID of neighbor
+    real(dp), intent(in) :: atomId2
+
+    !> cutoff radius
+    real(dp), intent(in) :: rcut
+
+    !> derivative order
+    integer, intent(in) :: deriv
+
+    !> resulting cutoff derivative value
+    real(dp) :: res
+
+    ! here we use the formula for the n-th derivative of cos(ax)
+    res = 0.5_dp * atomId1 * atomId2 * (pi / rcut)**deriv&
+        & * cos((pi * rr / rcut) + 0.5_dp * deriv * pi)
+
+  end function dfCutoffWoCheck
 
 
   !> Calculates the cutoff function for an 1d array of interatomic distances.
@@ -1449,19 +1415,19 @@ contains
 
     g4 = 0.0_dp
 
-    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
+    if ((size(neighDists1) == 0) .and. (size(neighDists2) == 0)) return
 
-      do jj = 1, size(neighCoords1, dim=2)
-        do kk = 1, size(neighCoords2, dim=2)
-          ! calculate distance between atom j of species 1 and atom k of species 2
-          distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
-          ! calculate G4 function contribution
-          g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
-              & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
-              & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2))&
-              & * cutoff(neighDists1(jj), atomId1, atomIds1(jj), rcut) * cutoff(neighDists2(kk),&
-              & atomId2, atomIds2(kk), rcut) * cutoff(distjk, atomIds1(jj), atomIds2(kk), rcut)
-        end do
+    do jj = 1, size(neighCoords1, dim=2)
+      do kk = 1, size(neighCoords2, dim=2)
+        ! calculate distance between atom j of species 1 and atom k of species 2
+        distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
+        ! calculate G4 function contribution
+        g4 = g4 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
+            & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
+            & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2))&
+            & * cutoffWoCheck(neighDists1(jj), atomId1, atomIds1(jj), rcut)&
+            & * cutoffWoCheck(neighDists2(kk), atomId2, atomIds2(kk), rcut)&
+            & * cutoffWoCheck(distjk, atomIds1(jj), atomIds2(kk), rcut)
       end do
     end do
 
@@ -1509,278 +1475,222 @@ contains
 
     g5 = 0.0_dp
 
-    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
+    if ((size(neighDists1) == 0) .and. (size(neighDists2) == 0)) return
 
-      do jj = 1, size(neighCoords1, dim=2)
-        do kk = 1, size(neighCoords2, dim=2)
-          g5 = g5 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
-              & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
-              & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2)) * cutoff(neighDists1(jj),&
-              & atomId1, atomIds1(jj), rcut) * cutoff(neighDists2(kk), atomId2, atomIds2(kk), rcut)
-        end do
+    do jj = 1, size(neighCoords1, dim=2)
+      do kk = 1, size(neighCoords2, dim=2)
+        g5 = g5 + (1.0_dp + lambda * cos(theta(atomCoords, neighCoords1(:, jj),&
+            & neighCoords2(:, kk), neighDists1(jj), neighDists2(kk))))**xi&
+            & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2))&
+            & * cutoffWoCheck(neighDists1(jj), atomId1, atomIds1(jj), rcut)&
+            & * cutoffWoCheck(neighDists2(kk), atomId2, atomIds2(kk), rcut)
       end do
+    end do
 
-      g5 = g5 * 2.0_dp**(1.0_dp - xi)
-
-    end if
+    g5 = g5 * 2.0_dp**(1.0_dp - xi)
 
   end function g5
 
 
-  !> Calculates the G1 derivative w.r.t. the three spatial components.
-  !> Covers the case iForceAtom == iAtom, therefore has to regard the whole neighborlist.
-  pure function g1PrimeSelf(atomCoords, neighCoords, neighDists, atomId, atomIds, rcut)
+  !> Calculates G-function specific derivative for given neighborhoods.
+  function gFuncGrad(gFunction, iCoords, iAtomId, neighCoords1, neighDists1, atomIds1,&
+      & neighCoords2, neighDists2, atomIds2)
 
-    !> coordinates of reference atom
-    real(dp), intent(in) :: atomCoords(:)
+    !> list of multiple G-functions
+    type(TGFunction), intent(in) :: gFunction
 
-    !> coordinates of neighboring atoms
-    real(dp), intent(in) :: neighCoords(:,:)
-
-    !> distances of reference atom to neighboring atoms
-    real(dp), intent(in) :: neighDists(:)
+    !> cartesian coordinates of center atom
+    real(dp), intent(in) :: iCoords(:)
 
     !> atom ID of center atom
-    real(dp), intent(in) :: atomId
+    real(dp), intent(in) :: iAtomId
 
-    !> atom ID's of all neighbors
-    real(dp), intent(in) :: atomIds(:)
+    !> atomic prefactors, neighbor coordinates and squared distances of first neighborlist
+    real(dp), intent(in) :: atomIds1(:), neighDists1(:), neighCoords1(:,:)
 
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
+    !> atomic prefactors, neighbor coordinates and squared distances of second neighborlist
+    real(dp), intent(in), optional :: atomIds2(:), neighDists2(:), neighCoords2(:,:)
 
-    !> corresponding symmetry function derivatives
-    real(dp) :: g1PrimeSelf(3)
+    !> xyz-component of G-function derivative for every neighboring atom
+    real(dp) :: gFuncGrad(3, size(neighDists1))
 
-    !> auxiliary variable
-    integer :: jj
-
-    g1PrimeSelf = 0.0_dp
-
-    if (.not. ((size(neighDists) == 0))) then
-
-      do jj = 1, size(neighCoords, dim=2)
-        ! calculate G1 derivatives
-        g1PrimeSelf = g1PrimeSelf + atomIds(jj) * (atomCoords - neighCoords(:, jj))&
-            & * sin(pi * neighDists(jj) / rcut) / neighDists(jj)
-      end do
-
-      ! multiply with constant prefactor
-      g1PrimeSelf = - pi * atomId / (2.0_dp * rcut) * g1PrimeSelf
-
-    end if
-
-  end function g1PrimeSelf
-
-
-  !> Calculates the G1 derivative w.r.t. the three spatial components.
-  !> Covers the case iForceAtom /= iAtom, therefore only a single term has to be regarded.
-  pure function g1Prime(geo, iAtom, iForceAtom, atomId, forceAtomId, rcut)
-
-    !> system geometry container
-    type(TGeometry), intent(in) :: geo
-
-    !> index of center atom of G-function and atom to calculate force components for
-    integer, intent(in) :: iAtom, iForceAtom
-
-    !> atom ID of center atom
-    real(dp), intent(in) :: atomId
-
-    !> atom ID of force atom
-    real(dp), intent(in) :: forceAtomId
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> distance between center atom of G-function and force atom
-    real(dp) :: dist
-
-    !> corresponding symmetry function derivatives
-    real(dp) :: g1Prime(3)
-
-    dist = distance(geo, iAtom, iForceAtom)
-
-    g1Prime(:) = (pi * atomId * forceAtomId * (geo%coords(:, iAtom) - geo%coords(:, iForceAtom))&
-        & * sin(pi * dist / rcut)) / (2.0_dp * rcut * dist)
-
-  end function g1Prime
-
-
-  !> Calculates the G2 derivative w.r.t. the three spatial components.
-  pure function g2Prime(rr, atomId, atomIds, eta, rs, rcut)
-
-    !> array of atom distances in cutoff range
-    real(dp), intent(in) :: rr(:)
-
-    !> atom ID of center atom
-    real(dp), intent(in) :: atomId
-
-    !> atom ID's of all neighbors
-    real(dp), intent(in) :: atomIds(:)
-
-    !> width of Gaussians
-    real(dp), intent(in) :: eta
-
-    !> center of Gaussians
-    real(dp), intent(in) :: rs
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> corresponding symmetry function values
-    real(dp) :: g2Prime
-
-    if (size(rr) == 0) then
-      g2Prime = 0.0_dp
-    else
-      g2Prime = 0.0_dp
-    end if
-
-  end function g2Prime
-
-
-  !> Calculates the G3 derivative w.r.t. the three spatial components.
-  pure function g3Prime(rr, atomId, atomIds, kappa, rcut)
-
-    !> array of atom distances in cutoff range
-    real(dp), intent(in) :: rr(:)
-
-    !> atom ID of center atom
-    real(dp), intent(in) :: atomId
-
-    !> atom ID's of all neighbors
-    real(dp), intent(in) :: atomIds(:)
-
-    !> period length of damped cosine functions
-    real(dp), intent(in) :: kappa
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> corresponding symmetry function values
-    real(dp) :: g3Prime
-
-    if (size(rr) == 0) then
-      g3Prime = 0.0_dp
-    else
-      g3Prime = 0.0_dp
-    end if
-
-  end function g3Prime
-
-
-  !> Calculates the G4 derivative w.r.t. the three spatial components.
-  pure function g4Prime(atomCoords, neighCoords1, neighCoords2, neighDists1, neighDists2, atomId1,&
-      & atomIds1, atomId2, atomIds2, xi, lambda, eta, rcut)
-
-    !> coordinates of reference atom
-    real(dp), intent(in) :: atomCoords(:)
-
-    !> coordinates of neighboring atoms of two species
-    real(dp), intent(in) :: neighCoords1(:,:), neighCoords2(:,:)
-
-    !> distances of reference atom to neighboring atoms
-    real(dp), intent(in) :: neighDists1(:), neighDists2(:)
-
-    !> atom ID of center atoms
-    real(dp), intent(in) :: atomId1, atomId2
-
-    !> atom ID's of all neighbors
-    real(dp), intent(in) :: atomIds1(:), atomIds2(:)
-
-    !> parameter specifying angular resolution
-    real(dp), intent(in) :: xi
-
-    !> lambda parameter of angular part, recommended values: [+1, -1]
-    real(dp), intent(in) :: lambda
-
-    !> width of Gaussian part
-    real(dp), intent(in) :: eta
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    ! distance between atom j of species 1 and atom k of species 2
-    real(dp) :: distjk
-
-    !> corresponding symmetry function values
-    real(dp) :: g4Prime
+    !> cutoff (derivative) values
+    real(dp) :: dfc_ik, dfc_jk, fc_ik, fc_jk
 
     !> auxiliary variables
-    integer :: jj, kk
+    real(dp) :: dist_jk, a_ijk, T_ik(3, 3), uvec_jk(3), uvec_ik(3)
+    real(dp), allocatable :: uvecs2(:,:), fc2(:), sqDists2(:)
+    logical , allocatable  :: mask(:)
+    integer  :: jAtom, kAtom
 
-    g4Prime = 0.0_dp
+    gFuncGrad(:,:) = 0.0_dp
 
-    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
-
-      do jj = 1, size(neighCoords1, dim=2)
-        do kk = 1, size(neighCoords2, dim=2)
-          ! calculate distance between atom j of species 1 and atom k of species 2
-          distjk = norm2(neighCoords1(:, jj) - neighCoords2(:, kk))
-          ! calculate G4 function contribution
-          g4Prime = g4Prime + 0.0_dp
-        end do
+    if (gFunction%type == 'g1') then
+      do jAtom = 1, size(neighDists1)
+        gFuncGrad(:, jAtom) = dfCutoffWoCheck(neighDists1(jAtom), iAtomId, atomIds1(jAtom),&
+            & gFunction%rCut, 1) * (neighCoords1(:, jAtom) - iCoords) / neighDists1(jAtom)
       end do
-
-      g4Prime = g4Prime * 2.0_dp**(1.0_dp - xi)
-
+      return
     end if
 
-  end function g4Prime
+    if (gFunction%type == 'g2') then
+      do jAtom = 1, size(neighDists1)
+        gFuncGrad(:, jAtom) = (dfCutoffWoCheck(neighDists1(jAtom), iAtomId, atomIds1(jAtom),&
+            & gFunction%rCut, 1) - cutoffWoCheck(neighDists1(jAtom), iAtomId, atomIds1(jAtom),&
+            & gFunction%rCut) * 2.0_dp * gFunction%eta * (neighDists1(jAtom) - gFunction%rs))&
+            & * exp(- gFunction%eta * (neighDists1(jAtom) - gFunction%rs)**2)&
+            & * (neighCoords1(:, jAtom) - iCoords) / neighDists1(jAtom)
+      end do
+      return
+    end if
+
+    if (gFunction%type == 'g3') then
+      associate (kappa => gFunction%kappa)
+        do jAtom = 1, size(neighDists1)
+          gFuncGrad(:, jAtom) = (cos(kappa * neighDists1(jAtom))&
+              & * dfCutoffWoCheck(neighDists1(jAtom), iAtomId, atomIds1(jAtom), gFunction%rCut, 1)&
+              & - sin(kappa * neighDists1(jAtom)) *  cutoffWoCheck(neighDists1(jAtom), iAtomId,&
+              & atomIds1(jAtom), gFunction%rCut) * kappa) * (neighCoords1(:, jAtom) - iCoords)&
+              & / neighDists1(jAtom)
+        end do
+      end associate
+      return
+    end if
+
+    allocate(uvecs2, source=neighCoords2)
+    allocate(sqDists2, source=neighDists2)
+    allocate(fc2, mold=neighDists2)
+    fc2(:) = 0.0_dp
+
+    do jAtom = 1, size(neighDists2)
+        uvecs2(:, jAtom) = (uvecs2(:, jAtom) - iCoords) / neighDists2(jAtom)
+        sqDists2(jAtom) = neighDists2(jAtom)**2
+        if (neighDists2(jAtom) > gFunction%rCut) cycle
+        fc2(jAtom) = cutoffWoCheck(neighDists2(jAtom), iAtomId, atomIds2(jAtom), gFunction%rCut)
+    end do
+
+    ! first handle the case where both neighbourhoods are the same
+    ! this happens when there's no species resolution or when Z1 == Z2
+    if (gFunction%atomicNumbers(1) == gFunction%atomicNumbers(2)) then
+      allocate(mask(size(neighDists2)))
+
+      do kAtom = 1, size(neighDists1)
+        T_ik = T_matr(uvecs2(:, kAtom), neighDists1(kAtom)) * gFunction%lambda * gFunction%xi
+        dfc_ik = - 2.0_dp * gFunction%eta * neighDists1(kAtom) * fc2(kAtom)&
+            & + dfCutoffWoCheck(neighDists1(kAtom), iAtomId, atomIds1(kAtom), gFunction%rCut, 1)
+
+        ! case kAtom == jAtom
+        gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + (1.0_dp + gFunction%lambda)**gFunction%xi&
+            & * fc2(kAtom) * dfc_ik * exp(- 2.0_dp*gFunction%eta * sqDists2(kAtom))&
+            & * uvecs2(:, kAtom)
+
+        ! TODO: perhaps "pack" function would be better here
+        mask(:) = .false.
+        mask(kAtom) = .true.
+
+        do jAtom = 1, size(neighDists2)
+          ! skip jAtom == kAtom
+          if (mask(jAtom)) cycle
+
+          a_ijk = 1.0_dp + gFunction%lambda * dot_product(uvecs2(:, jAtom), uvecs2(:, kAtom))
+
+          if (gFunction%type == 'g5') then
+            gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + fc2(jAtom)&
+                & * exp(- gFunction%eta * (sqDists2(kAtom) + sqDists2(jAtom)))&
+                & * a_ijk**(gFunction%xi - 1.0_dp) * (fc2(kAtom) * matmul(T_ik, uvecs2(:, jAtom))&
+                & + a_ijk * dfc_ik * uvecs2(:, kAtom))
+            cycle
+          end if
+
+          uvec_jk = neighCoords1(:, kAtom) - neighCoords2(:, jAtom)
+          dist_jk = norm2(uvec_jk)
+
+          if (dist_jk > gFunction%rCut) cycle
+
+          uvec_jk = uvec_jk / dist_jk
+          fc_jk   = cutoffWoCheck(dist_jk, AtomIds1(kAtom), atomIds2(jAtom), gFunction%rCut)
+          dfc_jk  = - 2.0_dp * gFunction%eta * dist_jk * fc_jk&
+              & + dfCutoffWoCheck(dist_jk, AtomIds1(kAtom), atomIds2(jAtom), gFunction%rCut, 1)
+
+          gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + &
+              & fc2(jAtom) * exp(- gFunction%eta * (sqDists2(kAtom) + sqDists2(jAtom)&
+              & + dist_jk**2)) * a_ijk**(gFunction%xi - 1.0_dp) * (fc2(kAtom) * fc_jk&
+              & * matmul(T_ik, uvecs2(:, jAtom)) + a_ijk * (fc_jk * dfc_ik * uvecs2(:, kAtom)&
+              & + fc2(kAtom) * dfc_jk * uvec_jk))
+        end do
+
+      end do
+      gFuncGrad = gFuncGrad * 2.0_dp**(2.0_dp - gFunction%xi)
+      return
+    end if
+
+    ! finally, case Z1 /= Z2
+    do kAtom = 1, size(neighDists1)
+
+      fc_ik = cutoffWoCheck(neighDists1(kAtom), iAtomId, atomIds1(kAtom), gFunction%rCut)
+      dfc_ik = - 2.0_dp * gFunction%eta * neighDists1(kAtom) * fc_ik&
+          & + dfCutoffWoCheck(neighDists1(kAtom), iAtomId, atomIds1(kAtom), gFunction%rCut, 1)
+
+      uvec_ik = (neighCoords1(:, kAtom) - iCoords) / neighDists1(kAtom)
+      T_ik = T_matr(uvec_ik, neighDists1(kAtom)) * gFunction%lambda * gFunction%xi
+
+      do jAtom = 1, size(neighDists2)
+        a_ijk = 1.0_dp + gFunction%lambda * dot_product(uvecs2(:, jAtom), uvec_ik)
+
+        if (gFunction%type == 'g5') then
+          gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + fc2(jAtom) * exp(- gFunction%eta&
+              & * (neighDists1(kAtom)**2 + sqDists2(jAtom))) * a_ijk**(gFunction%xi - 1.0_dp)&
+              & * (fc_ik * matmul(T_ik, uvecs2(:, jAtom)) + a_ijk * dfc_ik * uvec_ik)
+          cycle
+        end if
+
+        uvec_jk = neighCoords1(:, kAtom) - neighCoords2(:, jAtom)
+        dist_jk = norm2(uvec_jk)
+
+        if (dist_jk > gFunction%rCut) cycle
+
+        uvec_jk = uvec_jk / dist_jk
+        fc_jk = cutoffWoCheck(dist_jk, AtomIds1(kAtom), atomIds2(jAtom), gFunction%rCut)
+        dfc_jk = - 2.0_dp * gFunction%eta * dist_jk * fc_jk + dfCutoffWoCheck(dist_jk,&
+            & AtomIds1(kAtom), atomIds2(jAtom), gFunction%rCut, 1)
+
+        gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + fc2(jAtom) * exp(- gFunction%eta&
+            & * (neighDists1(kAtom)**2 + sqDists2(jAtom) + dist_jk**2))&
+            & * a_ijk**(gFunction%xi - 1.0_dp) * (fc_ik * fc_jk * matmul(T_ik, uvecs2(:, jAtom))&
+            & + a_ijk * (fc_jk * dfc_ik * uvec_ik + fc_ik * dfc_jk * uvec_jk))
+      end do
+    end do
+
+    gFuncGrad(:,:) = gFuncGrad * 2.0_dp**(1.0_dp - gFunction%xi)
+
+  end function gFuncGrad
 
 
-  !> Calculates the G5 derivative w.r.t. the three spatial components.
-  pure function g5Prime(atomCoords, neighCoords1, neighCoords2, neighDists1, neighDists2, atomId1,&
-      & atomIds1, atomId2, atomIds2, xi, lambda, eta, rcut)
+  !>
+  pure function T_matr(uvec, nrm)
 
-    !> coordinates of reference atom
-    real(dp), intent(in) :: atomCoords(:)
+    !>
+    real(dp), intent(in)  :: uvec(3), nrm
 
-    !> coordinates of neighboring atoms of two species
-    real(dp), intent(in) :: neighCoords1(:,:), neighCoords2(:,:)
-
-    !> distances of reference atom to neighboring atoms
-    real(dp), intent(in) :: neighDists1(:), neighDists2(:)
-
-    !> atom ID of center atoms
-    real(dp), intent(in) :: atomId1, atomId2
-
-    !> atom ID's of all neighbors
-    real(dp), intent(in) :: atomIds1(:), atomIds2(:)
-
-    !> parameter specifying angular resolution
-    real(dp), intent(in) :: xi
-
-    !> lambda parameter of angular part, recommended values: [+1, -1]
-    real(dp), intent(in) :: lambda
-
-    !> width of Gaussian part
-    real(dp), intent(in) :: eta
-
-    !> cutoff radius
-    real(dp), intent(in) :: rcut
-
-    !> corresponding symmetry function values
-    real(dp) :: g5Prime
+    !>
+    real(dp) :: T_matr(3, 3)
 
     !> auxiliary variables
-    integer :: jj, kk
+    integer  :: ii, jj
 
-    g5Prime = 0.0_dp
+    T_matr(:,:) = 0.0_dp
 
-    if (.not. ((size(neighDists1) == 0) .and. (size(neighDists2) == 0))) then
-
-      do jj = 1, size(neighCoords1, dim=2)
-        do kk = 1, size(neighCoords2, dim=2)
-          g5Prime = g5Prime + 0.0_dp
-        end do
+    do ii = 1, 3
+      T_matr(ii, ii) = 1.0_dp - uvec(ii)**2
+      do jj = ii + 1, 3
+        T_matr(ii, jj) = - uvec(ii) * uvec(jj)
+        T_matr(jj, ii) = T_matr(ii, jj)
       end do
+    end do
 
-      g5Prime = g5Prime * 2.0_dp**(1.0_dp - xi)
+    T_matr(:,:) = T_matr / nrm
 
-    end if
-
-  end function g5Prime
+  end function
 
 
 #:if WITH_MPI
