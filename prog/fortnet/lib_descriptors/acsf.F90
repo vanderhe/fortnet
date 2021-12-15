@@ -846,18 +846,36 @@ contains
             & neighDists1, neighDists2, neighCoords1, neighCoords2)
         
         ! DEBUG
-        if (gFunctions(iAcsf)%type == 'g1') then
-          if (iAtom == 14) then
-            write(*,*)
-            do i = 1, size(neighCoords1, dim=2)
-              do j = 1, 3
-                write(*,'(F15.12, 2X)', advance='no') neighCoords1(j,i)
-              end do
-              write(*,*)
-            end do
-            call error('debugging...')
-          end if
-        end if
+!~         if (gFunctions(iAcsf)%type == 'g1') then
+!~           if (iAtom == 14) then
+!~             write(*,*) 'coordinates: '
+!~             do i = 1, size(geo%coords, dim=2)
+!~               write(*,'(I3,3X)', advance='no') geo%species(i)
+!~               do j = 1, 3
+!~                 write(*,'(F15.12, 2X)', advance='no') geo%coords(j,i)
+!~               end do
+!~               write(*,*)
+!~             end do
+!~             write(*,*)
+!~             write(*,*) 'lattice: '
+!~             do i = 1, 3
+!~               do j = 1, 3
+!~                 write(*,'(F15.12, 2X)', advance='no') geo%latVecs(j,i)
+!~               end do
+!~               write(*,*)
+!~             end do
+!~             write(*,*)
+            
+!~             do i = 1, size(neighCoords1, dim=2)
+!~               !write(*,) 
+!~               do j = 1, 3
+!~                 write(*,'(F15.12, 2X)', advance='no') neighCoords1(j,i)
+!~               end do
+!~               write(*,*)
+!~             end do
+!~             call error('debugging...')
+!~           end if
+!~         end if
 
         select case (gFunctions(iAcsf)%type)
         case ('g1')
@@ -1048,8 +1066,7 @@ contains
     !> auxiliary variable
     integer :: iAtomOut2
 
-    if ((gFunction%atomicNumbers(1) == 0)&
-        & .and. (gFunction%atomicNumbers(2) == 0)) then
+    if ((gFunction%atomicNumbers(1) == 0).and.(gFunction%atomicNumbers(2) == 0)) then
       tSpeciesResolved = .false.
     else
       tSpeciesResolved = .true.
@@ -1081,6 +1098,16 @@ contains
       atomIndices2 = atomIndices1
       atomIds1 = atomIds1(atomIndices1)
       atomIds2 = atomIds1
+      
+!~       if (present(atomIndices1_))  write(*,*) ' debugging... atomIndices1 = ', atomIndices1
+!~       if (present(atomIndices2_))  write(*,*) ' debugging... atomIndices2 = ', atomIndices2
+      
+      if (present(atomIndices1_)) atomIndices1_ = atomIndices1
+      if (present(atomIndices2_)) atomIndices2_ = atomIndices2
+      
+!~       if (present(atomIndices1_))  write(*,*) ' debugging... atomIndices1_ = ', atomIndices1_
+!~       if (present(atomIndices2_))  write(*,*) ' debugging... atomIndices2_ = ', atomIndices2_
+      
       
     else
       ! reduce geometry to a given species
@@ -1118,11 +1145,11 @@ contains
         tKeep2 = tKeep1
       end if
       
+      if (present(atomIndices1_)) atomIndices1_ = tKeep1(atomIndices1)
+      if (present(atomIndices2_)) atomIndices2_ = tKeep2(atomIndices2)
+      
     end if
     
-    if (present(atomIndices1_)) atomIndices1_ = tKeep1(atomIndices1)
-    if (present(atomIndices2_)) atomIndices2_ = tKeep2(atomIndices2)
-
   end subroutine buildGFunctionNeighborlists
 
 
