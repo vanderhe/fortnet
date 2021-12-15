@@ -285,6 +285,7 @@ contains
         end if
         if (this%tFinished) exit
         this%iAtom2 = this%iAtom1
+        iAtom2 = this%iAtom1
       end if
 
       neighCoords(:) = this%neighList%coords0(:, iAtom2) + this%cellVec
