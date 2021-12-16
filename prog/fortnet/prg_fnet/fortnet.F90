@@ -18,7 +18,7 @@ program fortnet
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TTraining_initOptimizer,&
       & TNetworkBlock, TDataBlock, TAnalysisBlock
-  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D, TJacobians
+  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D, TRealArray2D, TJacobians
   use fnet_forces, only : TForces, forceAnalysis, TGeometriesForFiniteDiff,&
       & TGeometriesForFiniteDiff_init
   use fnet_features, only : TFeatures_init, TFeatures_collect, TMappingBlock, TFeaturesBlock
@@ -511,6 +511,9 @@ contains
     !> index mapping local atom --> atomic number
     type(TIntArray1D), allocatable :: localAtToAtNum(:)
 
+    !> atom dependent scaling parameters for cutoff function
+    type(TRealArray2D), allocatable :: extFeatures(:)
+
     !> auxiliary variables
     integer :: iGeo, ii, nTotGeometries, ind
 
@@ -540,15 +543,20 @@ contains
           nTotGeometries = nTotGeometries + 6 * size(forcesGeos%geos(iGeo)%atom)
         end do
         allocate(localAtToAtNum(nTotGeometries))
+        if (trainDataset%tExtFeatures) allocate(extFeatures(nTotGeometries))
         ind = 1
         do iGeo = 1, size(forcesGeos%geos)
           do ii = 1, 6 * size(forcesGeos%geos(iGeo)%atom)
             localAtToAtNum(ind+ii-1)%array = trainDataset%localAtToAtNum(iGeo)%array
+            if (trainDataset%tExtFeatures) then
+              extFeatures(ind+ii-1)%array = trainDataset%extFeatures(iGeo)%array
+            end if
           end do
           ind = ind + 6 * size(forcesGeos%geos(iGeo)%atom)
         end do
         call forcesGeos%serialize(forcesSerializedGeos)
-        call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec)
+        call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec,&
+            & extFeaturesInp=extFeatures)
       elseif (prog%inp%analysis%forceMethod == 'analytical') then
         call forcesAcsf%calculatePrime(trainDataset%geos, env, trainDataset%localAtToAtNum,&
             & extFeaturesInp=trainDataset%extFeatures)
