@@ -1,0 +1,19 @@
+Data {
+
+  Dataset = ../../../../../../datasets/fnetdata_sic_s_multiGlobal_atomicNums.hdf5
+  NetstatFile = fortnet.hdf5
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = predict
+
+  RandomSeed = 123456
+
+}
+
+Analysis {
+  Forces = Analytical {}
+}
