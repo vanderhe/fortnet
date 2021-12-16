@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 '''
-Application example of the Fortformat package, based on an output
-file that contains atomic forces, resulting from finite differences.
+Application of the Fortformat package, based on an output file that contains
+atomic forces, resulting from analytical expressions or finite differences.
 '''
 
 
