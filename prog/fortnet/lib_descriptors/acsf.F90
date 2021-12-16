@@ -968,7 +968,7 @@ contains
     real(dp), intent(out), allocatable :: neighCoords1(:,:), neighCoords2(:,:)
 
     !> neighbour atom indices (dummy)
-    integer,  intent(out), optional, allocatable :: atomIndices1_(:), atomIndices2_(:)
+    integer,  intent(out), allocatable, optional :: atomIndices1_(:), atomIndices2_(:)
 
     !> neighbor atom indices
     integer,  allocatable :: atomIndices1(:), atomIndices2(:)
@@ -982,7 +982,7 @@ contains
     !> auxiliary variable
     integer :: iAtomOut2
 
-    if ((gFunction%atomicNumbers(1) == 0).and.(gFunction%atomicNumbers(2) == 0)) then
+    if (all(gFunction%atomicNumbers == 0)) then
       tSpeciesResolved = .false.
     else
       tSpeciesResolved = .true.
@@ -994,8 +994,8 @@ contains
       iAtomOut1 = iAtom
       iAtomOut2 = iAtomOut1
       if (gFunction%atomId > 0) then
-        atomId1  = extFeatures(gFunction%atomId, iAtom)
-        atomId2  = atomId1
+        atomId1 = extFeatures(gFunction%atomId, iAtom)
+        atomId2 = atomId1
         atomIds1 = extFeatures(gFunction%atomId, :)
         atomIds2 = atomIds1
       else
@@ -1009,7 +1009,7 @@ contains
         atomIds2(:) = 1.0_dp
       end if
       call buildNeighborlist(geo1, gFunction%rCut, iAtom, neighDists1, neighCoords1, atomIndices1)
-      neighDists2  = neighDists1
+      neighDists2 = neighDists1
       neighCoords2 = neighCoords1
       atomIndices2 = atomIndices1
       atomIds1 = atomIds1(atomIndices1)
@@ -1023,7 +1023,7 @@ contains
       call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(1)], geo1,&
           & iAtomOut1, tKeep=tKeep1)
       if (gFunction%atomId > 0) then
-        atomId1  = extFeatures(gFunction%atomId, iAtomOut1)
+        atomId1 = extFeatures(gFunction%atomId, iAtomOut1)
         atomIds1 = extFeatures(gFunction%atomId, tKeep1)
        else
         atomId1 = 1.0_dp
@@ -1040,10 +1040,10 @@ contains
         call reduceGeometrySpecies(geo, iAtom, localAtToAtNum, [gFunction%atomicNumbers(2)], geo2,&
             & iAtomOut2, tKeep=tKeep2)
         if (gFunction%atomId > 0) then
-          atomId2  = extFeatures(gFunction%atomId, iAtomOut2)
+          atomId2 = extFeatures(gFunction%atomId, iAtomOut2)
           atomIds2 = extFeatures(gFunction%atomId, tKeep2)
          else
-          atomId2  = 1.0_dp
+          atomId2 = 1.0_dp
           if (allocated(atomIds2)) deallocate(atomIds2)
           allocate(atomIds2(geo2%nAtom))
           atomIds2(:) = 1.0_dp
@@ -1052,7 +1052,7 @@ contains
             & atomIndices2)
         atomIds2 = atomIds2(atomIndices2)
        else
-        atomId2  = atomId1
+        atomId2 = atomId1
         atomIds2 = atomIds1
         atomIndices2 = atomIndices1
         tKeep2 = tKeep1
