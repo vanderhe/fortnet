@@ -4,8 +4,18 @@
 
 #:include 'common.fypp'
 
-analysis/derivatives/multiTargets
-analysis/derivatives/singleTarget
+analysis/derivatives/analytical/multiTargets/speciesResolved/raw
+analysis/derivatives/analytical/multiTargets/speciesResolved/atomID
+analysis/derivatives/analytical/multiTargets/speciesUnresolved/raw
+analysis/derivatives/analytical/multiTargets/speciesUnresolved/atomID
+
+analysis/derivatives/analytical/singleTarget/speciesResolved/raw
+analysis/derivatives/analytical/singleTarget/speciesResolved/atomID
+analysis/derivatives/analytical/singleTarget/speciesUnresolved/raw
+analysis/derivatives/analytical/singleTarget/speciesUnresolved/atomID
+
+analysis/derivatives/numerical/multiTargets
+analysis/derivatives/numerical/singleTarget
 
 input/acsf/auto
 input/acsf/autoandmanual
@@ -40,7 +50,7 @@ input/extfeatures/training/selected
 input/extfeatures/validation/empty
 input/extfeatures/validation/noempty
 
-input/itertraj/
+input/itertraj
 
 input/loss/mae
 input/loss/mape
