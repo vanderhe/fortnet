@@ -1427,7 +1427,7 @@ contains
             & * exp(- eta * (neighDists1(jj)**2 + neighDists2(kk)**2 + distjk**2))&
             & * cutoffWoCheck(neighDists1(jj), atomId1, atomIds1(jj), rcut)&
             & * cutoffWoCheck(neighDists2(kk), atomId2, atomIds2(kk), rcut)&
-            & * cutoffWoCheck(distjk, atomIds1(jj), atomIds2(kk), rcut)
+            & * cutoff(distjk, atomIds1(jj), atomIds2(kk), rcut)
       end do
     end do
 
