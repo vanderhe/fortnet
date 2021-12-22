@@ -94,7 +94,7 @@ contains
     real(dp), intent(in) :: delta
 
     !> auxiliary variables
-    integer :: iGeo, iAtom
+    integer :: iGeo, iAtom, iCoord
 
     allocate(this%geos(size(geos)))
 
@@ -103,21 +103,14 @@ contains
       do iAtom = 1, size(this%geos(iGeo)%atom)
         this%geos(iGeo)%atom(iAtom)%coord(:) = geos(iGeo)
 
-        ! shift entries manually, according to the central difference
-        this%geos(iGeo)%atom(iAtom)%coord(1)%coords(1, iAtom)&
-            & = this%geos(iGeo)%atom(iAtom)%coord(1)%coords(1, iAtom) - delta
-        this%geos(iGeo)%atom(iAtom)%coord(2)%coords(1, iAtom)&
-            & = this%geos(iGeo)%atom(iAtom)%coord(2)%coords(1, iAtom) + delta
+        do iCoord = 1, 3
+          ! shift entries manually, according to the central difference
+          this%geos(iGeo)%atom(iAtom)%coord(2*iCoord-1)%coords(iCoord, iAtom)&
+              & = this%geos(iGeo)%atom(iAtom)%coord(2*iCoord-1)%coords(iCoord, iAtom) - delta
+          this%geos(iGeo)%atom(iAtom)%coord(2*iCoord)%coords(iCoord, iAtom)&
+              & = this%geos(iGeo)%atom(iAtom)%coord(2*iCoord)%coords(iCoord, iAtom) + delta
+        end do
 
-        this%geos(iGeo)%atom(iAtom)%coord(3)%coords(2, iAtom)&
-            & = this%geos(iGeo)%atom(iAtom)%coord(3)%coords(2, iAtom) - delta
-        this%geos(iGeo)%atom(iAtom)%coord(4)%coords(2, iAtom)&
-            & = this%geos(iGeo)%atom(iAtom)%coord(4)%coords(2, iAtom) + delta
-
-        this%geos(iGeo)%atom(iAtom)%coord(5)%coords(3, iAtom)&
-            & = this%geos(iGeo)%atom(iAtom)%coord(5)%coords(3, iAtom) - delta
-        this%geos(iGeo)%atom(iAtom)%coord(6)%coords(3, iAtom)&
-            & = this%geos(iGeo)%atom(iAtom)%coord(6)%coords(3, iAtom) + delta
       end do
     end do
 
