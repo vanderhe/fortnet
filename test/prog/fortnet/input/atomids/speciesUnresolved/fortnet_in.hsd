@@ -1,7 +1,7 @@
 Network = BPNN {
 
   Hidden = 2 2
-  Activation = 'sigmoid'
+  Activation = sigmoid
 
 }
 
@@ -10,12 +10,63 @@ Features {
   Mapping = ACSF {
     Reduce = Yes
     Standardization = Yes
+
+    Function = G1 {
+      AtomID = 1
+      RCut = 4.0
+    }
+
     Function = Auto {
       AtomID = 1
       RCut = 4.0
       NRadial = 5
       NAngular = 4
     }
+
+    Function = G3 {
+      AtomID = 0
+      RCut  = 4.0
+      Kappa = 0.5
+    }
+
+    Function = G3 {
+      AtomID = 1
+      RCut  = 4.0
+      Kappa = 1.0
+    }
+
+    Function = G4 {
+      AtomID = 0
+      RCut = 4.0
+      Xi = 1.0
+      Eta = 0.080599
+      Lambda = 1.0
+    }
+
+    Function = G4 {
+      AtomID = 0
+      RCut = 4.0
+      Xi = 1.0
+      Eta = 0.080599
+      Lambda = -1.0
+    }
+
+    Function = G4 {
+      AtomID = 0
+      RCut = 4.0
+      Xi = 5.0
+      Eta = 0.080599
+      Lambda = 1.0
+    }
+
+    Function = G4 {
+      AtomID = 0
+      RCut = 4.0
+      Xi = 5.0
+      Eta = 0.080599
+      Lambda = -1.0
+    }
+
   }
 
 }
@@ -29,7 +80,7 @@ Training = SD {
   MinDisplacement = 1e-10
   MaxDisplacement = 5e-02
   LearningRate = 0.01
-  Loss = 'mse'
+  Loss = mse
 
   Shuffle = No
 
@@ -46,7 +97,7 @@ Data {
 Options {
 
   ReadNetStats = No
-  Mode = 'train'
+  Mode = train
 
   RandomSeed = 123456
   WriteIterationTrajectory = No
