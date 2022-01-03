@@ -290,7 +290,8 @@ contains
         do iCoord = 1, 3
           ! calculate negative gradients, i.e. forces based on the central finite difference
           forces%geos(iGeo)%array(iCoord::3, iAtom) =&
-              & (predicts%sys(ind)%array(:, 1) - predicts%sys(ind+1)%array(:, 1)) / (2.0_dp * delta)
+              & (resPredicts%sys(ind)%array(:, 1) - resPredicts%sys(ind+1)%array(:, 1))&
+              & / (2.0_dp * delta)
           ind = ind + 2
         end do
       end do
