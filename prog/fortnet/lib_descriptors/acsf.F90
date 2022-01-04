@@ -1518,9 +1518,8 @@ contains
     real(dp) :: dfc_ik, dfc_jk, fc_ik, fc_jk
 
     !> auxiliary variables
-    real(dp) :: dist_jk, a_ijk, T_ik(3, 3), uvec_jk(3), uvec_ik(3)
+    real(dp) :: dist_jk, a_ijk, prefct_prod, T_ik(3, 3), uvec_jk(3), uvec_ik(3)
     real(dp), allocatable :: uvecs2(:,:), fc2(:), sqDists2(:)
-    logical , allocatable  :: mask(:)
     integer  :: jAtom, kAtom
 
     gFuncGrad(:,:) = 0.0_dp
@@ -1578,19 +1577,19 @@ contains
         T_ik = T_matr(uvecs2(:, kAtom), neighDists1(kAtom)) * gFunction%lambda * gFunction%xi
         dfc_ik = - 2.0_dp * gFunction%eta * neighDists1(kAtom) * fc2(kAtom)&
             & + dfCutoffWoCheck(neighDists1(kAtom), iAtomId, atomIds1(kAtom), gFunction%rCut, 1)
-
+        
+        
         ! case kAtom == jAtom
+        prefct_prod = 1.0_dp
+        if (gFunction%type == 'g4') prefct_prod = atomIds1(kAtom) * atomIds2(kAtom)
         gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + (1.0_dp + gFunction%lambda)**gFunction%xi&
             & * fc2(kAtom) * dfc_ik * exp(- 2.0_dp*gFunction%eta * sqDists2(kAtom))&
-            & * uvecs2(:, kAtom)
+            & * uvecs2(:, kAtom) * prefct_prod
 
-        ! TODO: perhaps "pack" function would be better here
-        mask(:) = .false.
-        mask(kAtom) = .true.
 
         do jAtom = 1, size(neighDists2)
           ! skip jAtom == kAtom
-          if (mask(jAtom)) cycle
+          if (jAtom == kAtom) cycle
 
           a_ijk = 1.0_dp + gFunction%lambda * dot_product(uvecs2(:, jAtom), uvecs2(:, kAtom))
 
