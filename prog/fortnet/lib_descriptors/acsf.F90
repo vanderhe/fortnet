@@ -1571,21 +1571,18 @@ contains
     ! first handle the case where both neighbourhoods are the same
     ! this happens when there's no species resolution or when Z1 == Z2
     if (gFunction%atomicNumbers(1) == gFunction%atomicNumbers(2)) then
-      allocate(mask(size(neighDists2)))
 
       do kAtom = 1, size(neighDists1)
         T_ik = T_matr(uvecs2(:, kAtom), neighDists1(kAtom)) * gFunction%lambda * gFunction%xi
         dfc_ik = - 2.0_dp * gFunction%eta * neighDists1(kAtom) * fc2(kAtom)&
             & + dfCutoffWoCheck(neighDists1(kAtom), iAtomId, atomIds1(kAtom), gFunction%rCut, 1)
-        
-        
+
         ! case kAtom == jAtom
         prefct_prod = 1.0_dp
         if (gFunction%type == 'g4') prefct_prod = atomIds1(kAtom) * atomIds2(kAtom)
         gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + (1.0_dp + gFunction%lambda)**gFunction%xi&
             & * fc2(kAtom) * dfc_ik * exp(- 2.0_dp*gFunction%eta * sqDists2(kAtom))&
             & * uvecs2(:, kAtom) * prefct_prod
-
 
         do jAtom = 1, size(neighDists2)
           ! skip jAtom == kAtom
@@ -1594,8 +1591,8 @@ contains
           a_ijk = 1.0_dp + gFunction%lambda * dot_product(uvecs2(:, jAtom), uvecs2(:, kAtom))
 
           if (gFunction%type == 'g5') then
-            gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + fc2(jAtom)&
-                & * exp(- gFunction%eta * (sqDists2(kAtom) + sqDists2(jAtom)))&
+            gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom)&
+                & + fc2(jAtom) * exp(- gFunction%eta * (sqDists2(kAtom) + sqDists2(jAtom)))&
                 & * a_ijk**(gFunction%xi - 1.0_dp) * (fc2(kAtom) * matmul(T_ik, uvecs2(:, jAtom))&
                 & + a_ijk * dfc_ik * uvecs2(:, kAtom))
             cycle
