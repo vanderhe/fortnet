@@ -26,7 +26,8 @@ module fnet_nestedtypes
 
   private
 
-  public :: TIntArray1D, TIntArray2D, TRealArray1D, TRealArray2D
+  public :: TJacobian, TJacobians
+  public :: TIntArray1D, TIntArray2D, TRealArray1D, TRealArray2D, TRealArray3D, TRealArray4D
   public :: TBiasDerivs, TBiasDerivs_init, TWeightDerivs, TWeightDerivs_init
   public :: TWrapSteepDesc, TWrapConjGrad, TWrapLbfgs, TWrapFire
   public :: TSingleLayerStruc, TMultiLayerStruc, TMultiLayerStruc_init
@@ -67,6 +68,22 @@ module fnet_nestedtypes
   end type TRealArray2D
 
 
+  type :: TRealArray3D
+
+    !> threedimensional real array
+    real(dp), allocatable :: array(:,:,:)
+
+  end type TRealArray3D
+
+
+  type :: TRealArray4D
+
+    !> fourdimensional real array
+    real(dp), allocatable :: array(:,:,:,:)
+
+  end type TRealArray4D
+
+
   type :: TBiasDerivs
 
     !> contains derivatives of biases
@@ -93,6 +110,22 @@ module fnet_nestedtypes
     type(TRealArray2D), allocatable :: sys(:)
 
   end type TPredicts
+
+
+  type :: TJacobian
+
+    !> contains Jacobians of a single system
+    type(TRealArray2D), allocatable :: atom(:)
+
+  end type TJacobian
+
+
+  type :: TJacobians
+
+    !> contains Jacobians of multiple systems
+    type(TJacobian), allocatable :: sys(:)
+
+  end type TJacobians
 
 
   type :: TWrapSteepDesc

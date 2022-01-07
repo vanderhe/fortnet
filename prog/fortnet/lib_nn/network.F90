@@ -44,6 +44,7 @@ module fnet_network
     procedure :: initLayers => TNetwork_initLayers
     procedure :: countParams => TNetwork_countParams
     procedure :: fprop => TNetwork_fprop
+    procedure :: fdevi => TNetwork_fdevi
     procedure :: bprop => TNetwork_bprop
     procedure :: getOutput => TNetwork_getOutput
     procedure :: iPredict => TNetwork_iPredict
@@ -166,11 +167,59 @@ contains
       this%layers(ii)%aa = this%layers(ii)%transfer(this%layers(ii)%aarg)
     end do
 
-    state = this%layers
-
-    call this%getOutput(out)
+    if (present(state)) state = this%layers
+    if (present(out)) call this%getOutput(out)
 
   end subroutine TNetwork_fprop
+
+
+  pure function TNetwork_fdevi(this, xx) result(jacobi)
+
+    !> representation of a neural network
+    class(TNetwork), intent(in) :: this
+
+    !> input to feed network with
+    real(dp), intent(in) :: xx(:)
+
+    !> forward derivatives, i.e. jacobian matrix w.r.t. input features
+    real(dp), allocatable :: jacobi(:,:)
+
+    !> activation and network input of neurons of current layer
+    real(dp), allocatable :: aa(:), aarg(:)
+
+    !> transfer derivatives
+    real(dp), allocatable :: deriv(:), diagDeriv(:,:)
+
+    !> auxiliary variables
+    integer :: ii, jj
+
+    aa = xx
+
+    allocate(jacobi(size(aa), size(aa)))
+    jacobi(:,:) = 0.0_dp
+
+    do ii = 1, size(jacobi, dim=1)
+      jacobi(ii, ii) = 1.0_dp
+    end do
+
+    do ii = 2, size(this%layers)
+
+      aarg = matmul(transpose(this%layers(ii - 1)%ww), aa) + this%layers(ii)%bb
+      aa = this%layers(ii)%transfer(aarg)
+      deriv = this%layers(ii)%transferDeriv(aarg)
+
+      if (allocated(diagDeriv)) deallocate(diagDeriv)
+      allocate(diagDeriv(size(deriv), size(deriv)))
+      diagDeriv(:,:) = 0.0_dp
+      do jj = 1, size(this%layers(ii)%transferDeriv(aarg))
+        diagDeriv(jj, jj) = deriv(jj)
+      end do
+
+      jacobi = matmul(diagDeriv, matmul(transpose(this%layers(ii - 1)%ww), jacobi))
+
+    end do
+
+  end function TNetwork_fdevi
 
 
   !> Determines the gradients in weight-bias space by a simple back-propagation algorithm.
@@ -228,7 +277,7 @@ contains
 
 
   !> Calculates the network output for a single set of input features.
-  function TNetwork_iPredict(this, xx) result(aa)
+  pure function TNetwork_iPredict(this, xx) result(aa)
 
     !> representation of a neural network
     class(TNetwork), intent(in) :: this
@@ -253,7 +302,7 @@ contains
 
 
   !> Calculates the network output for a batch of input features.
-  function TNetwork_nPredict(this, xx) result(aa)
+  pure function TNetwork_nPredict(this, xx) result(aa)
 
     !> representation of a neural network
     class(TNetwork), intent(in) :: this

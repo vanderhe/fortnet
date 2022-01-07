@@ -564,6 +564,8 @@ contains
             call detailedError(tmp, 'Invalid delta parameter of finite differences, must be '&
                 & // 'greater than zero.')
           end if
+        case ('analytical')
+          ! forces calculated based on analytic gradients
         case default
           analysis%tForces = .false.
           call detailedError(forcenode, 'Invalid method specified to calculate atomic forces.')
@@ -1125,16 +1127,17 @@ contains
             deallocate(tmpFunctions%func)
             iAutoBlock = iAutoBlock + 1
           case ('g1')
-            call TGFunction_init(this%mapping%functions%func(iChild - iAutoBlock), type, rCut)
+            call TGFunction_init(this%mapping%functions%func(iChild - iAutoBlock), type, rCut,&
+                & atomId=atomId)
           case ('g2')
             call getChildValue(tmp, 'eta', eta)
             call getChildValue(tmp, 'rs', rs)
             call TGFunction_init(this%mapping%functions%func(iChild - iAutoBlock), type, rCut,&
-                & eta=eta, rs=rs)
+                & eta=eta, rs=rs, atomId=atomId)
           case ('g3')
             call getChildValue(tmp, 'kappa', kappa)
             call TGFunction_init(this%mapping%functions%func(iChild - iAutoBlock), type, rCut,&
-                & kappa=kappa)
+                & kappa=kappa, atomId=atomId)
           case ('g4', 'g5')
             call getChildValue(tmp, 'xi', xi)
             call getChildValue(tmp, 'eta', eta)
@@ -1143,7 +1146,7 @@ contains
               call detailedError(tmp, 'Specified lambda parameter leaves interval [-1, 1].')
             end if
             call TGFunction_init(this%mapping%functions%func(iChild - iAutoBlock), type, rCut,&
-                & xi=xi, eta=eta, lambda=lambda)
+                & xi=xi, eta=eta, lambda=lambda, atomId=atomId)
           case default
             call detailedError(tmp, 'Invalid mapping type.')
           end select

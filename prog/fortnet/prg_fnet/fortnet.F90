@@ -18,7 +18,7 @@ program fortnet
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TTraining_initOptimizer,&
       & TNetworkBlock, TDataBlock, TAnalysisBlock
-  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D
+  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D, TRealArray2D, TJacobians
   use fnet_forces, only : TForces, forceAnalysis, TGeometriesForFiniteDiff,&
       & TGeometriesForFiniteDiff_init
   use fnet_features, only : TFeatures_init, TFeatures_collect, TMappingBlock, TFeaturesBlock
@@ -511,6 +511,9 @@ contains
     !> index mapping local atom --> atomic number
     type(TIntArray1D), allocatable :: localAtToAtNum(:)
 
+    !> atom dependent scaling parameters for cutoff function
+    type(TRealArray2D), allocatable :: extFeatures(:)
+
     !> auxiliary variables
     integer :: iGeo, ii, nTotGeometries, ind
 
@@ -533,21 +536,31 @@ contains
     end if
 
     if (analysis%tForces) then
-      call TGeometriesForFiniteDiff_init(forcesGeos, trainDataset%geos, analysis%delta)
-      nTotGeometries = 0
-      do iGeo = 1, size(forcesGeos%geos)
-        nTotGeometries = nTotGeometries + 6 * size(forcesGeos%geos(iGeo)%atom)
-      end do
-      allocate(localAtToAtNum(nTotGeometries))
-      ind = 1
-      do iGeo = 1, size(forcesGeos%geos)
-        do ii = 1, 6 * size(forcesGeos%geos(iGeo)%atom)
-          localAtToAtNum(ind+ii-1)%array = trainDataset%localAtToAtNum(iGeo)%array
+      if (prog%inp%analysis%forceMethod == 'finitedifferences') then
+        call TGeometriesForFiniteDiff_init(forcesGeos, trainDataset%geos, analysis%delta)
+        nTotGeometries = 0
+        do iGeo = 1, size(forcesGeos%geos)
+          nTotGeometries = nTotGeometries + 6 * size(forcesGeos%geos(iGeo)%atom)
         end do
-        ind = ind + 6 * size(forcesGeos%geos(iGeo)%atom)
-      end do
-      call forcesGeos%serialize(forcesSerializedGeos)
-      call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec)
+        allocate(localAtToAtNum(nTotGeometries))
+        if (trainDataset%tExtFeatures) allocate(extFeatures(nTotGeometries))
+        ind = 1
+        do iGeo = 1, size(forcesGeos%geos)
+          do ii = 1, 6 * size(forcesGeos%geos(iGeo)%atom)
+            localAtToAtNum(ind+ii-1)%array = trainDataset%localAtToAtNum(iGeo)%array
+            if (trainDataset%tExtFeatures) then
+              extFeatures(ind+ii-1)%array = trainDataset%extFeatures(iGeo)%array
+            end if
+          end do
+          ind = ind + 6 * size(forcesGeos%geos(iGeo)%atom)
+        end do
+        call forcesGeos%serialize(forcesSerializedGeos)
+        call forcesAcsf%calculate(forcesSerializedGeos, env, localAtToAtNum, zPrec=trainAcsf%zPrec,&
+            & extFeaturesInp=extFeatures)
+      elseif (prog%inp%analysis%forceMethod == 'analytical') then
+        call forcesAcsf%calculatePrime(trainDataset%geos, env, trainDataset%localAtToAtNum,&
+            & extFeaturesInp=trainDataset%extFeatures)
+      end if
     end if
 
     write(stdout, '(A)') 'done'
@@ -596,6 +609,9 @@ contains
 
     !> min. and max. deviation of predictions, in comparison to targets
     real(dp) :: min, max
+
+    !> contains Jacobians of multiple systems
+    type(TJacobians) :: jacobian
 
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead
@@ -678,8 +694,15 @@ contains
       write(stdOut, '(A)') 'done'
       if (prog%inp%analysis%tForces) then
         write(stdOut, '(A)', advance='no') 'Calculate forces...'
-        forces = forceAnalysis(bpnn, forcesGeos, forcesAcsf, prog%env,&
-            & prog%trainDataset%localAtToGlobalSp, prog%inp%analysis%delta)
+        if (prog%inp%analysis%forceMethod == 'finitedifferences') then
+          forces = forceAnalysis(bpnn, forcesGeos, forcesAcsf, prog%env,&
+              & prog%trainDataset%localAtToGlobalSp, prog%inp%analysis%delta)
+        elseif (prog%inp%analysis%forceMethod == 'analytical') then
+          jacobian = bpnn%nJacobian(prog%features%trainFeatures, prog%env,&
+              & prog%trainDataset%localAtToGlobalSp)
+          forces = forceAnalysis(bpnn, prog%features%trainFeatures, jacobian, forcesAcsf, prog%env,&
+              & prog%trainDataset%localAtToGlobalSp)
+        end if
         write(stdOut, '(A,/)') 'done'
       else
         write(stdOut, '(A)') ''
