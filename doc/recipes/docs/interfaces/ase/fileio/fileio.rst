@@ -39,7 +39,7 @@ on the previously constructed and converged network potential stored in the
 `fortnet.hdf5` file. Subsequently, the calculator gets attached to the system or
 geometry respectively and the calculation is started.
 
-Finally, the convergent geometry as well as the forces and corresponding energy 
+Finally, the convergent geometry as well as the forces and corresponding energy
 of the system can be read out directly by ASE:
 
 .. code-block:: python
@@ -52,8 +52,7 @@ of the system can be read out directly by ASE:
 
       system = molecule('H2')
 
-      calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
-		     finitediffdelta=1e-03)
+      calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5')
 
       calc.calculate(atoms=system, properties=('energy', 'forces'))
 
@@ -65,6 +64,17 @@ of the system can be read out directly by ASE:
 
 The script above causes ASE to create an input file (`fortnet_in.hsd`) with the
 specified options and invokes Fortnet in the corresponding directory.
+
+By default, the calculator utilizes Fortnet's analytical expressions to infer
+atomic forces. If for any reason the numerical calculation via central finite
+differences is desired, the keyword argument ``finitediffdelta`` can be set,
+which specifies the coordinate shift in angstrom. The calculator will switch to
+numerical expressions accordingly:
+
+.. code-block:: python
+
+      calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
+                     finitediffdelta=1e-03)
 
 .. warning::
 
@@ -103,8 +113,7 @@ the drivers provided by ASE:
       system.positions[0] = system.positions[0] * 1.3
       system.positions[1] = system.positions[1] * 1.3
 
-      calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
-		     finiteDiffDelta=1e-03)
+      calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5')
 
       system.calc = calc
 
@@ -156,8 +165,7 @@ interval.
 
       system = molecule('H2')
 
-      system.calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
-			    finiteDiffDelta=1e-02)
+      system.calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5')
 
       MaxwellBoltzmannDistribution(system, temperature_K=200)
       Stationary(system)

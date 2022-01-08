@@ -21,8 +21,7 @@ def main():
 
     system = molecule('H2')
 
-    system.calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
-                          finiteDiffDelta=1e-02)
+    system.calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5')
 
     MaxwellBoltzmannDistribution(system, temperature_K=200)
     Stationary(system)

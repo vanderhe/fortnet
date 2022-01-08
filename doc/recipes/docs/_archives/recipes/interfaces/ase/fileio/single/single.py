@@ -16,8 +16,7 @@ def main():
 
     system = molecule('H2')
 
-    calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
-                   finitediffdelta=1e-03)
+    calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5')
 
     calc.calculate(atoms=system, properties=('energy', 'forces'))
 

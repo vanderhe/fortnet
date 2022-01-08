@@ -21,8 +21,7 @@ def main():
     system.positions[0] = system.positions[0] * 1.3
     system.positions[1] = system.positions[1] * 1.3
 
-    calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5',
-                   finiteDiffDelta=1e-03)
+    calc = Fortnet(label='H2', atoms=system, restart='fortnet.hdf5')
 
     system.calc = calc
 
