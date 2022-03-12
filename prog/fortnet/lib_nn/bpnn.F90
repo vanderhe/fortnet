@@ -220,9 +220,14 @@ contains
     call TDerivs_init(this%dims, size(this%nets), dd)
     call TDerivs_init(this%dims, size(this%nets), ddRes)
 
-    call TPredicts_init(predicts, trainDataset%targets)
-    call TPredicts_init(resPredicts, trainDataset%targets)
-    call TPredicts_init(validPredicts, trainDataset%targets)
+    call TPredicts_init(predicts, trainDataset%nDatapoints, trainDataset%nGlobalTargets,&
+        & trainDataset%nAtomicTargets, trainDataset%localAtToAtNum)
+    call TPredicts_init(resPredicts, trainDataset%nDatapoints, trainDataset%nGlobalTargets,&
+        & trainDataset%nAtomicTargets, trainDataset%localAtToAtNum)
+    if (tMonitorValid) then
+      call TPredicts_init(validPredicts, validDataset%nDatapoints, validDataset%nGlobalTargets,&
+          & validDataset%nAtomicTargets, validDataset%localAtToAtNum)
+    end if
 
     allocate(tmpLoss(nTrainIt))
     allocate(tmpGradients(nTrainIt))
@@ -258,15 +263,15 @@ contains
         & lossgrad, dd, ddRes, predicts, resPredicts)
 
     if (tLead) then
-      tmpLoss(1) = loss(resPredicts, trainDataset%targets, trainDataset%atomicWeights,&
-          & trainDataset%tAtomicTargets, weights=trainDataset%weights)
+      tmpLoss(1) = loss(resPredicts, trainDataset%globalTargets, trainDataset%atomicTargets,&
+          & trainDataset%atomicWeights, weights=trainDataset%weights)
     end if
     if (tMonitorValid) then
-      validPredicts = this%predictBatch(features%validFeatures, env,&
-          & validDataset%localAtToGlobalSp, trainDataset%tAtomicTargets)
+      validPredicts%sys = this%predictBatch(features%validFeatures, env,&
+          & validDataset%localAtToGlobalSp)
       if (tLead) then
-        tmpValidLoss(1) = loss(validPredicts, validDataset%targets,&
-            & trainDataset%atomicWeights, trainDataset%tAtomicTargets)
+        tmpValidLoss(1) = loss(validPredicts, validDataset%globalTargets,&
+            & validDataset%atomicTargets, validDataset%atomicWeights)
       end if
     end if
 
@@ -298,15 +303,15 @@ contains
           & lossgrad, dd, ddRes, predicts, resPredicts)
 
       if (tLead) then
-        tmpLoss(iIter) = loss(resPredicts, trainDataset%targets, trainDataset%atomicWeights,&
-            & trainDataset%tAtomicTargets, weights=trainDataset%weights)
+        tmpLoss(iIter) = loss(resPredicts, trainDataset%globalTargets, trainDataset%atomicTargets,&
+            & trainDataset%atomicWeights, weights=trainDataset%weights)
       end if
       if (tMonitorValid) then
-        validPredicts = this%predictBatch(features%validFeatures, env,&
-            & validDataset%localAtToGlobalSp, trainDataset%tAtomicTargets)
+        validPredicts%sys = this%predictBatch(features%validFeatures, env,&
+            & validDataset%localAtToGlobalSp)
         if (tLead) then
-          tmpValidLoss(iIter) = loss(validPredicts, validDataset%targets,&
-              & trainDataset%atomicWeights, trainDataset%tAtomicTargets)
+          tmpValidLoss(iIter) = loss(validPredicts, validDataset%globalTargets,&
+              & validDataset%atomicTargets, validDataset%atomicWeights)
         end if
       end if
 
@@ -407,9 +412,6 @@ contains
     !> resulting network predictions
     type(TPredicts), intent(inout) :: resPredicts
 
-    !> predictions of a single datapoint
-    real(dp), allocatable :: iPredict(:,:)
-
     !> temporary weight and bias gradient storage of the current atom
     type(TDerivs) :: ddTmp
 
@@ -418,11 +420,12 @@ contains
 
     lpSystem: do ii = iStart, iEnd
       iSys = shuffle(ii)
-      call this%sysTrain(trainFeatures(iSys)%array, trainDataset%targets(iSys)%array,&
-          & trainDataset%atomicWeights(iSys)%array, trainDataset%localAtToGlobalSp(iSys)%array,&
-          & trainDataset%tAtomicTargets, lossgrad, ddTmp, iPredict)
-      ! collect outputs and gradients of the systems
-      predicts%sys(iSys)%array(:,:) = iPredict
+      call this%sysTrain(trainFeatures(iSys)%array, trainDataset%nGlobalTargets,&
+          & trainDataset%nAtomicTargets, trainDataset%globalTargets(iSys)%array,&
+          & trainDataset%atomicTargets(iSys)%array, trainDataset%atomicWeights(iSys)%array,&
+          & trainDataset%localAtToGlobalSp(iSys)%array, lossgrad, ddTmp,&
+          & predicts%sys(iSys)%array(:,:))
+      ! collect gradients of the system
       do iGlobalSp = 1, size(this%nets)
         do iLayer = 1, size(this%dims)
           dd%dw(iGlobalSp)%dw(iLayer)%array = dd%dw(iGlobalSp)%dw(iLayer)%array +&
@@ -588,8 +591,8 @@ contains
 
 
   !> Performs a training iteration for a single system, i.e. set of input features.
-  subroutine TBpnn_sysTrain(this, input, targets, atomicWeights, localAtToGlobalSp, tAtomic,&
-      & lossgrad, dd, predicts)
+  subroutine TBpnn_sysTrain(this, input, nGlobalTargets, nAtomicTargets, globalTargets,&
+      & atomicTargets, atomicWeights, localAtToGlobalSp, lossgrad, dd, predicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
@@ -597,9 +600,17 @@ contains
     !> features of all atoms of the current system/geometry, shape: [nFeatures, nAtoms]
     real(dp), intent(in) :: input(:,:)
 
-    !> target data
-    !> shape: [nTargets, nAtoms] for atomic targets or [nTargets, 1] for system targets
-    real(dp), intent(in) :: targets(:,:)
+    !> number of system-wide targets of BPNN
+    integer, intent(in) :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer, intent(in) :: nAtomicTargets
+
+    !> system-wide target data, shape: [nGlobalTargets]
+    real(dp), intent(in) :: globalTargets(:)
+
+    !> atomic target data, shape: [nAtomicTargets, nAtoms]
+    real(dp), intent(in) :: atomicTargets(:,:)
 
     !> contains atomic gradient weights, exp. shape: [nAtoms]
     real(dp), intent(in) :: atomicWeights(:)
@@ -607,18 +618,15 @@ contains
     !> maps local atom index --> global species index
     integer, intent(in) :: localAtToGlobalSp(:)
 
-    !> true, if network is trained on atomic properties
-    logical, intent(in) :: tAtomic
-
     !> procedure, pointing to the choosen loss function gradient
     procedure(lossGradientFunc), intent(in), pointer :: lossgrad
 
     !> total weight and bias gradients of the current system
     type(TDerivs), intent(out) :: dd
 
-    !> summed predictions of all sub-nn's
-    !> shape: [nTargets, nAtoms] for atomic predictions or [nTargets, 1] for system predictions
-    real(dp), intent(out), allocatable :: predicts(:,:)
+    !> summed (atom-resolved) predictions of all sub-nn's
+    !> shape: [nGlobalTargets + nAtomicTargets, nAtoms]
+    real(dp), intent(out) :: predicts(:,:)
 
     !> representation of temporary layer storage container
     type(TMultiLayerStruc) :: tmpLayer
@@ -629,13 +637,16 @@ contains
     !> temporary bias gradient storage of the current atom
     type(TBiasDerivs) :: dbTmp
 
+    !> loss gradients w.r.t predictions and targets (only system-wide targets)
+    real(dp), allocatable :: globalLossGrad(:)
+
     !> loss gradients w.r.t predictions and targets
     real(dp), allocatable :: lossgrads(:,:)
 
     !> temporary output storage of sub-nn's
     real(dp), allocatable :: tmpOut(:)
 
-    !> temporary real valued storage
+    !> temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
     !> auxiliary variable
@@ -644,7 +655,7 @@ contains
     call TMultiLayerStruc_init(this%dims, size(input, dim=2), tmpLayer)
     call TDerivs_init(this%dims, size(this%nets), dd)
 
-    allocate(predicts(size(targets, dim=1), size(input, dim=2)))
+    allocate(lossgrads, mold=predicts)
 
     do iAtom = 1, size(input, dim=2)
       iGlobalSp = localAtToGlobalSp(iAtom)
@@ -653,20 +664,17 @@ contains
       predicts(:, iAtom) = tmpOut
     end do
 
-    ! calculate lossgrads w.r.t predictions and targets
-    if (.not. tAtomic) then
-      globalPredicts = sum(predicts, dim=2)
-      allocate(lossgrads(size(predicts, dim=1), size(input, dim=2)))
+    if (nGlobalTargets > 0) then
+      globalPredicts = sum(predicts(1:nGlobalTargets, :), dim=2)
+      globalLossGrad = reshape(lossgrad(reshape(globalPredicts, [nGlobalTargets, 1]),&
+          & reshape(globalTargets, [nGlobalTargets, 1])), [nGlobalTargets])
       do iAtom = 1, size(input, dim=2)
-        lossgrads(:, iAtom) = reshape(lossgrad(reshape(globalPredicts, [size(globalPredicts), 1]),&
-            & targets), [size(globalPredicts)])
+        lossgrads(1:nGlobalTargets, iAtom) = globalLossGrad
       end do
-      deallocate(predicts)
-      allocate(predicts(size(targets, dim=1), 1))
-      predicts(:, 1) = globalPredicts
-    else
-      allocate(lossgrads, source=predicts)
-      lossgrads(:,:) = lossgrad(predicts, targets)
+    end if
+
+    if (nAtomicTargets > 0) then
+      lossgrads(nGlobalTargets + 1:, :) = lossgrad(predicts(nGlobalTargets + 1:, :), atomicTargets)
     end if
 
     ! collect gradients and normalize them by atom number
@@ -845,7 +853,7 @@ contains
   end subroutine TBpnn_collectOutput
 
 
-  function TBpnn_iPredict(this, input, localAtToGlobalSp, tAtomic) result(output)
+  function TBpnn_iPredict(this, input, localAtToGlobalSp) result(atomicOutput)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this
@@ -856,14 +864,8 @@ contains
     !> index mapping local atom --> global species index
     integer, intent(in) :: localAtToGlobalSp(:)
 
-    !> true, if network is trained on atomic properties
-    logical, intent(in) :: tAtomic
-
     !> atomic contributions to the network prediction
-    real(dp), allocatable :: atomicOut(:,:)
-
-    !> final prediction for current input sample
-    real(dp), allocatable :: output(:,:)
+    real(dp), allocatable :: atomicOutput(:,:)
 
     !> number of predictions for each sub-nn
     integer :: nOutput
@@ -877,19 +879,12 @@ contains
     nAtoms = size(input, dim=2)
     nOutput = this%dims(size(this%dims))
 
-    allocate(atomicOut(nOutput, nAtoms))
+    allocate(atomicOutput(nOutput, nAtoms))
 
     do iAtom = 1, nAtoms
       iGlobalSp = localAtToGlobalSp(iAtom)
-      atomicOut(:, iAtom) = this%nets(iGlobalSp)%iPredict(input(:, iAtom))
+      atomicOutput(:, iAtom) = this%nets(iGlobalSp)%iPredict(input(:, iAtom))
     end do
-
-    if (tAtomic) then
-      output = atomicOut
-    else
-      allocate(output(nOutput, 1))
-      output(:, 1) = sum(atomicOut, dim=2)
-    end if
 
   end function TBpnn_iPredict
 
@@ -992,7 +987,7 @@ contains
 
 
   !> Calculates the network output for a batch of input features.
-  function TBpnn_predictBatch(this, features, env, localAtToGlobalSp, tAtomic) result(resPredicts)
+  function TBpnn_predictBatch(this, features, env, localAtToGlobalSp) result(resPredicts)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this
@@ -1006,11 +1001,8 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
-    !> true, if network is trained on atomic properties
-    logical, intent(in) :: tAtomic
-
     !> network predictions during the training
-    type(TPredicts) :: predicts, resPredicts
+    type(TRealArray2D), allocatable :: predicts(:), resPredicts(:)
 
     !> true, if current process is the lead
     logical :: tLead
@@ -1028,32 +1020,25 @@ contains
     iEnd = size(features)
   #:endif
 
-    allocate(predicts%sys(size(features)))
+    allocate(predicts(size(features)))
 
-    if (tAtomic) then
-      do iSys = 1, size(features)
-        allocate(predicts%sys(iSys)%array(this%dims(size(this%dims)), size(features(iSys)%array,&
-            & dim=2)))
-        predicts%sys(iSys)%array(:,:) = 0.0_dp
-      end do
-    else
-      do iSys = 1, size(features)
-        allocate(predicts%sys(iSys)%array(this%dims(size(this%dims)), 1))
-        predicts%sys(iSys)%array(:,:) = 0.0_dp
-      end do
-    end if
+    do iSys = 1, size(features)
+      allocate(predicts(iSys)%array(this%dims(size(this%dims)), size(features(iSys)%array,&
+          & dim=2)))
+      predicts(iSys)%array(:,:) = 0.0_dp
+    end do
 
     resPredicts = predicts
 
     do iSys = iStart, iEnd
-      predicts%sys(iSys)%array(:,:) = this%iPredict(features(iSys)%array,&
-          & localAtToGlobalSp(iSys)%array, tAtomic)
+      predicts(iSys)%array(:,:) = this%iPredict(features(iSys)%array,&
+          & localAtToGlobalSp(iSys)%array)
     end do
 
   #:if WITH_MPI
     do iSys = 1, size(features)
-      call mpifx_allreduce(env%globalMpiComm, predicts%sys(iSys)%array,&
-          & resPredicts%sys(iSys)%array, MPI_SUM)
+      call mpifx_allreduce(env%globalMpiComm, predicts(iSys)%array,&
+          & resPredicts(iSys)%array, MPI_SUM)
     end do
   #:else
     resPredicts = predicts
@@ -1148,7 +1133,7 @@ contains
 
 
   !> Reads a BPNN from a netstat file.
-  subroutine TBpnn_fromFile(this, fname, tAtomicTargets)
+  subroutine TBpnn_fromFile(this, fname, nGlobalTargets, nAtomicTargets)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(out) :: this
@@ -1156,8 +1141,11 @@ contains
     !> filename (will be fortnet.hdf5)
     character(len=*), intent(in) :: fname
 
-    !> true, if originally trained on atomic properties
-    logical, intent(out) :: tAtomicTargets
+    !> number of system-wide targets of BPNN
+    integer, intent(out) :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer, intent(out) :: nAtomicTargets
 
     !> various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
@@ -1174,8 +1162,11 @@ contains
     !> atomic numbers of sub-nn species
     integer, allocatable :: atomicNumbers(:)
 
+    !> temporary storage container
+    integer :: tmpInt(1)
+    character(len=100) :: tmpStr
+
     !> auxiliary variables
-    character(len=100) :: tmp
     integer :: iErr, iNet, iLayer
 
     ! open the hdf5 interface
@@ -1193,15 +1184,24 @@ contains
     ! read atomic numbers of sub-nn
     call h5ltfx_read_dataset_int_f(bpnn_id, 'atomicnumbers', atomicNumbers)
 
-    ! read the output type, i.e. atomic or global targets
-    call h5ltget_attribute_string_f(bpnn_id, './', 'targettype', tmp, iErr)
-    if (tolower(trim(tmp)) == 'atomic') then
-      tAtomicTargets = .true.
-    elseif (tolower(trim(tmp)) == 'global') then
-      tAtomicTargets = .false.
-    else
-      call error('Error while reading BPNN from netstat file. Unrecognized target type '&
-          & // tolower(trim(tmp)) // '.')
+    ! read the output type, i.e. number of atomic and global targets during training
+    call h5ltget_attribute_int_f(bpnn_id, './', 'nglobaltargets', tmpInt, iErr)
+    nGlobalTargets = tmpInt(1)
+    call h5ltget_attribute_int_f(bpnn_id, './', 'natomictargets', tmpInt, iErr)
+    nAtomicTargets = tmpInt(1)
+
+    if (nGlobalTargets < 0) then
+      call error('Error while reading BPNN from netstat file.&
+          & Negative number of system-wide targets.')
+    end if
+
+    if (nAtomicTargets < 0) then
+      call error('Error while reading BPNN from netstat file.&
+          & Negative number of atomic targets.')
+    end if
+
+    if ((nGlobalTargets + nAtomicTargets) == 0) then
+      call error('Error while reading BPNN from netstat file. Total number of targets is zero')
     end if
 
     do iNet = 1, size(atomicNumbers)
@@ -1226,8 +1226,8 @@ contains
       dims = tmpDims
 
       ! read transfer function type
-      call h5ltget_attribute_string_f(subnet_id, './', 'activation', tmp, iErr)
-      tmpActivation = tolower(trim(tmp))
+      call h5ltget_attribute_string_f(subnet_id, './', 'activation', tmpStr, iErr)
+      tmpActivation = tolower(trim(tmpStr))
       if (.not. allocated(activation)) then
         activation = tmpActivation
       end if

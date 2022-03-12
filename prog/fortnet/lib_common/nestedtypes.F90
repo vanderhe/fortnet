@@ -106,7 +106,17 @@ module fnet_nestedtypes
 
   type :: TPredicts
 
-    !> contains predictions of networks
+    !> number of datapoints/structures in dataset
+    integer :: nDatapoints
+
+    !> number of system-wide targets of BPNN
+    integer :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer :: nAtomicTargets
+
+    !> contains (atom-resolved) system-wide and atomic predictions of networks
+    !! shape: [nGlobalTargets + nAtomicTargets, nAtoms]
     type(TRealArray2D), allocatable :: sys(:)
 
   end type TPredicts
@@ -209,22 +219,36 @@ module fnet_nestedtypes
 contains
 
   !> Initialises a prediction structure based on a reference.
-  pure subroutine TPredicts_init(this, reference)
+  pure subroutine TPredicts_init(this, nDatapoints, nGlobalTargets, nAtomicTargets, refArray)
 
     !> representation of neural network predictions
     type(TPredicts), intent(out) :: this
 
-    !> reference array to get allocation structure from
-    type(TRealArray2D), intent(in) :: reference(:)
+    !> number of datapoints/structures in dataset
+    integer, intent(in) :: nDatapoints
+
+    !> number of system-wide targets of BPNN
+    integer, intent(in) :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer, intent(in) :: nAtomicTargets
+
+    !> reference array to get allocation structure from, i.e. number of atoms per structure
+    type(TIntArray1D), intent(in) :: refArray(:)
 
     !> auxiliary variable
     integer :: iSys
 
-    allocate(this%sys(size(reference)))
+    ! assume that number of system-wide/atomic targets remains the same throughout datapoints
+    this%nDatapoints = nDatapoints
+    this%nGlobalTargets = nGlobalTargets
+    this%nAtomicTargets = nAtomicTargets
 
-    do iSys = 1, size(reference)
-      allocate(this%sys(iSys)%array(size(reference(iSys)%array, dim=1),&
-          & size(reference(iSys)%array, dim=2)))
+    allocate(this%sys(this%nDatapoints))
+
+    do iSys = 1, this%nDatapoints
+      allocate(this%sys(iSys)%array(this%nGlobalTargets + this%nAtomicTargets,&
+          & size(refArray(iSys)%array)))
       this%sys(iSys)%array(:,:) = 0.0_dp
     end do
 

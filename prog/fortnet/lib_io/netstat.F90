@@ -340,7 +340,7 @@ contains
 
 
   !> Writes a BPNN header to netstat file that establishes rudimentary groups.
-  subroutine writeBpnnHeader(fname, bpnn, tAtomicTargets)
+  subroutine writeBpnnHeader(fname, bpnn, nGlobalTargets, nAtomicTargets)
 
     !> filename of netstat file
     character(len=*), intent(in) :: fname
@@ -348,8 +348,11 @@ contains
     !> Behler-Parrinello-Neural-Network instance
     type(TBpnn), intent(in) :: bpnn
 
-    !> true, if targets are atomic properties
-    logical, intent(in) :: tAtomicTargets
+    !> number of system-wide targets of BPNN
+    integer, intent(in) :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer, intent(in) :: nAtomicTargets
 
     !> various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
@@ -376,12 +379,10 @@ contains
     ! write atomic numbers of sub-nn
     call h5ltfxmake_dataset_int_f(bpnn_id, 'atomicnumbers', bpnn%atomicNumbers)
 
-    ! define the output type, i.e. atomic or global
-    if (tAtomicTargets) then
-      call h5ltset_attribute_string_f(bpnn_id, './', 'targettype', 'atomic', iErr)
-    else
-      call h5ltset_attribute_string_f(bpnn_id, './', 'targettype', 'global', iErr)
-    end if
+    ! define the output type, i.e. number of atomic and global targets during training
+    dims(1) = 1
+    call h5ltset_attribute_int_f(bpnn_id, './', 'nglobaltargets', [nGlobalTargets], dims(1), iErr)
+    call h5ltset_attribute_int_f(bpnn_id, './', 'natomictargets', [nAtomicTargets], dims(1), iErr)
 
     do iNet = 1, bpnn%nSpecies
       netname = trim(elementSymbol(bpnn%atomicNumbers(iNet))) // '-subnetwork'

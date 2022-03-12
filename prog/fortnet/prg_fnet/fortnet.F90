@@ -18,7 +18,8 @@ program fortnet
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TTraining_initOptimizer,&
       & TNetworkBlock, TDataBlock, TAnalysisBlock
-  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TIntArray1D, TRealArray2D, TJacobians
+  use fnet_nestedtypes, only : TEnv, TEnv_init, TPredicts, TPredicts_init, TIntArray1D,&
+      & TRealArray2D, TJacobians
   use fnet_forces, only : TForces, forceAnalysis, TGeometriesForFiniteDiff,&
       & TGeometriesForFiniteDiff_init
   use fnet_features, only : TFeatures_init, TFeatures_collect, TMappingBlock, TFeaturesBlock
@@ -107,8 +108,8 @@ program fortnet
   call runCore(prog, bpnn, trainAcsf, validAcsf, forcesAcsf, forcesGeos, predicts, forces)
 
   if (tLead .and. (prog%inp%option%mode == 'validate' .or. prog%inp%option%mode == 'predict')) then
-    call writeFnetout(fnetoutFile, prog%inp%option%mode, prog%trainDataset%targets, predicts,&
-        & forces, prog%inp%analysis%tForces, prog%trainDataset%tAtomicTargets)
+    call writeFnetout(fnetoutFile, prog%inp%option%mode, prog%trainDataset%globalTargets,&
+        & prog%trainDataset%atomicTargets, predicts, forces, prog%inp%analysis%tForces)
   end if
 
   call destructGlobalEnv()
@@ -137,8 +138,11 @@ contains
     !> true, if an ACSF configuration is found in the netstat file
     logical :: tAcsf
 
-    !> true, if the BPNN is trained on atomic targets
-    logical :: tAtomicTargets
+    !> number of system-wide targets of BPNN
+    integer :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer :: nAtomicTargets
 
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead
@@ -186,14 +190,13 @@ contains
             ! check if the dataset provides structural information needed by the ACSF
             call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf)
           end if
-          call bpnn%fromFile(prog%inp%data%netstatpath, tAtomicTargets)
-          call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers, tAtomicTargets,&
-              & allowSpSubset=.false.)
+          call bpnn%fromFile(prog%inp%data%netstatpath, nGlobalTargets, nAtomicTargets)
+          call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers, nGlobalTargets,&
+              & nAtomicTargets, allowSpSubset=.false.)
         end if
       #:if WITH_MPI
         call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%nFeatures)
         call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tMappingFeatures)
-        call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tExtFeatures)
         call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tExtFeatures)
         if (prog%inp%features%tMappingFeatures) then
           call trainAcsf%syncConfig(prog%env%globalMpiComm)
@@ -212,7 +215,8 @@ contains
             & prog%trainDataset%atomicNumbers, rndGen=prog%rndGen,&
             & activation=prog%inp%network%activation)
         if (tLead) then
-          call writeBpnnHeader(prog%inp%data%netstatpath, bpnn, prog%trainDataset%tAtomicTargets)
+          call writeBpnnHeader(prog%inp%data%netstatpath, bpnn, prog%trainDataset%nGlobalTargets,&
+              & prog%trainDataset%nAtomicTargets)
         end if
       end if
     case ('validate', 'predict')
@@ -239,14 +243,13 @@ contains
           ! check if the dataset provides structural information needed by the ACSF
           call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf)
         end if
-        call bpnn%fromFile(prog%inp%data%netstatpath, tAtomicTargets)
-        call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers, tAtomicTargets,&
-            & allowSpSubset=.true.)
+        call bpnn%fromFile(prog%inp%data%netstatpath, nGlobalTargets, nAtomicTargets)
+        call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers, nGlobalTargets,&
+              & nAtomicTargets, allowSpSubset=.true.)
       end if
     #:if WITH_MPI
       call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%nFeatures)
       call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tMappingFeatures)
-      call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tExtFeatures)
       call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tExtFeatures)
       if (prog%inp%features%tMappingFeatures) then
         call trainAcsf%syncConfig(prog%env%globalMpiComm)
@@ -689,8 +692,11 @@ contains
       write(stdout, '(A,/)') repeat('-', 68)
     case ('validate', 'predict')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      predicts = bpnn%predictBatch(prog%features%trainFeatures, prog%env,&
-          & prog%trainDataset%localAtToGlobalSp, prog%trainDataset%tAtomicTargets)
+      call TPredicts_init(predicts, prog%trainDataset%nDatapoints,&
+          & prog%trainDataset%nGlobalTargets, prog%trainDataset%nAtomicTargets,&
+          & prog%trainDataset%localAtToAtNum)
+      predicts%sys = bpnn%predictBatch(prog%features%trainFeatures, prog%env,&
+          & prog%trainDataset%localAtToGlobalSp)
       write(stdOut, '(A)') 'done'
       if (prog%inp%analysis%tForces) then
         write(stdOut, '(A)', advance='no') 'Calculate forces...'
@@ -712,14 +718,14 @@ contains
 
     select case(prog%inp%option%mode)
     case ('validate')
-      min = minError(predicts, prog%trainDataset%targets)
-      max = maxError(predicts, prog%trainDataset%targets)
-      mse = msLoss(predicts, prog%trainDataset%targets, prog%trainDataset%atomicWeights,&
-          & prog%trainDataset%tAtomicTargets)
-      rms = rmsLoss(predicts, prog%trainDataset%targets, prog%trainDataset%atomicWeights,&
-          & prog%trainDataset%tAtomicTargets)
-      mae = maLoss(predicts, prog%trainDataset%targets, prog%trainDataset%atomicWeights,&
-          & prog%trainDataset%tAtomicTargets)
+      min = minError(predicts, prog%trainDataset%globalTargets, prog%trainDataset%atomicTargets)
+      max = maxError(predicts, prog%trainDataset%globalTargets, prog%trainDataset%atomicTargets)
+      mse = msLoss(predicts, prog%trainDataset%globalTargets, prog%trainDataset%atomicTargets,&
+          & prog%trainDataset%atomicWeights)
+      rms = rmsLoss(predicts, prog%trainDataset%globalTargets, prog%trainDataset%atomicTargets,&
+          & prog%trainDataset%atomicWeights)
+      mae = maLoss(predicts, prog%trainDataset%globalTargets, prog%trainDataset%atomicTargets,&
+          & prog%trainDataset%atomicWeights)
       write(stdout, '(A,/)') 'Validation'
       write(stdout, '(A,E15.6)') 'min. absolute error: ', min
       write(stdout, '(A,E15.6,/)') 'max. absolute error: ', max

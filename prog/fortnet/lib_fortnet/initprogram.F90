@@ -426,14 +426,11 @@ contains
     !> number of network paramaters (weights + biases) per sub-nn
     integer, intent(in) :: nSubNnParams
 
-    ! calculate number of targets per network parameter
-    if (dataset%tAtomicTargets) then
-      dataset%nTargetsPerParam = real(dataset%nTargets * dataset%nTotalAtoms, dp) /&
-          & real(dataset%nSpecies * nSubNnParams , dp)
-    else
-      dataset%nTargetsPerParam = real(dataset%nTargets * dataset%nDatapoints, dp) /&
-          & real(dataset%nSpecies * nSubNnParams, dp)
-    end if
+    !! total number of targets in dataset
+    integer :: nTargets
+
+    nTargets = dataset%nGlobalTargets + dataset%nAtomicTargets * dataset%nTotalAtoms
+    dataset%nTargetsPerParam = real(nTargets, dp) / real(dataset%nSpecies * nSubNnParams, dp)
 
   end subroutine calcTargetsPerParam
 
@@ -602,7 +599,7 @@ contains
     logical :: tExist
 
     !> true, if dataset holds corresponding information
-    logical :: tStructures, tTargets, tExtFeatures
+    logical :: tStructures, tGlobalTargets, tAtomicTargets, tExtFeatures
 
     call getChildValue(node, 'NetstatFile', strBuffer, default='fortnet.hdf5')
 
@@ -623,8 +620,8 @@ contains
 
     ! dataset must contain targets in training or validation mode
     if ((mode == 'train') .or. (mode == 'validate')) then
-      call inquireTargets(data%trainpath, tTargets)
-      if (.not. tTargets) then
+      call inquireTargets(data%trainpath, tGlobalTargets, tAtomicTargets)
+      if (.not. (tGlobalTargets .or. tAtomicTargets)) then
         call error('Selected running mode requires the dataset to hold target information.')
       end if
     end if
@@ -677,7 +674,7 @@ contains
     !> type of neural network
     character(len=*), intent(in) :: case
 
-    !> number of input features and training targets
+    !> number of input features and total training targets (global + atomic)
     integer, intent(in) :: nFeatures, nTargets
 
     !> list of integers to parse hidden layer configuration
@@ -1225,6 +1222,7 @@ contains
     nRadial = 0
     nAngular = 0
 
+
     do iFunc = 1, size(gFunctions%func)
       if (gFunctions%func(iFunc)%tRadial) then
         nRadial = nRadial + 1
@@ -1238,7 +1236,7 @@ contains
       nSpecies = size(atomicNumbers)
 
       nFunctions = nSpecies * (nRadial + nAngular) + (factorial(nSpecies) * nAngular)&
-          & / (2 * factorial(nSpecies - 1))
+          & / (2 * factorial(nSpecies - 2))
 
       ! re-count species-resolved scheme
       nRadial = 0
@@ -1247,7 +1245,7 @@ contains
       allocate(tmpGfunctions%func(nFunctions))
 
       ! get the possible combinations of two atomic number without double counting
-      call combinationsWithReplacement(atomicNumbers, size(atomicNumbers), comb)
+      call combinationsWithReplacement(atomicNumbers, 2, comb)
 
       do iFunc = 1, size(gFunctions%func)
         if (gFunctions%func(iFunc)%tRadial) then
@@ -1274,7 +1272,7 @@ contains
   end subroutine processAcsfFunctions
 
 
-  !> Checks analysis input consistency by evaluating several assertions.
+  !> Checks analysis input consistency by probing feature and target configuration.
   subroutine TInput_checkAnalysisConsistency(this, trainDataset)
 
     !> instance containing parsed input
