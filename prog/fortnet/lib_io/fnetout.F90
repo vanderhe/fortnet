@@ -122,10 +122,12 @@ contains
         if (output%nGlobalTargets > 0) then
           call h5ltfxmake_dataset_double_f(datapoint_id, 'globalpredictions',&
               & sum(output%sys(iSys)%array(1:output%nGlobalTargets, :), dim=2))
+          call h5ltfxmake_dataset_double_f(datapoint_id, 'globaltargets', globalTargets(iSys)%array)
         end if
         call h5ltfxmake_dataset_double_f(datapoint_id, 'rawpredictions', output%sys(iSys)%array)
-        call h5ltfxmake_dataset_double_f(datapoint_id, 'globaltargets', globalTargets(iSys)%array)
-        call h5ltfxmake_dataset_double_f(datapoint_id, 'atomictargets', atomicTargets(iSys)%array)
+        if (output%nAtomicTargets > 0) then
+          call h5ltfxmake_dataset_double_f(datapoint_id, 'atomictargets', atomicTargets(iSys)%array)
+        end if
         if (tForcesSupplied) then
           ! write atomic forces to file
           call h5ltfxmake_dataset_double_f(datapoint_id, 'forces', forces%geos(iSys)%array)
