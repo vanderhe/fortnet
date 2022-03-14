@@ -128,6 +128,8 @@ prediction/multispecies/atomicTargets/acsffeatures/noPrec
 prediction/multispecies/atomicTargets/acsffeatures/speciesResolved
 prediction/multispecies/atomicTargets/acsffeatures/speciesUnresolved
 
+prediction/multispecies/bothTargets
+
 prediction/multispecies/globalTargets/acsffeatures/noPrec
 prediction/multispecies/globalTargets/acsffeatures/speciesResolved
 prediction/multispecies/globalTargets/acsffeatures/speciesUnresolved
@@ -164,6 +166,8 @@ restart/multispecies/atomicTargets/acsffeatures/noPrec
 restart/multispecies/atomicTargets/acsffeatures/speciesResolved
 restart/multispecies/atomicTargets/acsffeatures/speciesUnresolved
 
+restart/multispecies/bothTargets
+
 restart/multispecies/globalTargets/acsffeatures/noPrec
 restart/multispecies/globalTargets/acsffeatures/speciesResolved
 restart/multispecies/globalTargets/acsffeatures/speciesUnresolved
@@ -180,6 +184,8 @@ training/multispecies/atomicTargets/optimizer/conjgrads
 training/multispecies/atomicTargets/optimizer/fire
 training/multispecies/atomicTargets/optimizer/lbfgs
 training/multispecies/atomicTargets/optimizer/steepestdesc
+
+training/multispecies/bothTargets
 
 training/multispecies/globalTargets/optimizer/conjgrads
 training/multispecies/globalTargets/optimizer/fire
@@ -216,6 +222,8 @@ validation/multispecies/atomicTargets/optimizer/conjgrads
 validation/multispecies/atomicTargets/optimizer/fire
 validation/multispecies/atomicTargets/optimizer/lbfgs
 validation/multispecies/atomicTargets/optimizer/steepestdesc
+
+validation/multispecies/bothTargets
 
 validation/multispecies/globalTargets/optimizer/conjgrads
 validation/multispecies/globalTargets/optimizer/fire
