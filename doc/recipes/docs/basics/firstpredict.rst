@@ -38,9 +38,9 @@ example looks as follows::
   }
 
 The order of the specified blocks in the HSD input is arbitrary. You are free to
-capitalise the keywords and any physical units as you like, since they are
-case-insensitive. This is not valid however for string values, especially if
-they are specifying file names.
+capitalise the keywords as you like, since they are case-insensitive. This is
+not valid however for string values, especially if they are specifying file
+names.
 
 So let's have a look at the two necessary input blocks, ``Data`` and
 ``Options``.
@@ -157,16 +157,16 @@ the ``Fortformat`` Python package that ships with Fortnet:
       nndists = np.arange(2.10, 3.30 + 0.05, 0.05)
 
       fnetout = Fnetout('fnetout.hdf5')
-      predictions = fnetout.predictions
-      targets = fnetout.targets
+      globalpredictions = fnetout.globalpredictions
+      globaltargets = fnetout.globaltargets
 
       plt.figure(figsize=(7, 5))
       plt.title('Comparison of Neural Network Predictions with Targets')
       plt.xlabel(r'Nearest Neighbour Distance [$\mathrm{\AA}$]')
       plt.ylabel('Total Energy [eV / Atom]')
 
-      plt.plot(nndists, predictions / 2.0, color='blue', label='NN')
-      plt.scatter(nndists, targets / 2.0, s=10, color='black', label='DFT')
+      plt.plot(nndists, globalpredictions / 2.0, color='blue', label='NN')
+      plt.scatter(nndists, globaltargets / 2.0, s=10, color='black', label='DFT')
 
       plt.tight_layout()
       plt.legend()

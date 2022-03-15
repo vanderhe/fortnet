@@ -37,7 +37,7 @@ def main():
         atomicweights.append(np.asfarray(
             np.random.randint(1, 10, len(struc), dtype=int)))
 
-    fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+    fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
     fnetdata.atomicweights = atomicweights
     fnetdata.dump('fnetdata_float_weighting.hdf5')
 

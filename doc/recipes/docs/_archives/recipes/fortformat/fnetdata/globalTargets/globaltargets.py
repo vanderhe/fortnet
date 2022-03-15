@@ -29,7 +29,7 @@ def main():
         props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))
         energies[ii, 0] = props.get_total_energy()
 
-    fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+    fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
     fnetdata.dump('fnetdata.hdf5')
 
 
