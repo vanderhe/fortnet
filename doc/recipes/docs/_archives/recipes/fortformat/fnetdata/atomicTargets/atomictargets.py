@@ -32,7 +32,7 @@ def main():
         tmp[:, 0] = props.get_total_energy() / 2.0
         energies.append(tmp)
 
-    fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=True)
+    fnetdata = Fnetdata(atoms=strucs, atomictargets=energies)
     fnetdata.dump('fnetdata.hdf5')
 
 

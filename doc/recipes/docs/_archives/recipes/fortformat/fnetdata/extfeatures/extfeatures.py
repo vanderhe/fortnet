@@ -33,8 +33,8 @@ def main():
         energies[ii, 0] = props.get_total_energy()
         features.append(np.random.random_sample((len(struc), 3)))
 
-    fnetdata = Fnetdata(atoms=strucs, targets=energies,
-                        features=features, atomic=False)
+    fnetdata = Fnetdata(atoms=strucs, globaltargets=energies,
+                        features=features)
     fnetdata.dump('fnetdata.hdf5')
 
 

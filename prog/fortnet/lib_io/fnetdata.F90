@@ -61,20 +61,32 @@ module fnet_fnetdata
     !> true, if targets are provided
     logical :: tTargets
 
-    !> true, if targets are atomic properties
+    !> true, if global targets are provided
+    logical :: tGlobalTargets
+
+    !> true, if atomic targets are provided
     logical :: tAtomicTargets
 
-    !> number of target values per atom (if tAtomicTargets = .true.) or system
+    !> number of system-wide target values
+    integer :: nGlobalTargets
+
+    !> number of atomic target values per atom (per system)
+    integer :: nAtomicTargets
+
+    !> total number of targets (global + atomic), i.e. number of output nodes
     integer :: nTargets
 
     !> global atomic numbers present in the dataset
     integer, allocatable :: atomicNumbers(:)
 
-    !> number of targets per network parameter
+    !> number of dataset targets per network parameter
     real(dp) :: nTargetsPerParam
 
-    !> target values for training or validation
-    type(TRealArray2D), allocatable :: targets(:)
+    !> system-wide target values for training or validation
+    type(TRealArray1D), allocatable :: globalTargets(:)
+
+    !> atomic target values for training or validation
+    type(TRealArray2D), allocatable :: atomicTargets(:)
 
     !> contains obtained datapoint gradient weights
     integer, allocatable :: weights(:)
@@ -131,11 +143,14 @@ contains
     call mpifx_bcast(comm, dataset%nSpecies)
     call mpifx_bcast(comm, dataset%nTotalAtoms)
     call mpifx_bcast(comm, dataset%nTargets)
+    call mpifx_bcast(comm, dataset%nGlobalTargets)
+    call mpifx_bcast(comm, dataset%nAtomicTargets)
     call mpifx_bcast(comm, dataset%nTargetsPerParam)
     call mpifx_bcast(comm, dataset%nExtFeatures)
 
     ! synchronize scalar logicals
     call mpifx_bcast(comm, dataset%tTargets)
+    call mpifx_bcast(comm, dataset%tGlobalTargets)
     call mpifx_bcast(comm, dataset%tAtomicTargets)
     call mpifx_bcast(comm, dataset%tStructures)
     call mpifx_bcast(comm, dataset%tExtFeatures)
@@ -156,10 +171,11 @@ contains
 
     if (.not. comm%lead) then
 
-      if (dataset%tTargets) then
-        if (allocated(dataset%targets)) deallocate(dataset%targets)
-        allocate(dataset%targets(dataset%nDatapoints))
-      end if
+      if (allocated(dataset%globalTargets)) deallocate(dataset%globalTargets)
+      allocate(dataset%globalTargets(dataset%nDatapoints))
+
+      if (allocated(dataset%atomicTargets)) deallocate(dataset%atomicTargets)
+      allocate(dataset%atomicTargets(dataset%nDatapoints))
 
       if (dataset%tStructures) then
         if (allocated(dataset%geos)) deallocate(dataset%geos)
@@ -202,21 +218,34 @@ contains
         call mpifx_bcast(comm, dataset%localAtToGlobalSp(iData)%array)
         call mpifx_bcast(comm, dataset%localAtToAtNum(iData)%array)
       end if
-      if (dataset%tTargets) then
+      if (dataset%tGlobalTargets) then
         if (comm%lead) then
-          dims1d = shape(dataset%targets(iData)%array)
+          dims0d = size(dataset%globalTargets(iData)%array)
+        end if
+        call mpifx_bcast(comm, dims0d)
+        if (.not. comm%lead) then
+          if (allocated(dataset%globalTargets(iData)%array)) then
+            deallocate(dataset%globalTargets(iData)%array)
+          end if
+          allocate(dataset%globalTargets(iData)%array(dims0d))
+        end if
+        call mpifx_bcast(comm, dataset%globalTargets(iData)%array)
+      end if
+      if (dataset%tAtomicTargets) then
+        if (comm%lead) then
+          dims1d = shape(dataset%atomicTargets(iData)%array)
         else
           if (allocated(dims1d)) deallocate(dims1d)
           allocate(dims1d(2))
         end if
         call mpifx_bcast(comm, dims1d)
         if (.not. comm%lead) then
-          if (allocated(dataset%targets(iData)%array)) then
-            deallocate(dataset%targets(iData)%array)
+          if (allocated(dataset%atomicTargets(iData)%array)) then
+            deallocate(dataset%atomicTargets(iData)%array)
           end if
-          allocate(dataset%targets(iData)%array(dims1d(1), dims1d(2)))
+          allocate(dataset%atomicTargets(iData)%array(dims1d(1), dims1d(2)))
         end if
-        call mpifx_bcast(comm, dataset%targets(iData)%array)
+        call mpifx_bcast(comm, dataset%atomicTargets(iData)%array)
       end if
       if (dataset%tExtFeatures) then
         if (comm%lead) then
@@ -359,19 +388,22 @@ contains
 
 
   !> Inquires whether targets are provided by the dataset file.
-  subroutine inquireTargets(fname, tTargets, tAtomic, nTargets)
+  subroutine inquireTargets(fname, tGlobalTargets, tAtomicTargets, nGlobalTargets, nAtomicTargets)
 
     !> filename of the dataset
     character(len=*), intent(in) :: fname
 
-    !> true, if the dataset provides target information
-    logical, intent(out) :: tTargets
+    !> true, if the dataset provides system-wide target information
+    logical, intent(out) :: tGlobalTargets
 
-    !> optional information regarding the target kind
-    logical, intent(out), optional :: tAtomic
+    !> true, if the dataset provides atomic target information
+    logical, intent(out) :: tAtomicTargets
 
-    !> optional output for the number of targets
-    integer, intent(out), optional :: nTargets
+    !> optional output for the number of system-wide targets
+    integer, intent(out), optional :: nGlobalTargets
+
+    !> optional output for the number of atomic targets
+    integer, intent(out), optional :: nAtomicTargets
 
     !> file identification
     integer(hid_t) :: file_id
@@ -388,25 +420,28 @@ contains
     ! open the dataset file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
-    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'ntargets', tmp, iErr)
+    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'nglobaltargets', tmp, iErr)
 
     if (tmp(1) > 0) then
-      tTargets = .true.
+      tGlobalTargets = .true.
     else
-      tTargets = .false.
+      tGlobalTargets = .false.
     end if
 
-    if (present(nTargets)) then
-      nTargets = tmp(1)
+    if (present(nGlobalTargets)) then
+      nGlobalTargets = tmp(1)
     end if
 
-    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'atomic', tmp, iErr)
-    if (present(tAtomic)) then
-      if (tmp(1) == 1) then
-        tAtomic = .true.
-      else
-        tAtomic = .false.
-      end if
+    call h5ltget_attribute_int_f(file_id, 'fnetdata/dataset/training', 'natomictargets', tmp, iErr)
+
+    if (tmp(1) > 0) then
+      tAtomicTargets = .true.
+    else
+      tAtomicTargets = .false.
+    end if
+
+    if (present(nAtomicTargets)) then
+      nAtomicTargets = tmp(1)
     end if
 
     ! close the dataset file
@@ -482,12 +517,27 @@ contains
       call error('Incompatible training and validation dataset. Check targets.')
     end if
 
+    if (.not. (ref%tGlobalTargets .eqv. comp%tGlobalTargets)) then
+      call error('Incompatible training and validation dataset. Check system-wide targets.')
+    end if
+
     if (.not. (ref%tAtomicTargets .eqv. comp%tAtomicTargets)) then
-      call error('Incompatible training and validation dataset. Check target kind.')
+      call error('Incompatible training and validation dataset. Check atomic targets.')
     end if
 
     if (.not. (ref%nTargets == comp%nTargets)) then
-      call error('Incompatible training and validation dataset. Check number of targets.')
+      call error('Incompatible training and validation dataset.&
+          & Check total number of targets.')
+    end if
+
+    if (.not. (ref%nGlobalTargets == comp%nGlobalTargets)) then
+      call error('Incompatible training and validation dataset.&
+          & Check number of system-wide targets.')
+    end if
+
+    if (.not. (ref%nAtomicTargets == comp%nAtomicTargets)) then
+      call error('Incompatible training and validation dataset.&
+          & Check number of atomic targets.')
     end if
 
     if (.not. (ref%tStructures .eqv. comp%tStructures)) then
@@ -542,11 +592,19 @@ contains
     @:ASSERT(size(this%weights) == this%nDatapoints)
     @:ASSERT(size(this%atomicWeights) == this%nDatapoints)
 
-    if (this%tTargets) then
-      @:ASSERT(this%nTargets > 0)
+    if (this%tGlobalTargets) then
+      @:ASSERT(this%nGlobalTargets > 0)
     else
-      @:ASSERT(this%nTargets == 0)
+      @:ASSERT(this%nGlobalTargets == 0)
     end if
+
+    if (this%tAtomicTargets) then
+      @:ASSERT(this%nAtomicTargets > 0)
+    else
+      @:ASSERT(this%nAtomicTargets == 0)
+    end if
+
+    @:ASSERT((this%nGlobalTargets + this%nAtomicTargets) == this%nTargets)
 
     if (this%tExtFeatures) then
       @:ASSERT(this%nExtFeatures > 0)
@@ -648,7 +706,8 @@ contains
 
 
   !> Checks the compatibility of a dataset with the species of a BPNN.
-  subroutine checkBpnnDatasetCompatibility(dataset, atomicNumbers, tAtomicTargets, allowSpSubset)
+  subroutine checkBpnnDatasetCompatibility(dataset, atomicNumbers, nGlobalTargets, nAtomicTargets,&
+      & allowSpSubset)
 
     !> representation of a dataset
     type(TDataset), intent(in) :: dataset
@@ -656,8 +715,11 @@ contains
     !> atomic numbers of a BPNN representation
     integer, intent(in) :: atomicNumbers(:)
 
-    !> true, if the BPNN was created for atomic targets
-    logical, intent(in) :: tAtomicTargets
+    !> number of system-wide targets of BPNN
+    integer, intent(in) :: nGlobalTargets
+
+    !> number of atomic targets of BPNN
+    integer, intent(in) :: nAtomicTargets
 
     !> true, if the dataset is allowed to only hold a subset of BPNN species
     logical, intent(in), optional :: allowSpSubset
@@ -680,8 +742,12 @@ contains
       tAllowSpSubset = .false.
     end if
 
-    if (.not. (dataset%tAtomicTargets .eqv. tAtomicTargets)) then
-      call error('Incompatibility in target kind of dataset and BPNN.')
+    if (.not. (dataset%nGlobalTargets == nGlobalTargets)) then
+      call error('Incompatibility in number of system-wide targets of dataset and BPNN.')
+    end if
+
+    if (.not. (dataset%nAtomicTargets == nAtomicTargets)) then
+      call error('Incompatibility in number of atomic targets of dataset and BPNN.')
     end if
 
     ! compare atomic numbers
@@ -778,21 +844,26 @@ contains
       dataset%tStructures = .false.
     end if
 
-    call h5ltget_attribute_int_f(training_grp, './', 'ntargets', tmp, iErr)
-    dataset%nTargets = tmp(1)
-    if (dataset%nTargets > 0) then
-      dataset%tTargets = .true.
-      allocate(dataset%targets(dataset%nDatapoints))
+    call h5ltget_attribute_int_f(training_grp, './', 'nglobaltargets', tmp, iErr)
+    dataset%nGlobalTargets = tmp(1)
+    if (dataset%nGlobalTargets > 0) then
+      dataset%tGlobalTargets = .true.
     else
-      dataset%tTargets = .false.
+      dataset%tGlobalTargets = .false.
     end if
+    allocate(dataset%globaltargets(dataset%nDatapoints))
 
-    call h5ltget_attribute_int_f(training_grp, './', 'atomic', tmp, iErr)
-    if (tmp(1) == 1) then
+    call h5ltget_attribute_int_f(training_grp, './', 'natomictargets', tmp, iErr)
+    dataset%nAtomicTargets = tmp(1)
+    if (dataset%nAtomicTargets > 0) then
       dataset%tAtomicTargets = .true.
     else
       dataset%tAtomicTargets = .false.
     end if
+    allocate(dataset%atomicTargets(dataset%nDatapoints))
+
+    dataset%tTargets = (dataset%tGlobalTargets .or. dataset%tAtomicTargets)
+    dataset%nTargets = dataset%nGlobalTargets + dataset%nAtomicTargets
 
     call h5ltfx_read_dataset_int_f(dataset_grp, 'atomicnumbers', dataset%atomicNumbers)
     dataset%nSpecies = size(dataset%atomicNumbers)
@@ -902,9 +973,14 @@ contains
         dataset%atomicWeights(iDatapoint)%array(:) = 1.0_dp
       end if
 
-      if (dataset%tTargets) then
-        call h5ltfx_read_dataset_double_f(datapoint_grp, 'targets',&
-            & dataset%targets(iDatapoint)%array)
+      if (dataset%tGlobalTargets) then
+        call h5ltfx_read_dataset_double_f(datapoint_grp, 'globaltargets',&
+            & dataset%globalTargets(iDatapoint)%array)
+      end if
+
+      if (dataset%tAtomicTargets) then
+        call h5ltfx_read_dataset_double_f(datapoint_grp, 'atomictargets',&
+            & dataset%atomicTargets(iDatapoint)%array)
       end if
 
       if (dataset%tExtFeatures) then

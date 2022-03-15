@@ -18,16 +18,16 @@ def main():
     nndists = np.arange(2.10, 3.30 + 0.05, 0.05)
 
     fnetout = Fnetout('fnetout.hdf5')
-    predictions = fnetout.predictions
-    targets = fnetout.targets
+    globalpredictions = fnetout.globalpredictions
+    globaltargets = fnetout.globaltargets
 
     plt.figure(figsize=(7, 5))
     plt.title('Comparison of Neural Network Predictions with Targets')
     plt.xlabel(r'Nearest Neighbour Distance [$\mathrm{\AA}$]')
     plt.ylabel('Total Energy [eV / Atom]')
 
-    plt.plot(nndists, predictions / 2.0, color='blue', label='NN')
-    plt.scatter(nndists, targets / 2.0, s=10, color='black', label='DFT')
+    plt.plot(nndists, globalpredictions / 2.0, color='blue', label='NN')
+    plt.scatter(nndists, globaltargets / 2.0, s=10, color='black', label='DFT')
 
     plt.tight_layout()
     plt.legend()

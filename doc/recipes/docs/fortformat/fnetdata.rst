@@ -13,6 +13,7 @@ two different types of target values; with separate sections being dedicated to:
 
 * global system properties
 * and atomic properties
+* a mixture of global and atomic properties
 
 After this tutorial, you will be able to create a Fortnet compatible dataset,
 based on the output files of your simulation package of choice (e.g. VASP).
@@ -37,7 +38,7 @@ raw data is stored at `recipes/fnetdata/globalTargets/vaspdata/` in the form of
 structure information (POSCAR) and simulation output (OUTCAR). The following
 Python script shows one possible way to get a dataset containing the total
 energy of the respective system, based on this raw data.
- 
+
 .. code-block:: python
 
   #!/usr/bin/env python3
@@ -68,7 +69,7 @@ energy of the respective system, based on this raw data.
 	  props = read_vasp_out(os.path.join(inpath, 'OUTCAR'))
 	  energies[ii, 0] = props.get_total_energy()
 
-      fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+      fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
       fnetdata.dump('fnetdata.hdf5')
 
   if __name__ == '__main__':
@@ -82,8 +83,7 @@ list of structures. The individual total energies of the datapoints are stored
 in an empty Numpy array, where the number of rows being determined by the number
 of datapoints and the columns by the number of global targets per datapoint.
 Finally, an ``Fnetdata`` object gets instantiated using the gathered
-information, as well as providing a keyword argument to determine if atomic
-properties are present (default: False).
+information.
 
 
 *****************
@@ -142,7 +142,7 @@ or charges as targets.
 	  tmp[:, 0] = props.get_total_energy() / 2.0
 	  energies.append(tmp)
 
-      fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=True)
+      fnetdata = Fnetdata(atoms=strucs, atomictargets=energies)
       fnetdata.dump('fnetdata.hdf5')
 
   if __name__ == '__main__':
@@ -157,8 +157,7 @@ Since each of those structures will in general have a different number of atoms,
 the target values are stored in a list of Numpy arrays, where the number of rows
 being determined by the number of atoms and the columns by the number of targets
 per atom. Finally, an ``Fnetdata`` object gets instantiated using the gathered
-information, as well as providing a keyword argument to determine if atomic
-properties are present (default: False).
+information.
 
 
 ********************
@@ -167,9 +166,9 @@ Weighting Datapoints
 
 [Input: `recipes/fortformat/fnetdata/weighting/datapoints/`]
 
-There are countless conceivable situations in which weighting individual
-datapoints makes sense. The detour via the increased insertion of a datapoint is
-not only cumbersome but also inefficient, since exactly the same input features
+There are conceivable situations in which weighting individual datapoints makes
+sense. The detour via the increased insertion of a datapoint is not only
+cumbersome but also inefficient, since exactly the same input features
 (e.g. ACSF) and gradients would be calculated multiple times. To elegantly
 circumvent this, ``Fnetdata`` and ``Fortnet`` offer the possibility of
 individually weighting certain datapoints of a dataset. After a Fortformat
@@ -183,7 +182,7 @@ setter function. The following code snippet shows what this could look like:
   # possibly, certain datapoints are more important
   weights[4:13] = 3
 
-  fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+  fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
   fnetdata.weights = weights
   fnetdata.dump('fnetdata.hdf5')
 
@@ -223,7 +222,7 @@ like:
       atomicweights.append(np.asfarray(
 	  np.random.randint(1, 10, len(atom), dtype=int)))
 
-  fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+  fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
   fnetdata.atomicweights = atomicweights
   fnetdata.dump('fnetdata.hdf5')
 
@@ -248,7 +247,7 @@ calculations will be skipped and thus a significant performance gain achieved:
       # randomly activate/deactivate atomic contributions
       atomicweights.append(np.random.choice(sample, size=len(atom)))
 
-  fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+  fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
   fnetdata.atomicweights = atomicweights
   fnetdata.dump('fnetdata.hdf5')
 
@@ -315,8 +314,8 @@ used as features, which therefore only serve a demonstrative purpose.
 	  energies[ii, 0] = props.get_total_energy()
 	  features.append(np.random.random_sample((len(struc), 3)))
 
-      fnetdata = Fnetdata(atoms=strucs, targets=energies,
-			  features=features, atomic=False)
+      fnetdata = Fnetdata(atoms=strucs, globaltargets=energies,
+                          features=features)
       fnetdata.dump('fnetdata.hdf5')
 
   if __name__ == '__main__':

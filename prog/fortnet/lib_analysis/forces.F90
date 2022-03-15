@@ -203,6 +203,9 @@ contains
     !> extended index mapping local atom --> global species index
     type(TIntArray1D), allocatable :: localAtToGlobalSpExtended(:)
 
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
+
     !> network predictions for rattled geometries with one perturbed atom
     type(TPredicts) :: predicts, resPredicts
 
@@ -244,8 +247,9 @@ contains
     end do
 
     do iSys = iStart, iEnd
-      predicts%sys(iSys)%array(:,:) = bpnn%iPredict(forcesAcsf%vals%vals(iSys)%array,&
-          & localAtToGlobalSpExtended(iSys)%array, .false.)
+      globalPredicts = sum(bpnn%iPredict(forcesAcsf%vals%vals(iSys)%array,&
+          & localAtToGlobalSpExtended(iSys)%array), dim=2)
+      predicts%sys(iSys)%array(:, 1) = globalPredicts
     end do
 
   #:if WITH_MPI
@@ -331,6 +335,9 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
+
     !> network predictions for rattled geometries with one perturbed atom
     type(TPredicts) :: predicts, resPredicts
 
@@ -372,8 +379,9 @@ contains
 
     ! calculate network predictions
     do iSys = iStart, iEnd
-      predicts%sys(iSys)%array(:,:) = bpnn%iPredict(features(iSys)%array,&
-          & localAtToGlobalSp(iSys)%array, .false.)
+      globalPredicts = sum(bpnn%iPredict(features(iSys)%array,&
+          & localAtToGlobalSp(iSys)%array), dim=2)
+      predicts%sys(iSys)%array(:, 1) = globalPredicts
     end do
 
     ! sync network predictions

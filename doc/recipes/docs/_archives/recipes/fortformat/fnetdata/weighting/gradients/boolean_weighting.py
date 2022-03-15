@@ -37,7 +37,7 @@ def main():
         # randomly activate/deactivate atomic contributions
         atomicweights.append(np.random.choice(sample, size=len(struc)))
 
-    fnetdata = Fnetdata(atoms=strucs, targets=energies, atomic=False)
+    fnetdata = Fnetdata(atoms=strucs, globaltargets=energies)
     fnetdata.atomicweights = atomicweights
     fnetdata.dump('fnetdata_boolean_weighting.hdf5')
 

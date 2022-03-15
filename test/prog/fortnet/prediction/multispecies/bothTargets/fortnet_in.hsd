@@ -1,0 +1,16 @@
+Data {
+
+  Dataset = '../../../datasets/fnetdata_hcno_c_bothtargets.hdf5'
+  NetstatFile = 'fortnet.hdf5'
+
+}
+
+Options {
+
+  ReadNetStats = Yes
+  Mode = predict
+
+  RandomSeed = 123456
+  WriteIterationTrajectory = No
+
+}

@@ -28,7 +28,8 @@ module fnet_loss
 
   abstract interface
 
-    pure function lossFunc(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
+    pure function lossFunc(predicts, globalTargets, atomicTargets, atomicWeights, weights)&
+        & result(loss)
 
       use dftbp_accuracy, only: dp
       use fnet_nestedtypes, only : TPredicts, TRealArray1D, TRealArray2D
@@ -38,14 +39,14 @@ module fnet_loss
       !> neural network predictions
       type(TPredicts), intent(in) :: predicts
 
-      !> target reference data
-      type(TRealArray2D), intent(in) :: targets(:)
+      !> system-wide target reference data
+      type(TRealArray1D), intent(in) :: globalTargets(:)
+
+      !> atomic target reference data
+      type(TRealArray2D), intent(in) :: atomicTargets(:)
 
       !> contains atomic gradient weights
       type(TRealArray1D), intent(in) :: atomicWeights(:)
-
-      !> true, if trained on atomic properties
-      logical, intent(in) :: tAtomicTargets
 
       !> optional weighting of individual datapoints
       integer, intent(in), optional :: weights(:)
@@ -366,22 +367,25 @@ contains
 
 
   !> Calculates the mean absolute loss function.
-  pure function maLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
+  pure function maLoss(predicts, globalTargets, atomicTargets, atomicWeights, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
 
     !> contains atomic gradient weights
     type(TRealArray1D), intent(in) :: atomicWeights(:)
 
-    !> true, if trained on atomic properties
-    logical, intent(in) :: tAtomicTargets
-
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
+
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
 
     !> summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
@@ -393,7 +397,8 @@ contains
     integer, allocatable :: weighting(:)
 
     !> auxiliary variables
-    integer :: iSys, iAtom, nValues
+    integer :: iSys, iAtom
+    real(dp) :: nValues
 
     allocate(weighting(size(predicts%sys)))
 
@@ -404,48 +409,56 @@ contains
     end if
 
     loss = 0.0_dp
-    nValues = 0
+    nValues = 0.0_dp
 
-    if (tAtomicTargets) then
-      do iSys = 1, size(predicts%sys)
-        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-          tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
-          nValues = nValues + weighting(iSys)
-        end do
+    if (predicts%nGlobalTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpLoss = simpleMaLoss(globalPredicts, globalTargets(iSys)%array)
+        ! multiply loss with datapoint weighting and number of atoms contributing to the prediction
+        loss = loss + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array) * tmpLoss
+        nValues = nValues + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array)
       end do
-    else
-      do iSys = 1, size(predicts%sys)
-        tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-      end do
-      nValues = sum(weighting)
     end if
 
-    loss = loss / real(nValues, dp)
+    if (predicts%nAtomicTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMaLoss(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, iAtom),&
+              & atomicTargets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom)
+        end do
+      end do
+    end if
+
+    loss = loss / nValues
 
   end function maLoss
 
 
   !> Calculates the mean absolute percentage loss function.
-  pure function mapLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
+  pure function mapLoss(predicts, globalTargets, atomicTargets, atomicWeights, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
 
     !> contains atomic gradient weights
     type(TRealArray1D), intent(in) :: atomicWeights(:)
 
-    !> true, if trained on atomic properties
-    logical, intent(in) :: tAtomicTargets
-
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> summed mean absolute percentage loss of predictions, in comparison to targets
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
+
+    !> summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
@@ -455,7 +468,8 @@ contains
     integer, allocatable :: weighting(:)
 
     !> auxiliary variables
-    integer :: iSys, iAtom, nValues
+    integer :: iSys, iAtom
+    real(dp) :: nValues
 
     allocate(weighting(size(predicts%sys)))
 
@@ -466,48 +480,56 @@ contains
     end if
 
     loss = 0.0_dp
-    nValues = 0
+    nValues = 0.0_dp
 
-    if (tAtomicTargets) then
-      do iSys = 1, size(predicts%sys)
-        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-          tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
-          nValues = nValues + weighting(iSys)
-        end do
+    if (predicts%nGlobalTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpLoss = simpleMapLoss(globalPredicts, globalTargets(iSys)%array)
+        ! multiply loss with datapoint weighting and number of atoms contributing to the prediction
+        loss = loss + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array) * tmpLoss
+        nValues = nValues + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array)
       end do
-    else
-      do iSys = 1, size(predicts%sys)
-        tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-      end do
-      nValues = sum(weighting)
     end if
 
-    loss = loss / real(nValues, dp)
+    if (predicts%nAtomicTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMapLoss(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, iAtom),&
+              & atomicTargets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom)
+        end do
+      end do
+    end if
+
+    loss = loss / nValues
 
   end function mapLoss
 
 
   !> Calculates the mean squared loss function.
-  pure function msLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
+  pure function msLoss(predicts, globalTargets, atomicTargets, atomicWeights, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
 
     !> contains atomic gradient weights
     type(TRealArray1D), intent(in) :: atomicWeights(:)
 
-    !> true, if trained on atomic properties
-    logical, intent(in) :: tAtomicTargets
-
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> summed mean squared loss of predictions, in comparison to targets
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
+
+    !> summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
@@ -517,7 +539,8 @@ contains
     integer, allocatable :: weighting(:)
 
     !> auxiliary variables
-    integer :: iSys, iAtom, nValues
+    integer :: iSys, iAtom
+    real(dp) :: nValues
 
     allocate(weighting(size(predicts%sys)))
 
@@ -528,48 +551,56 @@ contains
     end if
 
     loss = 0.0_dp
-    nValues = 0
+    nValues = 0.0_dp
 
-    if (tAtomicTargets) then
-      do iSys = 1, size(predicts%sys)
-        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-          tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
-          nValues = nValues + weighting(iSys)
-        end do
+    if (predicts%nGlobalTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpLoss = simpleMsLoss(globalPredicts, globalTargets(iSys)%array)
+        ! multiply loss with datapoint weighting and number of atoms contributing to the prediction
+        loss = loss + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array) * tmpLoss
+        nValues = nValues + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array)
       end do
-    else
-      do iSys = 1, size(predicts%sys)
-        tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-      end do
-      nValues = sum(weighting)
     end if
 
-    loss = loss / real(nValues, dp)
+    if (predicts%nAtomicTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMsLoss(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, iAtom),&
+              & atomicTargets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom)
+        end do
+      end do
+    end if
+
+    loss = loss / nValues
 
   end function msLoss
 
 
   !> Calculates the mean squared logarithmic loss function.
-  pure function mslLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
+  pure function mslLoss(predicts, globalTargets, atomicTargets, atomicWeights, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
 
     !> contains atomic gradient weights
     type(TRealArray1D), intent(in) :: atomicWeights(:)
 
-    !> true, if trained on atomic properties
-    logical, intent(in) :: tAtomicTargets
-
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> summed mean square logarithmic loss of predictions, in comparison to targets
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
+
+    !> summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
@@ -579,7 +610,8 @@ contains
     integer, allocatable :: weighting(:)
 
     !> auxiliary variables
-    integer :: iSys, iAtom, nValues
+    integer :: iSys, iAtom
+    real(dp) :: nValues
 
     allocate(weighting(size(predicts%sys)))
 
@@ -590,48 +622,56 @@ contains
     end if
 
     loss = 0.0_dp
-    nValues = 0
+    nValues = 0.0_dp
 
-    if (tAtomicTargets) then
-      do iSys = 1, size(predicts%sys)
-        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-          tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
-          nValues = nValues + weighting(iSys)
-        end do
+    if (predicts%nGlobalTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpLoss = simpleMslLoss(globalPredicts, globalTargets(iSys)%array)
+        ! multiply loss with datapoint weighting and number of atoms contributing to the prediction
+        loss = loss + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array) * tmpLoss
+        nValues = nValues + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array)
       end do
-    else
-      do iSys = 1, size(predicts%sys)
-        tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-      end do
-      nValues = sum(weighting)
     end if
 
-    loss = loss / real(nValues, dp)
+    if (predicts%nAtomicTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleMslLoss(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, iAtom),&
+              & atomicTargets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom)
+        end do
+      end do
+    end if
+
+    loss = loss / nValues
 
   end function mslLoss
 
 
   !> Calculates the root mean square loss function.
-  pure function rmsLoss(predicts, targets, atomicWeights, tAtomicTargets, weights) result(loss)
+  pure function rmsLoss(predicts, globalTargets, atomicTargets, atomicWeights, weights) result(loss)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
 
     !> contains atomic gradient weights
     type(TRealArray1D), intent(in) :: atomicWeights(:)
 
-    !> true, if trained on atomic properties
-    logical, intent(in) :: tAtomicTargets
-
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> summed root mean square loss of predictions, in comparison to targets
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
+
+    !> summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
     !> temporary loss storage
@@ -641,7 +681,8 @@ contains
     integer, allocatable :: weighting(:)
 
     !> auxiliary variables
-    integer :: iSys, iAtom, nValues
+    integer :: iSys, iAtom
+    real(dp) :: nValues
 
     allocate(weighting(size(predicts%sys)))
 
@@ -652,85 +693,144 @@ contains
     end if
 
     loss = 0.0_dp
-    nValues = 0
+    nValues = 0.0_dp
 
-    if (tAtomicTargets) then
-      do iSys = 1, size(predicts%sys)
-        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
-          tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(:, iAtom), targets(iSys)%array(:, iAtom))
-          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
-          nValues = nValues + weighting(iSys)
-        end do
+    if (predicts%nGlobalTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpLoss = simpleRmsLoss(globalPredicts, globalTargets(iSys)%array)
+        ! multiply loss with datapoint weighting and number of atoms contributing to the prediction
+        loss = loss + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array) * tmpLoss
+        nValues = nValues + real(weighting(iSys), dp) * sum(atomicWeights(iSys)%array)
       end do
-    else
-      do iSys = 1, size(predicts%sys)
-        tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(:, 1), targets(iSys)%array(:, 1))
-        loss = loss + real(weighting(iSys), dp) * tmpLoss
-      end do
-      nValues = sum(weighting)
     end if
 
-    loss = loss / real(nValues, dp)
+    if (predicts%nAtomicTargets > 0) then
+      do iSys = 1, predicts%nDatapoints
+        do iAtom = 1, size(predicts%sys(iSys)%array, dim=2)
+          tmpLoss = simpleRmsLoss(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, iAtom),&
+              & atomicTargets(iSys)%array(:, iAtom))
+          loss = loss + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom) * tmpLoss
+          nValues = nValues + real(weighting(iSys), dp) * atomicWeights(iSys)%array(iAtom)
+        end do
+      end do
+    end if
+
+    loss = loss / nValues
 
   end function rmsLoss
 
 
   !> Calculates the absolute minium deviation between predictions and targets.
-  pure function minError(predicts, targets) result(err)
+  pure function minError(predicts, globalTargets, atomicTargets) result(err)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
+
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
 
     !> absolute minium deviation between predictions and targets
     real(dp) :: err
 
     !> temporary error storage
-    real(dp) :: tmpErr
+    real(dp) :: globalTargetsErr, atomicTargetsErr, tmpErr
 
     !> auxiliary variable
     integer :: iSys
 
-    err = minval(abs(predicts%sys(1)%array - targets(1)%array))
+    if (predicts%nGlobalTargets > 0) then
+      globalPredicts = sum(predicts%sys(1)%array(1:predicts%nGlobalTargets, :), dim=2)
+      globalTargetsErr = minval(abs(globalPredicts - globalTargets(1)%array))
+      do iSys = 2, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpErr = minval(abs(globalPredicts - globalTargets(iSys)%array))
+        if (tmpErr < globalTargetsErr) globalTargetsErr = tmpErr
+      end do
+    end if
 
-    do iSys = 2, size(predicts%sys)
-      tmpErr = minval(abs(predicts%sys(iSys)%array - targets(iSys)%array))
-      if (tmpErr < err) then
-        err = tmpErr
-      end if
-    end do
+    if (predicts%nAtomicTargets > 0) then
+      atomicTargetsErr = minval(abs(predicts%sys(1)%array(predicts%nGlobalTargets + 1:, :)&
+          & - atomicTargets(1)%array))
+      do iSys = 2, predicts%nDatapoints
+        tmpErr = minval(abs(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, :)&
+            & - atomicTargets(iSys)%array))
+        if (tmpErr < atomicTargetsErr) atomicTargetsErr = tmpErr
+      end do
+    end if
+
+    if (predicts%nGlobalTargets > 0 .and. predicts%nAtomicTargets == 0) then
+      err = globalTargetsErr
+    elseif (predicts%nGlobalTargets == 0 .and. predicts%nAtomicTargets > 0) then
+      err = atomicTargetsErr
+    elseif (predicts%nGlobalTargets > 0 .and. predicts%nAtomicTargets > 0) then
+      err = min(globalTargetsErr, atomicTargetsErr)
+    else
+      err = 0.0_dp
+    end if
 
   end function minError
 
 
   !> Calculates the absolute maximum deviation between predictions and targets.
-  pure function maxError(predicts, targets) result(err)
+  pure function maxError(predicts, globalTargets, atomicTargets) result(err)
 
     !> neural network predictions
     type(TPredicts), intent(in) :: predicts
 
-    !> target reference data
-    type(TRealArray2D), intent(in) :: targets(:)
+    !> system-wide target reference data
+    type(TRealArray1D), intent(in) :: globalTargets(:)
+
+    !> atomic target reference data
+    type(TRealArray2D), intent(in) :: atomicTargets(:)
+
+    !> temporary real valued storage for summed up system-wide predictions
+    real(dp), allocatable :: globalPredicts(:)
 
     !> absolute maximum deviation between predictions and targets
     real(dp) :: err
 
     !> temporary error storage
-    real(dp) :: tmpErr
+    real(dp) :: globalTargetsErr, atomicTargetsErr, tmpErr
 
     !> auxiliary variable
     integer :: iSys
 
-    err = maxval(abs(predicts%sys(1)%array - targets(1)%array))
+    if (predicts%nGlobalTargets > 0) then
+      globalPredicts = sum(predicts%sys(1)%array(1:predicts%nGlobalTargets, :), dim=2)
+      globalTargetsErr = maxval(abs(globalPredicts - globalTargets(1)%array))
+      do iSys = 2, predicts%nDatapoints
+        globalPredicts = sum(predicts%sys(iSys)%array(1:predicts%nGlobalTargets, :), dim=2)
+        tmpErr = maxval(abs(globalPredicts - globalTargets(iSys)%array))
+        if (tmpErr > globalTargetsErr) globalTargetsErr = tmpErr
+      end do
+    end if
 
-    do iSys = 2, size(predicts%sys)
-      tmpErr = maxval(abs(predicts%sys(iSys)%array - targets(iSys)%array))
-      if (tmpErr > err) then
-        err = tmpErr
-      end if
-    end do
+    if (predicts%nAtomicTargets > 0) then
+      atomicTargetsErr = maxval(abs(predicts%sys(1)%array(predicts%nGlobalTargets + 1:, :)&
+          & - atomicTargets(1)%array))
+      do iSys = 2, predicts%nDatapoints
+        tmpErr = maxval(abs(predicts%sys(iSys)%array(predicts%nGlobalTargets + 1:, :)&
+            & - atomicTargets(iSys)%array))
+        if (tmpErr > atomicTargetsErr) atomicTargetsErr = tmpErr
+      end do
+    end if
+
+    if (predicts%nGlobalTargets > 0 .and. predicts%nAtomicTargets == 0) then
+      err = globalTargetsErr
+    elseif (predicts%nGlobalTargets == 0 .and. predicts%nAtomicTargets > 0) then
+      err = atomicTargetsErr
+    elseif (predicts%nGlobalTargets > 0 .and. predicts%nAtomicTargets > 0) then
+      err = max(globalTargetsErr, atomicTargetsErr)
+    else
+      err = 0.0_dp
+    end if
 
   end function maxError
 

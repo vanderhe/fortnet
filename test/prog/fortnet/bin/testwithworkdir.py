@@ -125,14 +125,28 @@ class Netfile:
                     "'. No network group/information present."
                 raise NetfileError(msg)
 
-            self.data['bpnn']['targettype'] = \
-                bpnn.attrs.get('targettype').decode('UTF-8').strip()
-
-            if not (self.data['bpnn']['targettype'] == 'atomic' or
-                    self.data['bpnn']['targettype'] == 'global'):
+            # read number of system-wide targets
+            self.data['bpnn']['nglobaltargets'] = \
+                bpnn.attrs.get('nglobaltargets')
+            if len(self.data['bpnn']['nglobaltargets']) == 1:
+                self.data['bpnn']['nglobaltargets'] = \
+                    self.data['bpnn']['nglobaltargets'][0]
+            else:
                 msg = "Error while reading netstat file '" + self._fname + \
-                    "'. Unrecognized target type obtained."
+                    "'. Unrecognized number of global targets obtained."
                 raise NetfileError(msg)
+
+            # read number of atomic targets
+            self.data['bpnn']['natomictargets'] = \
+                bpnn.attrs.get('natomictargets')
+            if len(self.data['bpnn']['natomictargets']) == 1:
+                self.data['bpnn']['natomictargets'] = \
+                    self.data['bpnn']['natomictargets'][0]
+            else:
+                msg = "Error while reading netstat file '" + self._fname + \
+                    "'. Unrecognized number of atomic targets obtained."
+                raise NetfileError(msg)
+
             self.data['bpnn']['atomicnumbers'] = \
                 np.sort(np.array(bpnn['atomicnumbers'], dtype=int))
 
@@ -305,11 +319,18 @@ class Netfile:
             warnings.warn('Mismatch in network type.')
             return False
 
-        equal = self.data['bpnn']['targettype'] == \
-            ref.data['bpnn']['targettype']
+        equal = self.data['bpnn']['nglobaltargets'] == \
+            ref.data['bpnn']['nglobaltargets']
 
         if not equal:
-            warnings.warn('Mismatch in target type.')
+            warnings.warn('Mismatch in number of global targets.')
+            return False
+
+        equal = self.data['bpnn']['natomictargets'] == \
+            ref.data['bpnn']['natomictargets']
+
+        if not equal:
+            warnings.warn('Mismatch in number of atomic targets.')
             return False
 
         equal = self.data['bpnn']['nspecies'] == ref.data['bpnn']['nspecies']
@@ -551,6 +572,8 @@ class Fnetout:
                     self.data['fnetout']['mode'] == 'predict'):
                 raise FnetoutError('Invalid running mode specification.')
             output = fnetout['output']
+
+            # read number of datapoints
             self.data['fnetout']['output']['ndatapoints'] = \
                 output.attrs.get('ndatapoints')
             if len(self.data['fnetout']['output']['ndatapoints']) == 1:
@@ -560,29 +583,63 @@ class Fnetout:
                 msg = "Error while reading fnetout file '" + self._fname + \
                     "'. Unrecognized number of datapoints obtained."
                 raise FnetoutError(msg)
-            self.data['fnetout']['output']['targettype'] = \
-                output.attrs.get('targettype').decode('UTF-8').strip()
-            if not (self.data['fnetout']['output']['targettype'] == 'atomic' \
-                    or self.data['fnetout']['output']['targettype'] \
-                    == 'global'):
-                raise FnetoutError('Invalid running mode specification.')
+
+            # read number of system-wide targets
+            self.data['fnetout']['output']['nglobaltargets'] = \
+                output.attrs.get('nglobaltargets')
+            if len(self.data['fnetout']['output']['nglobaltargets']) == 1:
+                self.data['fnetout']['output']['nglobaltargets'] = \
+                    self.data['fnetout']['output']['nglobaltargets'][0]
+            else:
+                msg = "Error while reading fnetout file '" + self._fname + \
+                    "'. Unrecognized number of global targets obtained."
+                raise FnetoutError(msg)
+
+            # read number of atomic targets
+            self.data['fnetout']['output']['natomictargets'] = \
+                output.attrs.get('natomictargets')
+            if len(self.data['fnetout']['output']['natomictargets']) == 1:
+                self.data['fnetout']['output']['natomictargets'] = \
+                    self.data['fnetout']['output']['natomictargets'][0]
+            else:
+                msg = "Error while reading fnetout file '" + self._fname + \
+                    "'. Unrecognized number of atomic targets obtained."
+                raise FnetoutError(msg)
+
+            # read force specification
+            self.data['fnetout']['output']['tforces'] = \
+                output.attrs.get('tforces')
+            if len(self.data['fnetout']['output']['tforces']) == 1:
+                self.data['fnetout']['output']['tforces'] = \
+                    bool(self.data['fnetout']['output']['tforces'][0])
+            else:
+                msg = "Error while reading fnetout file '" + self._fname + \
+                    "'. Unrecognized force specification obtained."
+                raise FnetoutError(msg)
 
             for idata in range(self.data['fnetout']['output']['ndatapoints']):
                 dataname = 'datapoint' + str(idata + 1)
                 self.data['fnetout']['output'][dataname] = dict()
+                data = self.data['fnetout']['output'][dataname]
+                if self.data['fnetout']['output']['tforces']:
+                    data['forces'] = np.array(output[dataname]['forces'],
+                                              dtype=float)
+                if self.data['fnetout']['output']['nglobaltargets'] > 0:
+                    data['globalpredictions'] = np.array(output[dataname]
+                                                         ['globalpredictions'],
+                                                         dtype=float)
+                data['rawpredictions'] = np.array(output[dataname]
+                                                  ['rawpredictions'],
+                                                  dtype=float)
                 if self.data['fnetout']['mode'] == 'validate':
-                    ntargets = int(
-                        np.shape(np.array(output[dataname]['output']))[1] / 2)
-                    self.data['fnetout']['output'][dataname]['predictions'] = \
-                        np.array(output[dataname]['output'],
-                                 dtype=float)[:ntargets, :]
-                    self.data['fnetout']['output'][dataname]['targets'] = \
-                        np.array(output[dataname]['output'],
-                                 dtype=float)[ntargets:, :]
-                else:
-                    self.data['fnetout']['output'][dataname]['predictions'] = \
-                        np.array(output[dataname]['output'], dtype=float)
-                    self.data['fnetout']['output'][dataname]['targets'] = None
+                    if self.data['fnetout']['output']['nglobaltargets'] > 0:
+                        data['globaltargets'] = np.array(output[dataname]
+                                                         ['globaltargets'],
+                                                         dtype=float)
+                    if self.data['fnetout']['output']['natomictargets'] > 0:
+                        data['atomictargets'] = np.array(output[dataname]
+                                                         ['atomictargets'],
+                                                         dtype=float)
 
 
     def equals(self, ref, atol=ATOL, rtol=RTOL):
@@ -613,32 +670,73 @@ class Fnetout:
             warnings.warn('Mismatch in total number of datapoints.')
             return False
 
-        equal = self.data['fnetout']['output']['targettype'] == \
-            ref.data['fnetout']['output']['targettype']
+        equal = self.data['fnetout']['output']['nglobaltargets'] == \
+            ref.data['fnetout']['output']['nglobaltargets']
 
         if not equal:
-            warnings.warn('Mismatch in target type specification.')
+            warnings.warn('Mismatch in number of global targets.')
+            return False
+
+        equal = self.data['fnetout']['output']['natomictargets'] == \
+            ref.data['fnetout']['output']['natomictargets']
+
+        if not equal:
+            warnings.warn('Mismatch in number of atomic targets.')
+            return False
+
+        equal = self.data['fnetout']['output']['tforces'] == \
+            ref.data['fnetout']['output']['tforces']
+
+        if not equal:
+            warnings.warn('Mismatch in force specification (tforces).')
             return False
 
         for idata in range(self.data['fnetout']['output']['ndatapoints']):
             dataname = 'datapoint' + str(idata + 1)
-            equal = np.allclose(
-                self.data['fnetout']['output'][dataname]['predictions'],
-                ref.data['fnetout']['output'][dataname]['predictions'],
-                rtol=rtol, atol=atol)
-            if not equal:
-                warnings.warn('Mismatch in predictions of datapoint ' \
-                              + str(idata + 1) + '.')
-                return False
-            if self.data['fnetout']['mode'] == 'validate':
-                equal = np.allclose(
-                    self.data['fnetout']['output'][dataname]['targets'],
-                    ref.data['fnetout']['output'][dataname]['targets'],
-                    rtol=rtol, atol=atol)
+            data = self.data['fnetout']['output'][dataname]
+            refdata = ref.data['fnetout']['output'][dataname]
+
+            if self.data['fnetout']['output']['tforces']:
+                equal = np.allclose(data['forces'], refdata['forces'],
+                                    rtol=rtol, atol=atol)
                 if not equal:
-                    warnings.warn('Mismatch in targets of datapoint ' \
+                    warnings.warn('Mismatch in forces of datapoint ' \
                                   + str(idata + 1) + '.')
                     return False
+            if self.data['fnetout']['output']['nglobaltargets'] > 0:
+                equal = np.allclose(data['globalpredictions'],
+                                    refdata['globalpredictions'],
+                                    rtol=rtol, atol=atol)
+                if not equal:
+                    warnings.warn('Mismatch in global predictions of ' \
+                                  + 'datapoint ' + str(idata + 1) + '.')
+                    return False
+            equal = np.allclose(data['rawpredictions'],
+                                refdata['rawpredictions'],
+                                rtol=rtol, atol=atol)
+            if not equal:
+                warnings.warn('Mismatch in raw predictions of datapoint ' \
+                              + str(idata + 1) + '.')
+                return False
+
+            if self.data['fnetout']['mode'] == 'validate':
+                if self.data['fnetout']['output']['nglobaltargets'] > 0:
+                    equal = np.allclose(data['globaltargets'],
+                                        refdata['globaltargets'],
+                                        rtol=rtol, atol=atol)
+                    if not equal:
+                        warnings.warn('Mismatch in global targets of ' \
+                                      + 'datapoint ' + str(idata + 1) + '.')
+                        return False
+                if self.data['fnetout']['output']['natomictargets'] > 0:
+                    equal = np.allclose(
+                        data['atomictargets'],
+                        refdata['atomictargets'],
+                        rtol=rtol, atol=atol)
+                    if not equal:
+                        warnings.warn('Mismatch in atomic targets of ' \
+                                      + 'datapoint ' + str(idata + 1) + '.')
+                        return False
 
         return True
 
