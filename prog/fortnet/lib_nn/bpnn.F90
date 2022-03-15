@@ -55,6 +55,12 @@ module fnet_bpnn
     !> total number of bias and weight parameters of each sub-nn
     integer :: nBiases, nWeights
 
+    !> number of system-wide training targets of BPNN
+    integer :: nGlobalTargets
+
+    !> number of atomic training targets of BPNN
+    integer :: nAtomicTargets
+
     !> representation of neural networks
     type(TNetwork), allocatable :: nets(:)
 
@@ -88,7 +94,8 @@ module fnet_bpnn
 contains
 
   !> Initialises a BPNN instance.
-  subroutine TBpnn_init(this, dims, nSpecies, atomicNumbers, rndGen, activation)
+  subroutine TBpnn_init(this, dims, nSpecies, nGlobalTargets, nAtomicTargets, atomicNumbers,&
+      & rndGen, activation)
 
     !> representation of a Behler-Parrinello neural network
     type(TBpnn), intent(out) :: this
@@ -98,6 +105,12 @@ contains
 
     !> number of different species in training data
     integer, intent(in) :: nSpecies
+
+    !> number of system-wide training targets of BPNN
+    integer, intent(in) :: nGlobalTargets
+
+    !> number of atomic training targets of BPNN
+    integer, intent(in) :: nAtomicTargets
 
     !> atomic numbers of sub-nn species
     integer, intent(in) :: atomicNumbers(:)
@@ -114,6 +127,9 @@ contains
     this%dims = dims
     this%nSpecies = nSpecies
     this%atomicNumbers = atomicNumbers
+
+    this%nGlobalTargets = nGlobalTargets
+    this%nAtomicTargets = nAtomicTargets
 
     allocate(this%nets(nSpecies))
 
@@ -220,13 +236,13 @@ contains
     call TDerivs_init(this%dims, size(this%nets), dd)
     call TDerivs_init(this%dims, size(this%nets), ddRes)
 
-    call TPredicts_init(predicts, trainDataset%nDatapoints, trainDataset%nGlobalTargets,&
-        & trainDataset%nAtomicTargets, trainDataset%localAtToAtNum)
-    call TPredicts_init(resPredicts, trainDataset%nDatapoints, trainDataset%nGlobalTargets,&
-        & trainDataset%nAtomicTargets, trainDataset%localAtToAtNum)
+    call TPredicts_init(predicts, trainDataset%nDatapoints, this%nGlobalTargets,&
+        & this%nAtomicTargets, trainDataset%localAtToAtNum)
+    call TPredicts_init(resPredicts, trainDataset%nDatapoints, this%nGlobalTargets,&
+        & this%nAtomicTargets, trainDataset%localAtToAtNum)
     if (tMonitorValid) then
-      call TPredicts_init(validPredicts, validDataset%nDatapoints, validDataset%nGlobalTargets,&
-          & validDataset%nAtomicTargets, validDataset%localAtToAtNum)
+      call TPredicts_init(validPredicts, validDataset%nDatapoints, this%nGlobalTargets,&
+          & this%nAtomicTargets, validDataset%localAtToAtNum)
     end if
 
     allocate(tmpLoss(nTrainIt))
@@ -420,8 +436,7 @@ contains
 
     lpSystem: do ii = iStart, iEnd
       iSys = shuffle(ii)
-      call this%sysTrain(trainFeatures(iSys)%array, trainDataset%nGlobalTargets,&
-          & trainDataset%nAtomicTargets, trainDataset%globalTargets(iSys)%array,&
+      call this%sysTrain(trainFeatures(iSys)%array, trainDataset%globalTargets(iSys)%array,&
           & trainDataset%atomicTargets(iSys)%array, trainDataset%atomicWeights(iSys)%array,&
           & trainDataset%localAtToGlobalSp(iSys)%array, lossgrad, ddTmp,&
           & predicts%sys(iSys)%array(:,:))
@@ -591,7 +606,7 @@ contains
 
 
   !> Performs a training iteration for a single system, i.e. set of input features.
-  subroutine TBpnn_sysTrain(this, input, nGlobalTargets, nAtomicTargets, globalTargets,&
+  subroutine TBpnn_sysTrain(this, input, globalTargets,&
       & atomicTargets, atomicWeights, localAtToGlobalSp, lossgrad, dd, predicts)
 
     !> representation of a Behler-Parrinello neural network
@@ -599,12 +614,6 @@ contains
 
     !> features of all atoms of the current system/geometry, shape: [nFeatures, nAtoms]
     real(dp), intent(in) :: input(:,:)
-
-    !> number of system-wide targets of BPNN
-    integer, intent(in) :: nGlobalTargets
-
-    !> number of atomic targets of BPNN
-    integer, intent(in) :: nAtomicTargets
 
     !> system-wide target data, shape: [nGlobalTargets]
     real(dp), intent(in) :: globalTargets(:)
@@ -664,17 +673,18 @@ contains
       predicts(:, iAtom) = tmpOut
     end do
 
-    if (nGlobalTargets > 0) then
-      globalPredicts = sum(predicts(1:nGlobalTargets, :), dim=2)
-      globalLossGrad = reshape(lossgrad(reshape(globalPredicts, [nGlobalTargets, 1]),&
-          & reshape(globalTargets, [nGlobalTargets, 1])), [nGlobalTargets])
+    if (this%nGlobalTargets > 0) then
+      globalPredicts = sum(predicts(1:this%nGlobalTargets, :), dim=2)
+      globalLossGrad = reshape(lossgrad(reshape(globalPredicts, [this%nGlobalTargets, 1]),&
+          & reshape(globalTargets, [this%nGlobalTargets, 1])), [this%nGlobalTargets])
       do iAtom = 1, size(input, dim=2)
-        lossgrads(1:nGlobalTargets, iAtom) = globalLossGrad
+        lossgrads(1:this%nGlobalTargets, iAtom) = globalLossGrad
       end do
     end if
 
-    if (nAtomicTargets > 0) then
-      lossgrads(nGlobalTargets + 1:, :) = lossgrad(predicts(nGlobalTargets + 1:, :), atomicTargets)
+    if (this%nAtomicTargets > 0) then
+      lossgrads(this%nGlobalTargets + 1:, :) = lossgrad(predicts(this%nGlobalTargets + 1:, :),&
+          & atomicTargets)
     end if
 
     ! collect gradients and normalize them by atom number
@@ -1133,19 +1143,13 @@ contains
 
 
   !> Reads a BPNN from a netstat file.
-  subroutine TBpnn_fromFile(this, fname, nGlobalTargets, nAtomicTargets)
+  subroutine TBpnn_fromFile(this, fname)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(out) :: this
 
     !> filename (will be fortnet.hdf5)
     character(len=*), intent(in) :: fname
-
-    !> number of system-wide targets of BPNN
-    integer, intent(out) :: nGlobalTargets
-
-    !> number of atomic targets of BPNN
-    integer, intent(out) :: nAtomicTargets
 
     !> various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
@@ -1161,6 +1165,12 @@ contains
 
     !> atomic numbers of sub-nn species
     integer, allocatable :: atomicNumbers(:)
+
+    !> number of system-wide training targets of BPNN
+    integer :: nGlobalTargets
+
+    !> number of atomic training targets of BPNN
+    integer :: nAtomicTargets
 
     !> temporary storage container
     integer :: tmpInt(1)
@@ -1243,7 +1253,8 @@ contains
     end do
 
     ! allocate sub-nn's and their layer structures
-    call TBpnn_init(this, dims, size(atomicNumbers), atomicNumbers, activation=activation)
+    call TBpnn_init(this, dims, size(atomicNumbers), nGlobalTargets, nAtomicTargets, atomicNumbers,&
+        & activation=activation)
 
     do iNet = 1, size(this%atomicNumbers)
       netname = trim(elementSymbol(this%atomicNumbers(iNet))) // '-subnetwork'

@@ -82,7 +82,7 @@ program fortnet
 
   call handleInitialisation(prog, bpnn, trainAcsf)
 
-  call printSubnnDetails(prog%inp%network)
+  call printSubnnDetails(prog%inp%network, bpnn%nGlobalTargets, bpnn%nAtomicTargets)
   call printMappingDetails(trainAcsf, prog%inp%features)
   call printExternalFeatureDetails(prog%inp%features)
   call printDatasetDetails(prog%trainDataset, prog%validDataset, prog%inp%data,&
@@ -138,12 +138,6 @@ contains
     !> true, if an ACSF configuration is found in the netstat file
     logical :: tAcsf
 
-    !> number of system-wide targets of BPNN
-    integer :: nGlobalTargets
-
-    !> number of atomic targets of BPNN
-    integer :: nAtomicTargets
-
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead
   #:else
@@ -190,9 +184,9 @@ contains
             ! check if the dataset provides structural information needed by the ACSF
             call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf)
           end if
-          call bpnn%fromFile(prog%inp%data%netstatpath, nGlobalTargets, nAtomicTargets)
-          call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers, nGlobalTargets,&
-              & nAtomicTargets, allowSpSubset=.false.)
+          call bpnn%fromFile(prog%inp%data%netstatpath)
+          call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers,&
+              & bpnn%nGlobalTargets, bpnn%nAtomicTargets, allowSpSubset=.false.)
         end if
       #:if WITH_MPI
         call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%nFeatures)
@@ -212,6 +206,7 @@ contains
               & tZscore=prog%inp%features%mapping%tStandardize)
         end if
         call TBpnn_init(bpnn, prog%inp%network%allDims, prog%trainDataset%nSpecies,&
+            & prog%trainDataset%nGlobalTargets, prog%trainDataset%nAtomicTargets,&
             & prog%trainDataset%atomicNumbers, rndGen=prog%rndGen,&
             & activation=prog%inp%network%activation)
         if (tLead) then
@@ -243,9 +238,17 @@ contains
           ! check if the dataset provides structural information needed by the ACSF
           call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf)
         end if
-        call bpnn%fromFile(prog%inp%data%netstatpath, nGlobalTargets, nAtomicTargets)
-        call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers, nGlobalTargets,&
-              & nAtomicTargets, allowSpSubset=.true.)
+        call bpnn%fromFile(prog%inp%data%netstatpath)
+        print *, bpnn%nGlobalTargets
+        if (prog%inp%option%mode == 'validate') then
+          call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers,&
+              & bpnn%nGlobalTargets, bpnn%nAtomicTargets, allowSpSubset=.true.)
+        else
+          ! bypass target number test for prediction runs
+          call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers,&
+              & prog%trainDataset%nGlobalTargets, prog%trainDataset%nAtomicTargets,&
+              & allowSpSubset=.true.)
+        end if
       end if
     #:if WITH_MPI
       call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%nFeatures)
@@ -272,10 +275,16 @@ contains
 
 
   !> Prints some useful details regarding the sub-networks of a BPNN.
-  subroutine printSubnnDetails(network)
+  subroutine printSubnnDetails(network, nGlobalTargets, nAtomicTargets)
 
     !> representation of network information
     type(TNetworkBlock), intent(in) :: network
+
+    !> number of system-wide training targets of BPNN
+    integer, intent(in) :: nGlobalTargets
+
+    !> number of atomic training targets of BPNN
+    integer, intent(in) :: nAtomicTargets
 
     !> auxiliary variable
     integer :: ii
@@ -288,7 +297,9 @@ contains
       write(stdout, '(I0)', advance='no') network%hidden(ii)
     end do
     write(stdout, '(/,A,I0)') 'outputs: ', network%allDims(size(network%allDims))
-    write(stdout, '(/,2A,/)') 'activation: ', network%activation
+    write(stdout, '(/,A,I0)') 'nr. of global outputs: ', nGlobalTargets
+    write(stdout, '(A,I0,/)') 'nr. of atomic outputs: ', nAtomicTargets
+    write(stdout, '(2A,/)') 'activation: ', network%activation
     write(stdout, '(A,/)') repeat('-', 80)
 
   end subroutine printSubnnDetails
@@ -694,9 +705,9 @@ contains
       write(stdout, '(A,/)') repeat('-', 68)
     case ('validate', 'predict')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      call TPredicts_init(predicts, prog%trainDataset%nDatapoints,&
-          & prog%trainDataset%nGlobalTargets, prog%trainDataset%nAtomicTargets,&
-          & prog%trainDataset%localAtToAtNum)
+      print *, bpnn%nGlobalTargets
+      call TPredicts_init(predicts, prog%trainDataset%nDatapoints, bpnn%nGlobalTargets,&
+          & bpnn%nAtomicTargets, prog%trainDataset%localAtToAtNum)
       predicts%sys = bpnn%predictBatch(prog%features%trainFeatures, prog%env,&
           & prog%trainDataset%localAtToGlobalSp)
       write(stdOut, '(A)') 'done'
