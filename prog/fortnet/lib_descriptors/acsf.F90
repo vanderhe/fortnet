@@ -20,6 +20,7 @@ module fnet_acsf
   use dftbp_typegeometry, only : TGeometry
   use dftbp_dynneighlist, only : TDynNeighList, TDynNeighList_init, TNeighIterator,&
       & TNeighIterator_init
+  use dftbp_math_blasroutines, only : gemv
 
   use fnet_nestedtypes, only : TIntArray1D, TRealArray2D, TRealArray4D, TEnv
   use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
@@ -1045,7 +1046,7 @@ contains
             & iAtomOut2, tKeep=tKeep2)
         if (gFunction%atomId > 0) then
           atomIds2 = extFeatures(gFunction%atomId, tKeep2)
-         else
+        else
           if (allocated(atomIds2)) deallocate(atomIds2)
           allocate(atomIds2(geo2%nAtom))
           atomIds2(:) = 1.0_dp
@@ -1053,7 +1054,9 @@ contains
         call buildNeighborlist(geo2, gFunction%rCut, iAtomOut2, neighDists2, neighCoords2,&
             & atomIndices2)
         atomIds2 = atomIds2(atomIndices2)
-       else
+      else
+        neighDists2 = neighDists1
+        neighCoords2 = neighCoords1
         atomIds2 = atomIds1
         atomIndices2 = atomIndices1
         tKeep2 = tKeep1
@@ -1519,7 +1522,7 @@ contains
     real(dp) :: dfc_ik, dfc_jk, fc_ik, fc_jk
 
     !> auxiliary variables
-    real(dp) :: dist_jk, a_ijk, prefct_prod, T_ik(3, 3), uvec_jk(3), uvec_ik(3)
+    real(dp) :: dist_jk, a_ijk, prefct_prod, T_ik(3, 3), uvec_jk(3), uvec_ik(3), tmpVec(3)
     real(dp), allocatable :: uvecs2(:,:), fc2(:), sqDists2(:)
     integer  :: jAtom, kAtom
 
@@ -1592,9 +1595,11 @@ contains
           a_ijk = 1.0_dp + gFunction%lambda * dot_product(uvecs2(:, jAtom), uvecs2(:, kAtom))
 
           if (gFunction%type == 'g5') then
+            tmpVec(:) = 0.0_dp
+            call gemv(tmpVec, T_ik, uvecs2(:, jAtom))
             gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom)&
                 & + fc2(jAtom) * exp(- gFunction%eta * (sqDists2(kAtom) + sqDists2(jAtom)))&
-                & * a_ijk**(gFunction%xi - 1.0_dp) * (fc2(kAtom) * matmul(T_ik, uvecs2(:, jAtom))&
+                & * a_ijk**(gFunction%xi - 1.0_dp) * (fc2(kAtom) * tmpVec&
                 & + a_ijk * dfc_ik * uvecs2(:, kAtom))
             cycle
           end if
@@ -1609,11 +1614,13 @@ contains
           dfc_jk  = - 2.0_dp * gFunction%eta * dist_jk * fc_jk&
               & + dfCutoffWoCheck(dist_jk, AtomIds1(kAtom), atomIds2(jAtom), gFunction%rCut, 1)
 
+          tmpVec(:) = 0.0_dp
+          call gemv(tmpVec, T_ik, uvecs2(:, jAtom))
           gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + &
               & fc2(jAtom) * exp(- gFunction%eta * (sqDists2(kAtom) + sqDists2(jAtom)&
               & + dist_jk**2)) * a_ijk**(gFunction%xi - 1.0_dp) * (fc2(kAtom) * fc_jk&
-              & * matmul(T_ik, uvecs2(:, jAtom)) + a_ijk * (fc_jk * dfc_ik * uvecs2(:, kAtom)&
-              & + fc2(kAtom) * dfc_jk * uvec_jk))
+              & * tmpVec + a_ijk * (fc_jk * dfc_ik * uvecs2(:, kAtom) + fc2(kAtom) * dfc_jk&
+              & * uvec_jk))
         end do
 
       end do
@@ -1635,9 +1642,11 @@ contains
         a_ijk = 1.0_dp + gFunction%lambda * dot_product(uvecs2(:, jAtom), uvec_ik)
 
         if (gFunction%type == 'g5') then
+          tmpVec(:) = 0.0_dp
+          call gemv(tmpVec, T_ik, uvecs2(:, jAtom))
           gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + fc2(jAtom) * exp(- gFunction%eta&
               & * (neighDists1(kAtom)**2 + sqDists2(jAtom))) * a_ijk**(gFunction%xi - 1.0_dp)&
-              & * (fc_ik * matmul(T_ik, uvecs2(:, jAtom)) + a_ijk * dfc_ik * uvec_ik)
+              & * (fc_ik * tmpVec + a_ijk * dfc_ik * uvec_ik)
           cycle
         end if
 
@@ -1651,9 +1660,11 @@ contains
         dfc_jk = - 2.0_dp * gFunction%eta * dist_jk * fc_jk + dfCutoffWoCheck(dist_jk,&
             & AtomIds1(kAtom), atomIds2(jAtom), gFunction%rCut, 1)
 
+        tmpVec(:) = 0.0_dp
+        call gemv(tmpVec, T_ik, uvecs2(:, jAtom))
         gFuncGrad(:, kAtom) = gFuncGrad(:, kAtom) + fc2(jAtom) * exp(- gFunction%eta&
             & * (neighDists1(kAtom)**2 + sqDists2(jAtom) + dist_jk**2))&
-            & * a_ijk**(gFunction%xi - 1.0_dp) * (fc_ik * fc_jk * matmul(T_ik, uvecs2(:, jAtom))&
+            & * a_ijk**(gFunction%xi - 1.0_dp) * (fc_ik * fc_jk * tmpVec&
             & + a_ijk * (fc_jk * dfc_ik * uvec_ik + fc_ik * dfc_jk * uvec_jk))
       end do
     end do

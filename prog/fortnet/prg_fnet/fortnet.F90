@@ -239,7 +239,6 @@ contains
           call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf)
         end if
         call bpnn%fromFile(prog%inp%data%netstatpath)
-        print *, bpnn%nGlobalTargets
         if (prog%inp%option%mode == 'validate') then
           call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers,&
               & bpnn%nGlobalTargets, bpnn%nAtomicTargets, allowSpSubset=.true.)
@@ -705,7 +704,6 @@ contains
       write(stdout, '(A,/)') repeat('-', 68)
     case ('validate', 'predict')
       write(stdOut, '(A)', advance='no') 'Start feeding...'
-      print *, bpnn%nGlobalTargets
       call TPredicts_init(predicts, prog%trainDataset%nDatapoints, bpnn%nGlobalTargets,&
           & bpnn%nAtomicTargets, prog%trainDataset%localAtToAtNum)
       predicts%sys = bpnn%predictBatch(prog%features%trainFeatures, prog%env,&

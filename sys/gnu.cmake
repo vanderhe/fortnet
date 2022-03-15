@@ -37,3 +37,10 @@ set(Fortran_FLAGS_DEBUG "-g -Wall -std=f2008ts -pedantic -fbounds-check"
 #
 # External libraries
 #
+
+# LAPACK and BLAS
+# (if the BLAS library contains the LAPACK functions, set LAPACK_LIBRARY to "NONE")
+#set(BLAS_LIBRARY "openblas" CACHE STRING "BLAS libraries to link")
+#set(BLAS_LIBRARY_DIR "" CACHE STRING "Directories where BLAS libraries can be found")
+#set(LAPACK_LIBRARY "NONE" CACHE STRING "LAPACK libraries to link")
+#set(LAPACK_LIBRARY_DIR "" CACHE STRING "Directories where LAPACK libraries can be found")

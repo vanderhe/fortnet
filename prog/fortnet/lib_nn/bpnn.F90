@@ -439,7 +439,7 @@ contains
       call this%sysTrain(trainFeatures(iSys)%array, trainDataset%globalTargets(iSys)%array,&
           & trainDataset%atomicTargets(iSys)%array, trainDataset%atomicWeights(iSys)%array,&
           & trainDataset%localAtToGlobalSp(iSys)%array, lossgrad, ddTmp,&
-          & predicts%sys(iSys)%array(:,:))
+          & predicts%sys(iSys)%array)
       ! collect gradients of the system
       do iGlobalSp = 1, size(this%nets)
         do iLayer = 1, size(this%dims)
@@ -900,7 +900,7 @@ contains
 
 
   !> Calculates the Jacobian matrix element of the atomic outputs w.r.t. the input features.
-  pure function TBpnn_iJacobian(this, input, localAtToGlobalSp) result(jacobian)
+  function TBpnn_iJacobian(this, input, localAtToGlobalSp) result(jacobian)
 
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(in) :: this

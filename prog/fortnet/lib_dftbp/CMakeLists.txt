@@ -3,6 +3,8 @@ set(curdir "lib_dftbp")
 set(sources-fpp
   ${curdir}/accuracy.F90
   ${curdir}/assert.F90
+  ${curdir}/blas.F90
+  ${curdir}/blasroutines.F90
   ${curdir}/charmanip.F90
   ${curdir}/conjgrad.F90
   ${curdir}/constants.F90
