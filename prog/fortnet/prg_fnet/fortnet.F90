@@ -472,6 +472,8 @@ contains
     integer, intent(in) :: nSubNnParams
 
     write(stdout, '(A,/)') 'Dataset Information'
+    write(stdout, '(A,I0)') 'nr. of global targets: ', trainDataset%nGlobalTargets
+    write(stdout, '(A,I0)') 'nr. of atomic targets: ', trainDataset%nAtomicTargets
     write(stdout, '(A,I0,A,I0,A)') 'found: ', sum(trainDataset%weights), ' datapoints (',&
         & trainDataset%nDatapoints, ' unique ones)'
     write(stdout, '(2A)') 'in file: ', data%trainpath
