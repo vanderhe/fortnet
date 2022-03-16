@@ -14,6 +14,10 @@ In order to compile Fortnet, you need the following software components:
 
 * A Fortran 2003 compliant compiler
 
+* C compiler
+
+* LAPACK/BLAS libraries (or compatible equivalents)
+
 * Compatible serial HDF5 with Fortran API and High-Level routines
   (version 1.10.x or newer)
 
@@ -96,10 +100,10 @@ In order to build Fortnet carry out the following steps:
 * Invoke CMake to configure the build. Specify the installation destination
   (e.g. ``$HOME/opt/fnet``) and pass an arbitrary folder (e.g. ``_build``) for
   the build and the directory containing the source files (e.g. ``.``) as
-  arguments to CMake. Additionally define your Fortran compiler as
+  arguments to CMake. Additionally define your Fortran/C compiler as
   environment variables, e.g. (in a BASH compatible shell)::
 
-    FC=mpifort cmake -DCMAKE_INSTALL_PREFIX=$HOME/opt/fnet -B _build .
+    FC=mpifort CC=gcc cmake -DCMAKE_INSTALL_PREFIX=$HOME/opt/fnet -B _build .
 
   Based on the detected compilers, the build system will read further settings
   from a corresponding toolchain file in the `sys/` folder. Either from a
@@ -116,6 +120,33 @@ In order to build Fortnet carry out the following steps:
   variable with the CMake command line argument ``-D``::
 
     -DWITH_MPI=0
+
+  In order to use the MKL-library with the GNU-compiler, you would have to
+  override the ``LAPACK_LIBRARY`` variable with the CMake command line argument
+  ``-D``::
+
+    -DLAPACK_LIBRARY="mkl_gf_lp64;mkl_gnu_thread;mkl_core"
+
+  When needed, you can specify the complete path to a library or pass linker
+  options as defined variables, e.g.::
+
+    -DLAPACK_LIBRARY="/opt/openblas/libopenblas.a"
+    -DLAPACK_LIBRARY="-Wl,--start-group -lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -Wl,--end-group"
+
+  By default CMake searches for the external libraries in the paths specified in
+  the ``CMAKE_PREFIX_PATH`` environment variable. **Make sure that your
+  CMAKE_PREFIX_PATH environment variable is set up correctly and contains
+  all the relevant paths** when configuring the project, e.g. ::
+
+    CMAKE_PREFIX_PATH=/opt/custom-openblas cmake [...] -B _build .
+
+  Some of the external library finders also offer special ``_LIBRARY_DIR`` CMake
+  variables for setting search paths, e.g. ::
+
+    -DLAPACK_LIBRARY_DIR=/opt/custom-openblas
+
+  Setting those variables is not normally necessary, if the right search path is
+  already present in the ``CMAKE_PREFIX_PATH`` environment variable.
 
 * If the configuration was successful, start the build by::
 
@@ -197,7 +228,7 @@ repository. Instead, create a customized CMake config file, where you
 pre-populate the appropriate cache variables. Then use the `-C` option to load
 that file::
 
-  FC=mpifort cmake -C custom.cmake -B _build .
+  FC=mpifort CC=gcc cmake -C custom.cmake -B _build .
 
 The customized config file is read by CMake before the compiler detection
 stage.
@@ -250,10 +281,10 @@ Troubleshooting
 
 * **CMake finds the wrong compiler**
 
-  CMake should be guided with the help of the environment variable ``FC`` to
-  make sure it uses the right compilers, e.g. ::
+  CMake should be guided with the help of the environment variables ``FC`` and
+  ``CC`` to make sure it uses the right compilers, e.g. ::
 
-    FC=mpifort cmake [...]
+    FC=mpifort CC=gcc cmake [...]
 
 * **CMake does not find HDF5**
 
@@ -273,3 +304,12 @@ Troubleshooting
   location, e.g. ::
 
     export HDF5_ROOT=/home/user/CMake-hdf5-1.12.1/hdf5-1.12.1/hdf5
+
+* **CMake fails to find a library / finds the wrong version of a library**
+
+  In most cases this is due to a misconfigured ``CMAKE_PREFIX_PATH`` environment
+  variable. It is essential, that ``CMAKE_PREFIX_PATH`` contains all paths
+  (besides default system paths), which CMake should search when trying to find
+  a library. Extend the library path if needed, e.g. ::
+
+    CMAKE_PREFIX_PATH="/opt/somelib:${CMAKE_PREFIX_PATH}" cmake [...]
