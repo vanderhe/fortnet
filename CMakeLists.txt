@@ -7,9 +7,9 @@ include(FortnetUtils)
 fnet_ensure_out_of_source_build()
 fnet_load_build_settings()
 
-set(FORTNET_VERSION "0.2")
+set(FORTNET_VERSION "0.6")
 
-project(fortnet VERSION ${FORTNET_VERSION} LANGUAGES Fortran)
+project(fortnet VERSION ${FORTNET_VERSION} LANGUAGES Fortran C)
 
 fnet_setup_build_type()
 fnet_load_toolchain_settings()
@@ -71,9 +71,12 @@ include(GNUInstallDirs)
 if(WITH_MPI)
   set(MPIFX_GIT_REPOSITORY "https://github.com/dftbplus/mpifx.git")
   set(MPIFX_GIT_TAG "0cb07ee08cbb20f3f7bb2527152a4ec317c579ad")  # do not change manually!
-  fnet_config_hybrid_dependency(MpiFx MpiFx::MpiFx "${HYBRID_CONFIG_METHODS}" "QUIET" 
+  fnet_config_hybrid_dependency(MpiFx MpiFx::MpiFx "${HYBRID_CONFIG_METHODS}" "QUIET"
     external/mpifx "${exclude}" "${MPIFX_GIT_REPOSITORY}" "${MPIFX_GIT_TAG}")
 endif()
+
+find_package(CustomBlas REQUIRED)
+find_package(CustomLapack REQUIRED)
 
 add_subdirectory(external/xmlf90 EXCLUDE_FROM_ALL)
 

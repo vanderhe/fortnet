@@ -21,6 +21,8 @@ module dftbp_lbfgs
   use dftbp_assert
   use dftbp_message
   use dftbp_linemin, only : TLineMin, TLineMin_init
+  use dftbp_math_blasroutines, only : gemv
+
   implicit none
   private
 
@@ -942,8 +944,8 @@ contains
     db = bb - aa
     dc = cc - aa
     denom = (db * dc)**2 * (db - dc)
-    d1(:,:) = reshape([ dc**2, -dc**3, -db**2, db**3], [2, 2])
-    temp(:) = matmul(d1, [fb - fa - fpa * db, fc - fa - fpa * dc])
+    d1(:,:) = reshape([dc**2, -dc**3, -db**2, db**3], [2, 2])
+    call gemv(temp, d1, [fb - fa - fpa * db, fc - fa - fpa * dc])
 
     ta = temp(1) / denom
     tb = temp(2) / denom

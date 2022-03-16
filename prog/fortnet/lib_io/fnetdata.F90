@@ -976,11 +976,15 @@ contains
       if (dataset%tGlobalTargets) then
         call h5ltfx_read_dataset_double_f(datapoint_grp, 'globaltargets',&
             & dataset%globalTargets(iDatapoint)%array)
+      else
+        allocate(dataset%globalTargets(iDatapoint)%array(0))
       end if
 
       if (dataset%tAtomicTargets) then
         call h5ltfx_read_dataset_double_f(datapoint_grp, 'atomictargets',&
             & dataset%atomicTargets(iDatapoint)%array)
+      else
+        allocate(dataset%atomicTargets(iDatapoint)%array(0, 0))
       end if
 
       if (dataset%tExtFeatures) then

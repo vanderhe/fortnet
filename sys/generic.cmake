@@ -38,3 +38,8 @@ set(Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG}"
 #
 # External libraries
 #
+
+# LAPACK and BLAS
+#set(LAPACK_LIBRARY "lapack;blas" CACHE STRING "LAPACK and BLAS libraries to link")
+#set(LAPACK_LIBRARY_DIR "" CACHE STRING
+#  "Directories where LAPACK and BLAS libraries can be found")

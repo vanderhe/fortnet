@@ -13,6 +13,7 @@ module fnet_network
   use dftbp_assert
   use dftbp_accuracy, only: dp
   use dftbp_ranlux, only : TRanlux
+  use dftbp_math_blasroutines, only : gemv, gemm
 
   use fnet_nestedtypes, only : TBiasDerivs, TBiasDerivs_init
   use fnet_nestedtypes, only : TWeightDerivs, TWeightDerivs_init
@@ -156,15 +157,21 @@ contains
     !> outputs of current neural network instance
     real(dp), intent(out), allocatable, optional :: out(:)
 
+    !> temporary matrix * vector storage
+    real(dp), allocatable :: tmpVec(:)
+
     !> auxiliary variable
     integer :: ii
 
     this%layers(1)%aa = xx
 
     do ii = 2, size(this%layers)
-      this%layers(ii)%aarg = matmul(transpose(this%layers(ii - 1)%ww), this%layers(ii - 1)%aa) +&
-          & this%layers(ii)%bb
+      allocate(tmpVec(size(transpose(this%layers(ii - 1)%ww), dim=1)))
+      tmpVec(:) = 0.0_dp
+      call gemv(tmpVec, transpose(this%layers(ii - 1)%ww), this%layers(ii - 1)%aa)
+      this%layers(ii)%aarg = tmpVec + this%layers(ii)%bb
       this%layers(ii)%aa = this%layers(ii)%transfer(this%layers(ii)%aarg)
+      deallocate(tmpVec)
     end do
 
     if (present(state)) state = this%layers
@@ -173,7 +180,7 @@ contains
   end subroutine TNetwork_fprop
 
 
-  pure function TNetwork_fdevi(this, xx) result(jacobi)
+  function TNetwork_fdevi(this, xx) result(jacobi)
 
     !> representation of a neural network
     class(TNetwork), intent(in) :: this
@@ -190,6 +197,9 @@ contains
     !> transfer derivatives
     real(dp), allocatable :: deriv(:), diagDeriv(:,:)
 
+    !> temporary matrix * vector and matrix * matrix storage
+    real(dp), allocatable :: tmpVec(:), tmpMat(:,:), tmpMat2(:,:)
+
     !> auxiliary variables
     integer :: ii, jj
 
@@ -204,7 +214,12 @@ contains
 
     do ii = 2, size(this%layers)
 
-      aarg = matmul(transpose(this%layers(ii - 1)%ww), aa) + this%layers(ii)%bb
+      allocate(tmpVec(size(transpose(this%layers(ii - 1)%ww), dim=1)))
+      tmpVec(:) = 0.0_dp
+      call gemv(tmpVec, transpose(this%layers(ii - 1)%ww), aa)
+      aarg = tmpVec + this%layers(ii)%bb
+      deallocate(tmpVec)
+
       aa = this%layers(ii)%transfer(aarg)
       deriv = this%layers(ii)%transferDeriv(aarg)
 
@@ -215,7 +230,14 @@ contains
         diagDeriv(jj, jj) = deriv(jj)
       end do
 
-      jacobi = matmul(diagDeriv, matmul(transpose(this%layers(ii - 1)%ww), jacobi))
+      allocate(tmpMat(size(transpose(this%layers(ii - 1)%ww), dim=1), size(jacobi, dim=2)))
+      tmpMat(:,:) = 0.0_dp
+      call gemm(tmpMat, transpose(this%layers(ii - 1)%ww), jacobi)
+      allocate(tmpMat2(size(diagDeriv, dim=1), size(tmpMat, dim=2)))
+      tmpMat2(:,:) = 0.0_dp
+      call gemm(tmpMat2, diagDeriv, tmpMat)
+      jacobi = tmpMat2
+      deallocate(tmpMat, tmpMat2)
 
     end do
 
@@ -237,6 +259,9 @@ contains
     !> bias gradients
     type(TBiasDerivs), intent(out) :: db
 
+    !> temporary matrix * vector storage
+    real(dp), allocatable :: tmpVec(:)
+
     !> number of arrays in the bias structure
     integer :: nArrays
 
@@ -249,14 +274,23 @@ contains
     nArrays = size(this%dims)
 
     db%db(nArrays)%array = lossgrad * this%layers(nArrays)%transferDeriv(this%layers(nArrays)%aarg)
-    dw%dw(nArrays - 1)%array = matmul(reshape(this%layers(nArrays - 1)%aa,&
-        & [this%dims(nArrays - 1), 1]), reshape(db%db(nArrays)%array, [1, this%dims(nArrays)]))
+    dw%dw(nArrays - 1)%array(:,:) = 0.0_dp
+    call gemm(dw%dw(nArrays - 1)%array,&
+        & reshape(this%layers(nArrays - 1)%aa, [this%dims(nArrays - 1), 1]),&
+        & reshape(db%db(nArrays)%array, [1, this%dims(nArrays)]))
 
     do ii = size(this%dims) - 1, 2, -1
-      db%db(ii)%array = matmul(this%layers(ii)%ww, db%db(ii + 1)%array) *&
-          & this%layers(ii)%transferDeriv(this%layers(ii)%aarg)
-      dw%dw(ii - 1)%array = matmul(reshape(this%layers(ii - 1)%aa, [this%dims(ii - 1), 1]),&
+
+      allocate(tmpVec(size(this%layers(ii)%ww, dim=1)))
+      tmpVec(:) = 0.0_dp
+      call gemv(tmpVec, this%layers(ii)%ww, db%db(ii + 1)%array)
+      db%db(ii)%array = tmpVec * this%layers(ii)%transferDeriv(this%layers(ii)%aarg)
+      deallocate(tmpVec)
+
+      dw%dw(ii - 1)%array(:,:) = 0.0_dp
+      call gemm(dw%dw(ii - 1)%array, reshape(this%layers(ii - 1)%aa, [this%dims(ii - 1), 1]),&
           & reshape(db%db(ii)%array, [1, this%dims(ii)]))
+
     end do
 
   end subroutine TNetwork_bprop
@@ -277,7 +311,7 @@ contains
 
 
   !> Calculates the network output for a single set of input features.
-  pure function TNetwork_iPredict(this, xx) result(aa)
+  function TNetwork_iPredict(this, xx) result(aa)
 
     !> representation of a neural network
     class(TNetwork), intent(in) :: this
@@ -288,21 +322,33 @@ contains
     !> activation values
     real(dp), allocatable :: aa(:)
 
+    !> temporary matrix * vector storage
+    real(dp), allocatable :: tmpVec(:)
+
     !> auxiliary variable
     integer :: ii
 
-    aa = this%layers(2)%transfer(matmul(transpose(this%layers(1)%ww), xx) + this%layers(2)%bb)
+    allocate(tmpVec(size(transpose(this%layers(1)%ww), dim=1)))
+    tmpVec(:) = 0.0_dp
+    call gemv(tmpVec, transpose(this%layers(1)%ww), xx)
+    aa = this%layers(2)%transfer(tmpVec + this%layers(2)%bb)
+    deallocate(tmpVec)
 
     do ii = 3, size(this%layers)
-      aa = this%layers(ii)%transfer(matmul(transpose(this%layers(ii - 1)%ww), aa) +&
-          & this%layers(ii)%bb)
+
+      allocate(tmpVec(size(transpose(this%layers(ii - 1)%ww), dim=1)))
+      tmpVec(:) = 0.0_dp
+      call gemv(tmpVec, transpose(this%layers(ii - 1)%ww), aa)
+      aa = this%layers(ii)%transfer(tmpVec + this%layers(ii)%bb)
+      deallocate(tmpVec)
+
     end do
 
   end function TNetwork_iPredict
 
 
   !> Calculates the network output for a batch of input features.
-  pure function TNetwork_nPredict(this, xx) result(aa)
+  function TNetwork_nPredict(this, xx) result(aa)
 
     !> representation of a neural network
     class(TNetwork), intent(in) :: this

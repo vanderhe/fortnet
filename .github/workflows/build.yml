@@ -96,6 +96,7 @@ jobs:
       WITH_MPI: false
       APT_PACKAGES: >-
         intel-oneapi-compiler-fortran
+        intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic
         intel-oneapi-mkl
         intel-oneapi-mkl-devel
       CMAKE_OPTIONS: >-

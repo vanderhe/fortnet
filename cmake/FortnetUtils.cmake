@@ -368,14 +368,14 @@ endfunction()
 # Variables:
 #     <UPPER_PACKAGE_NAME>_SOURCE_DIR, <UPPER_PACKAGE_NAME>_BINARY_DIR:
 #         Source and binary directories for the build (to pass to add_subdirectory())
-# 
+#
 macro(fnet_config_hybrid_dependency package target config_methods findpkgopts subdir subdiropts
     git_repository git_tag)
 
   set(_allowed_methods "submodule;find;fetch")
   string(TOLOWER "${package}" _package_lower)
   string(TOUPPER "${package}" _package_upper)
-  
+
   foreach(_config_method IN ITEMS ${config_methods})
 
     string(TOLOWER "${_config_method}" _config_lower)
@@ -395,7 +395,7 @@ macro(fnet_config_hybrid_dependency package target config_methods findpkgopts su
       endif()
 
     elseif("${_config_lower}" STREQUAL "submodule")
-      
+
       if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/origin/CMakeLists.txt
           AND GIT_WORKING_COPY)
         message(STATUS "${package}: Downloading via git submodule update")
