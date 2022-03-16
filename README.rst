@@ -40,11 +40,11 @@ software via Python's ``pip`` command::
 
   pip install cmake h5py
 
-Start CMake by passing your compiler as environment variable ``FC`` and the
-location where the code should be installed and the build directory
+Start CMake by passing your compilers environment variables ``FC``, ``CC`` and
+the location where the code should be installed and the build directory
 (``_build``) as options::
 
-  FC=mpifort cmake -DCMAKE_INSTALL_PREFIX=$HOME/opt/fnet -B _build .
+  FC=mpifort CC=gcc cmake -DCMAKE_INSTALL_PREFIX=$HOME/opt/fnet -B _build .
 
 If the configuration was successful, start the build with::
 
