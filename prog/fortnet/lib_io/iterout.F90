@@ -38,16 +38,16 @@ contains
     !> gradient trajectory during training
     real(dp), intent(in), optional, target :: gradients(:)
 
-    !> pointer holding the available data
+    !! pointer holding the available data
     real(dp), pointer :: pData(:,:)
 
-    !> formatting of output file
+    !! formatting of output file
     character(len=:), allocatable :: fmt
 
-    !> unique fileunit
+    !! unique fileunit
     integer :: fd
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iLine, nLines, nColumns
 
     if (present(trainLoss)) then

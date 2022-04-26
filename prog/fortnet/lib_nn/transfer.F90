@@ -56,7 +56,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = exp(- xx**2)
@@ -70,7 +70,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = - 2.0_dp * xx * gaussian(xx)
@@ -84,7 +84,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = log(1.0_dp + exp(xx))
@@ -98,7 +98,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = 1.0_dp / (1.0_dp + exp(- xx))
@@ -112,7 +112,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = (sqrt(xx**2 + 1.0_dp) - 1.0_dp) / 2.0_dp + xx
@@ -126,7 +126,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = xx / (2.0_dp * sqrt(xx**2 + 1.0_dp)) + 1.0_dp
@@ -140,7 +140,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = max(0.0_dp, xx)
@@ -154,7 +154,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     where (xx >= 0.0_dp)
@@ -172,7 +172,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = max(0.01_dp * xx, xx)
@@ -186,7 +186,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     where (xx >= 0.0_dp)
@@ -204,7 +204,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = 1.0_dp / (1.0_dp + exp(- xx))
@@ -218,7 +218,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = sigmoid(xx) * (1.0_dp - sigmoid(xx))
@@ -232,7 +232,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     where (xx > 0.0_dp)
@@ -250,7 +250,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = 0.0_dp
@@ -264,7 +264,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = tanh(xx)
@@ -278,7 +278,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = 1.0_dp - tanh(xx)**2
@@ -292,7 +292,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = atan(xx)
@@ -306,7 +306,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = 1.0_dp / (xx**2 + 1.0_dp)
@@ -320,7 +320,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = xx
@@ -334,7 +334,7 @@ contains
     !> array to calculate the transfer function for
     real(dp), intent(in) :: xx(:)
 
-    !> corresponding transfer function values
+    !! corresponding transfer function values
     real(dp) :: res(size(xx))
 
     res(:) = 1.0_dp

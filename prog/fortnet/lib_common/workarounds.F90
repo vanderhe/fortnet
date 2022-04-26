@@ -28,7 +28,7 @@ contains
     !> selector to search for
     character(len=*), intent(in) :: selector
 
-    !> position in character array
+    !! position in character array
     integer :: iPos
 
     iPos = 1

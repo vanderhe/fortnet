@@ -121,7 +121,7 @@ contains
     !> type of activation function to use for all layers, except output layer (linear)
     character(len=*), intent(in), optional :: activation
 
-    !> Species identifier
+    !! Species identifier
     integer :: iSpecies
 
     this%dims = dims
@@ -209,28 +209,28 @@ contains
     !> optional, iteration-resolved total gradients
     real(dp), intent(out), allocatable, optional :: gradients(:)
 
-    !> network predictions during the training
+    !! network predictions during the training
     type(TPredicts) :: predicts, resPredicts, validPredicts
 
-    !> total weight and bias gradients of the current system
+    !! total weight and bias gradients of the current system
     type(TDerivs) :: dd, ddRes
 
-    !> temporary (validation) loss function container
+    !! temporary (validation) loss function container
     real(dp), allocatable :: tmpLoss(:), tmpValidLoss(:)
 
-    !> temporary iteration-resolved euclidean norm of total gradient
+    !! temporary iteration-resolved euclidean norm of total gradient
     real(dp), allocatable :: tmpGradients(:)
 
-    !> shuffle array to randomize the order of gradient calculations
+    !! shuffle array to randomize the order of gradient calculations
     integer, allocatable :: shuffle(:)
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     logical :: tPrintOut, tSaveNet
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, iIter, iStart, iEnd, iTmpIter, iLastIter
 
     call TDerivs_init(this%dims, size(this%nets), dd)
@@ -428,10 +428,10 @@ contains
     !> resulting network predictions
     type(TPredicts), intent(inout) :: resPredicts
 
-    !> temporary weight and bias gradient storage of the current atom
+    !! temporary weight and bias gradient storage of the current atom
     type(TDerivs) :: ddTmp
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, iSys, iGlobalSp, iLayer
 
     lpSystem: do ii = iStart, iEnd
@@ -493,7 +493,7 @@ contains
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iNet, iLayer, dims0d
     integer, allocatable :: tmpDims(:)
     character(len=1000) :: tmpStr
@@ -590,7 +590,7 @@ contains
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGlobalSp, iLayer
 
     do iGlobalSp = 1, size(this%nets)
@@ -637,28 +637,28 @@ contains
     !> shape: [nGlobalTargets + nAtomicTargets, nAtoms]
     real(dp), intent(out) :: predicts(:,:)
 
-    !> representation of temporary layer storage container
+    !! representation of temporary layer storage container
     type(TMultiLayerStruc) :: tmpLayer
 
-    !> temporary weight gradient storage of the current atom
+    !! temporary weight gradient storage of the current atom
     type(TWeightDerivs) :: dwTmp
 
-    !> temporary bias gradient storage of the current atom
+    !! temporary bias gradient storage of the current atom
     type(TBiasDerivs) :: dbTmp
 
-    !> loss gradients w.r.t predictions and targets (only system-wide targets)
+    !! loss gradients w.r.t predictions and targets (only system-wide targets)
     real(dp), allocatable :: globalLossGrad(:)
 
-    !> loss gradients w.r.t predictions and targets
+    !! loss gradients w.r.t predictions and targets
     real(dp), allocatable :: lossgrads(:,:)
 
-    !> temporary output storage of sub-nn's
+    !! temporary output storage of sub-nn's
     real(dp), allocatable :: tmpOut(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iAtom, iGlobalSp, iLayer
 
     call TMultiLayerStruc_init(this%dims, size(input, dim=2), tmpLayer)
@@ -734,16 +734,16 @@ contains
     !> true, if gradient got below the specified tolerance
     logical, intent(out) :: tConverged
 
-    !> serialized weights and biases
+    !! serialized weights and biases
     real(dp), allocatable :: weightsAndBiases(:,:), newWeightsAndBiases(:,:)
 
-    !> serialized weight and bias gradients
+    !! serialized weight and bias gradients
     real(dp), allocatable :: ddSerial(:,:)
 
-    !> sub-network resolved loss values
+    !! sub-network resolved loss values
     real(dp), allocatable :: subnetLoss(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iGlobalSp
 
     ! add loss based regularization, if desired
@@ -786,7 +786,7 @@ contains
     !> serialized weights and biases, shape: [nTotParams, nSpecies]
     real(dp), intent(in) :: weightsAndBiases(:,:)
 
-    !> Species identifier
+    !! Species identifier
     integer :: iGlobalSp
 
     do iGlobalSp = 1, this%nSpecies
@@ -805,10 +805,10 @@ contains
     !> serialized weights and biases
     real(dp), intent(out), allocatable :: weightsAndBiases(:,:)
 
-    !> temporary buffer
+    !! temporary buffer
     real(dp), allocatable :: buffer(:)
 
-    !> Species identifier
+    !! Species identifier
     integer :: iGlobalSp
 
     allocate(weightsAndBiases(this%nBiases + this%nWeights, this%nSpecies))
@@ -827,7 +827,7 @@ contains
     !> representation of a Behler-Parrinello neural network
     class(TBpnn), intent(inout) :: this
 
-    !> Species identifier
+    !! Species identifier
     integer :: iSpecies
 
     do iSpecies = 1, this%nSpecies
@@ -846,10 +846,10 @@ contains
     !> summed output of all sub-nn's
     real(dp), intent(out), allocatable :: output(:)
 
-    !> temporary store for output parts
+    !! temporary store for output parts
     real(dp), allocatable :: tmp(:)
 
-    !> Species identifier
+    !! Species identifier
     integer :: iSpecies
 
     allocate(output(this%dims(size(this%dims))))
@@ -874,16 +874,16 @@ contains
     !> index mapping local atom --> global species index
     integer, intent(in) :: localAtToGlobalSp(:)
 
-    !> atomic contributions to the network prediction
+    !! atomic contributions to the network prediction
     real(dp), allocatable :: atomicOutput(:,:)
 
-    !> number of predictions for each sub-nn
+    !! number of predictions for each sub-nn
     integer :: nOutput
 
-    !> number of atoms in the current system
+    !! number of atoms in the current system
     integer :: nAtoms
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iAtom, iGlobalSp
 
     nAtoms = size(input, dim=2)
@@ -911,13 +911,13 @@ contains
     !> index mapping local atom --> global species index
     integer, intent(in) :: localAtToGlobalSp(:)
 
-    !> derivatives of outputs w.r.t. atomic input features
+    !! derivatives of outputs w.r.t. atomic input features
     type(TJacobian) :: jacobian
 
-    !> number of atoms in the current system
+    !! number of atoms in the current system
     integer :: nAtoms
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iAtom, iGlobalSp
 
     nAtoms = size(input, dim=2)
@@ -947,13 +947,13 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
-    !> network predictions during the training
+    !! network predictions during the training
     type(TJacobians) :: jacobian, resJacobian
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom, iStart, iEnd
 
   #:if WITH_MPI
@@ -1011,13 +1011,13 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
-    !> network predictions during the training
+    !! network predictions during the training
     type(TRealArray2D), allocatable :: predicts(:), resPredicts(:)
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iStart, iEnd
 
   #:if WITH_MPI
@@ -1066,13 +1066,13 @@ contains
     !> filename (will be fortnet.hdf5)
     character(len=*), intent(in) :: fname
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
 
-    !> name of current subnetwork and layer
+    !! name of current subnetwork and layer
     character(len=:), allocatable :: netname, layername
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr, iNet, iLayer, tExist
 
     ! open the hdf5 interface
@@ -1151,32 +1151,32 @@ contains
     !> filename (will be fortnet.hdf5)
     character(len=*), intent(in) :: fname
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
 
-    !> name of current subnetwork and layer
+    !! name of current subnetwork and layer
     character(len=:), allocatable :: netname, layername
 
-    !> temporary activation function type
+    !! temporary activation function type
     character(len=:), allocatable :: activation, tmpActivation
 
-    !> dimensions of all layers in the sub-nn's
+    !! dimensions of all layers in the sub-nn's
     integer, allocatable :: dims(:), tmpDims(:)
 
-    !> atomic numbers of sub-nn species
+    !! atomic numbers of sub-nn species
     integer, allocatable :: atomicNumbers(:)
 
-    !> number of system-wide training targets of BPNN
+    !! number of system-wide training targets of BPNN
     integer :: nGlobalTargets
 
-    !> number of atomic training targets of BPNN
+    !! number of atomic training targets of BPNN
     integer :: nAtomicTargets
 
-    !> temporary storage container
+    !! temporary storage container
     integer :: tmpInt(1)
     character(len=100) :: tmpStr
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr, iNet, iLayer
 
     ! open the hdf5 interface

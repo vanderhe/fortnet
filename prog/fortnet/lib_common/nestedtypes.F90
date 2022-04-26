@@ -236,7 +236,7 @@ contains
     !> reference array to get allocation structure from, i.e. number of atoms per structure
     type(TIntArray1D), intent(in) :: refArray(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iSys
 
     ! assume that number of system-wide/atomic targets remains the same throughout datapoints
@@ -281,10 +281,10 @@ contains
     !> representation of bias derivatives
     type(TBiasDerivs), intent(out) :: db
 
-    !> number of arrays in the bias structure
+    !! number of arrays in the bias structure
     integer :: nArrays
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     nArrays = size(dims)
@@ -311,10 +311,10 @@ contains
     !> weight derivatives
     type(TWeightDerivs), intent(out) :: dw
 
-    !> number of arrays in the weight structure
+    !! number of arrays in the weight structure
     integer :: nArrays
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     nArrays = size(dims)
@@ -350,10 +350,10 @@ contains
     !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
     real(dp), intent(in) :: alpha
 
-    !> temporary array to build up signum function values
+    !! temporary array to build up signum function values
     real(dp), allocatable :: sgn(:,:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iLayer
 
     do iLayer = 1, size(this%dw)
@@ -382,7 +382,7 @@ contains
     !> representation of temporary layer storage container
     type(TMultiLayerStruc), intent(out) :: this
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj
 
     allocate(this%struc(nStrucs))
@@ -410,7 +410,7 @@ contains
     !> representation weight and bias derivatives
     class(TDerivs), intent(out) :: derivs
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iStruc
 
     allocate(derivs%dw(nStrucs))
@@ -436,7 +436,7 @@ contains
     !> all gradients collected in 1d-array, shape: [nTotGrads, nSpecies]
     real(dp), intent(out), allocatable :: ddSerial(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iStruc, iLayer, nStrucs, nArrays, ii, jj, ind
 
     nStrucs = size(this%db)
@@ -476,7 +476,7 @@ contains
     !> representation of weight and bias derivatives
     class(TDerivs), intent(inout) :: this
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iStruc, iArray, nStrucs, nArrays
 
     nStrucs = size(this%db)

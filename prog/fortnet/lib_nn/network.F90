@@ -103,7 +103,7 @@ contains
     !> luxury pseudorandom generator instance
     type(TRanlux), intent(inout), optional :: rndGen
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     this%dims = dims
@@ -128,7 +128,7 @@ contains
     !> representation of a neural network
     class(TNetwork), intent(inout) :: this
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iLayer
 
     this%nBiases = sum(this%dims)
@@ -157,10 +157,10 @@ contains
     !> outputs of current neural network instance
     real(dp), intent(out), allocatable, optional :: out(:)
 
-    !> temporary matrix * vector storage
+    !! temporary matrix * vector storage
     real(dp), allocatable :: tmpVec(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     this%layers(1)%aa = xx
@@ -188,19 +188,19 @@ contains
     !> input to feed network with
     real(dp), intent(in) :: xx(:)
 
-    !> forward derivatives, i.e. jacobian matrix w.r.t. input features
+    !! forward derivatives, i.e. jacobian matrix w.r.t. input features
     real(dp), allocatable :: jacobi(:,:)
 
-    !> activation and network input of neurons of current layer
+    !! activation and network input of neurons of current layer
     real(dp), allocatable :: aa(:), aarg(:)
 
-    !> transfer derivatives
+    !! transfer derivatives
     real(dp), allocatable :: deriv(:), diagDeriv(:,:)
 
-    !> temporary matrix * vector and matrix * matrix storage
+    !! temporary matrix * vector and matrix * matrix storage
     real(dp), allocatable :: tmpVec(:), tmpMat(:,:), tmpMat2(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj
 
     aa = xx
@@ -259,13 +259,13 @@ contains
     !> bias gradients
     type(TBiasDerivs), intent(out) :: db
 
-    !> temporary matrix * vector storage
+    !! temporary matrix * vector storage
     real(dp), allocatable :: tmpVec(:)
 
-    !> number of arrays in the bias structure
+    !! number of arrays in the bias structure
     integer :: nArrays
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     call TWeightDerivs_init(this%dims, dw)
@@ -319,13 +319,13 @@ contains
     !> single sample of input data to calculate output for
     real(dp), intent(in) :: xx(:)
 
-    !> activation values
+    !! activation values
     real(dp), allocatable :: aa(:)
 
-    !> temporary matrix * vector storage
+    !! temporary matrix * vector storage
     real(dp), allocatable :: tmpVec(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     allocate(tmpVec(size(transpose(this%layers(1)%ww), dim=1)))
@@ -356,10 +356,10 @@ contains
     !> batch of input data to calculate output for
     real(dp), intent(in) :: xx(:,:)
 
-    !> activation values
+    !! activation values
     real(dp), allocatable :: aa(:,:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     allocate(aa(this%dims(size(this%dims)), size(xx, dim=2)))
@@ -380,7 +380,7 @@ contains
     !> type of transfer function to use
     character(len=*), intent(in) :: descriptor
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iLayer
 
     do iLayer = 1, size(this%dims)
@@ -402,7 +402,7 @@ contains
     !> serialized weights and biases
     real(dp), intent(out), allocatable :: weightsAndBiases(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, iLayer, ind
 
     allocate(weightsAndBiases(this%nBiases + this%nWeights))
@@ -436,7 +436,7 @@ contains
     !> serialized weights and biases
     real(dp), intent(in) :: weightsAndBiases(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, iLayer, ind
 
     ind = 1
@@ -465,7 +465,7 @@ contains
     !> representation of a neural network
     class(TNetwork), intent(inout) :: this
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     do ii = 1, size(this%layers)

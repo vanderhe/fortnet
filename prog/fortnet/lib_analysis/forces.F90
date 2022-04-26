@@ -93,7 +93,7 @@ contains
     !> absolute shift of each atomic coordinate
     real(dp), intent(in) :: delta
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, iAtom, iCoord
 
     allocate(this%geos(size(geos)))
@@ -126,7 +126,7 @@ contains
     !> serialized geometries
     type(TGeometry), intent(out), allocatable :: geos(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, iAtom, iCoord, nTotGeometries, ind
 
     nTotGeometries = 0
@@ -159,7 +159,7 @@ contains
     !> flat reference structure to nest
     type(TGeometry), intent(in) :: geos(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, iAtom, iCoord, ind
 
     ind = 1
@@ -200,22 +200,22 @@ contains
     !> absolute shift of each atomic coordinate
     real(dp), intent(in) :: delta
 
-    !> extended index mapping local atom --> global species index
+    !! extended index mapping local atom --> global species index
     type(TIntArray1D), allocatable :: localAtToGlobalSpExtended(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> network predictions for rattled geometries with one perturbed atom
+    !! network predictions for rattled geometries with one perturbed atom
     type(TPredicts) :: predicts, resPredicts
 
-    !> obtained atomic forces
+    !! obtained atomic forces
     type(TForces) :: forces, resForces
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iGeo, iAtom, iCoord, iStart, iEnd, ii, ind
 
   #:if WITH_MPI
@@ -335,19 +335,19 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> network predictions for rattled geometries with one perturbed atom
+    !! network predictions for rattled geometries with one perturbed atom
     type(TPredicts) :: predicts, resPredicts
 
-    !> obtained atomic forces
+    !! obtained atomic forces
     type(TForces) :: forces, resForces
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom, iForceAtom, iAcsf, iCoord, iStart, iEnd
 
   #:if WITH_MPI

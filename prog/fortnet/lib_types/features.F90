@@ -126,10 +126,10 @@ contains
     !> true, if validation monitoring is desired
     logical, intent(in) :: tMonitorValid
 
-    !> total number of input features
+    !! total number of input features
     integer :: nFeatures
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iData
 
     nFeatures = 0
@@ -207,7 +207,7 @@ contains
     !> true, if validation monitoring is desired
     logical, intent(in) :: tMonitorValid
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iData, nAcsf
 
     if (inpFeatures%tMappingFeatures) then
@@ -267,7 +267,7 @@ contains
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iData
 
     do iData = 1, size(this%trainFeatures)

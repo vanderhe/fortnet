@@ -129,13 +129,13 @@ contains
     !> representation of ACSF mappings
     type(TAcsf), intent(out) :: trainAcsf
 
-    !> serialized initial weights and biases
+    !! serialized initial weights and biases
     real(dp), allocatable :: weightsAndBiases(:,:)
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> true, if an ACSF configuration is found in the netstat file
+    !! true, if an ACSF configuration is found in the netstat file
     logical :: tAcsf
 
   #:if WITH_MPI
@@ -285,7 +285,7 @@ contains
     !> number of atomic training targets of BPNN
     integer, intent(in) :: nAtomicTargets
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     write(stdout, '(A,/)') 'Sub-NN Details'
@@ -313,7 +313,7 @@ contains
     !> representation of feature information
     type(TFeaturesBlock), intent(in) :: features
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iFunc
 
     if (features%tMappingFeatures) then
@@ -385,7 +385,7 @@ contains
     !> representation of feature information
     type(TFeaturesBlock), intent(in) :: features
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     if (features%tExtFeatures) then
@@ -433,7 +433,7 @@ contains
     !> data type containing variables of the Regularization block
     type(TRegularizationBlock), intent(in) :: regu
 
-    !> string associated with the integer optimizer ID
+    !! string associated with the integer optimizer ID
     character(len=:), allocatable :: optimizerStr
 
     if (mode == 'train') then
@@ -520,16 +520,16 @@ contains
     !> representation of geometries with shifted atomic coordinates
     type(TGeometriesForFiniteDiff), intent(out) :: forcesGeos
 
-    !> serialized representation of geometries with shifted atomic coordinates
+    !! serialized representation of geometries with shifted atomic coordinates
     type(TGeometry), allocatable :: forcesSerializedGeos(:)
 
-    !> index mapping local atom --> atomic number
+    !! index mapping local atom --> atomic number
     type(TIntArray1D), allocatable :: localAtToAtNum(:)
 
-    !> atom dependent scaling parameters for cutoff function
+    !! atom dependent scaling parameters for cutoff function
     type(TRealArray2D), allocatable :: extFeatures(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, ii, nTotGeometries, ind
 
     write(stdOut, '(A)', advance='no') 'Calculating ACSF...'
@@ -604,28 +604,28 @@ contains
     !> obtained atomic forces
     type(TForces), intent(out) :: forces
 
-    !> true, if gradient got below the specified tolerance
+    !! true, if gradient got below the specified tolerance
     logical :: tConverged
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> iteration of lowest training/validation loss
+    !! iteration of lowest training/validation loss
     integer :: iMin, iValidMin
 
-    !> training/validation loss obtained during training
+    !! training/validation loss obtained during training
     real(dp), allocatable :: trainLoss(:), validLoss(:)
 
-    !> training gradients obtained during training
+    !! training gradients obtained during training
     real(dp), allocatable :: gradients(:)
 
-    !> summed loss of predictions, in comparison to targets
+    !! summed loss of predictions, in comparison to targets
     real(dp) :: mse, rms, mae
 
-    !> min. and max. deviation of predictions, in comparison to targets
+    !! min. and max. deviation of predictions, in comparison to targets
     real(dp) :: min, max
 
-    !> contains Jacobians of multiple systems
+    !! contains Jacobians of multiple systems
     type(TJacobians) :: jacobian
 
   #:if WITH_MPI

@@ -60,7 +60,7 @@ contains
     !> representation of a dataset
     integer, intent(out), allocatable :: array(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer(size_t) :: type_size
     integer :: iErr, type_class
@@ -84,7 +84,7 @@ contains
     !> representation of a dataset
     integer, intent(out), allocatable :: array(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(2)
     integer(size_t) :: type_size
     integer :: iErr, type_class
@@ -108,7 +108,7 @@ contains
     !> representation of a dataset
     real(dp), intent(out), allocatable :: array(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer(size_t) :: type_size
     integer :: iErr, type_class
@@ -132,7 +132,7 @@ contains
     !> representation of a dataset
     real(dp), intent(out), allocatable :: array(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(2)
     integer(size_t) :: type_size
     integer :: iErr, type_class
@@ -156,7 +156,7 @@ contains
     !> representation of a dataset
     integer, intent(in) :: array(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer :: iErr
 
@@ -178,7 +178,7 @@ contains
     !> representation of a dataset
     integer, intent(in) :: array(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(2)
     integer :: iErr, iDim
 
@@ -203,7 +203,7 @@ contains
     !> representation of a dataset
     real(dp), intent(in) :: array(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer :: iErr
 
@@ -225,7 +225,7 @@ contains
     !> representation of a dataset
     real(dp), intent(in) :: array(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(2)
     integer :: iErr, iDim
 

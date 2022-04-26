@@ -31,7 +31,7 @@ contains
     !> number of unique entries
     integer, intent(out), allocatable :: unique(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj, kk, tmp(size(array))
 
     kk = 1
@@ -61,7 +61,7 @@ contains
     !> number of unique entries
     integer, intent(out) :: nUnique
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj, tmp(size(array))
 
     nUnique = 1
@@ -92,13 +92,13 @@ contains
     !> container of all cominations obtained
     integer, intent(out), allocatable :: comb(:,:)
 
-    !> pool length to draw numbers from
+    !! pool length to draw numbers from
     integer :: nPool
 
-    !> expected number of combinations
+    !! expected number of combinations
     integer :: nComb
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj, ind
     integer, allocatable :: indices(:)
 
@@ -148,10 +148,10 @@ contains
     !> integer to calculate the factorial for
     integer, intent(in) :: xx
 
-    !> resulting factorial
+    !! resulting factorial
     integer :: fact
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: ii
 
     if (xx < 0) then

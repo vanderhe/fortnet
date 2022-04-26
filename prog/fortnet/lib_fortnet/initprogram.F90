@@ -287,16 +287,16 @@ contains
     !> container of program variables
     type(TProgramVariables), intent(inout) :: this
 
-    !> input tree node pointers
+    !! input tree node pointers
     type(fnode), pointer :: root, hsdTree, tmp
 
-    !> string buffer instance
+    !! string buffer instance
     type(string) :: strBuffer
 
-    !> input version number
+    !! input version number
     integer :: inputVersion
 
-    !> true, if current mpi process is the lead
+    !! true, if current mpi process is the lead
     logical :: tLead
 
     ! make sure that allocatables are assigned
@@ -460,10 +460,10 @@ contains
     !> number of nodes per layer, including in- and output, expected shape: [nHiddenLayer + 2]
     integer, intent(in) :: allDims(:)
 
-    !> number of paramaters (weights + biases) per sub-nn
+    !! number of paramaters (weights + biases) per sub-nn
     integer :: nSubNnParams
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iLayer
 
     nSubNnParams = sum(allDims(2:))
@@ -484,13 +484,13 @@ contains
     !> node containig the information
     type(fnode), pointer :: node
 
-    !> string buffer instance
+    !! string buffer instance
     type(string) :: strBuffer
 
-    !> temporary random integer
+    !! temporary random integer
     integer :: tmpIntSeed
 
-    !> auxiliary variable
+    !! auxiliary variable
     real(dp) :: tmpRealSeed
 
     call getChildValue(node, 'ReadNetStats', option%tReadNetStats, .false.)
@@ -541,7 +541,7 @@ contains
     !> node containig the information
     type(fnode), pointer :: node, forcenode, tmp
 
-    !> string buffer instance
+    !! string buffer instance
     type(string) :: strBuffer
 
     if (associated(node)) then
@@ -592,13 +592,13 @@ contains
     !> mode of current run (train, validate, predict)
     character(len=*), intent(in) :: mode
 
-    !> string buffer instances
+    !! string buffer instances
     type(string) :: strBuffer
 
-    !> true, if files exist
+    !! true, if files exist
     logical :: tExist
 
-    !> true, if dataset holds corresponding information
+    !! true, if dataset holds corresponding information
     logical :: tStructures, tGlobalTargets, tAtomicTargets, tExtFeatures
 
     call getChildValue(node, 'NetstatFile', strBuffer, default='fortnet.hdf5')
@@ -677,10 +677,10 @@ contains
     !> number of input features and total training targets (global + atomic)
     integer, intent(in) :: nFeatures, nTargets
 
-    !> list of integers to parse hidden layer configuration
+    !! list of integers to parse hidden layer configuration
     type(TListInt) :: integerList
 
-    !> string buffer instance to parse type of transfer function
+    !! string buffer instance to parse type of transfer function
     type(string) :: strBuffer
 
     select case (tolower(case))
@@ -732,13 +732,13 @@ contains
     !> node containig the information
     type(fnode), intent(in), pointer :: node
 
-    !> node containing requested regularization
-    type(fnode), pointer :: regunode, tmp
-
     !> type of neural network
     character(len=*), intent(in) :: case
 
-    !> string buffer instances
+    !! node containing requested regularization
+    type(fnode), pointer :: regunode, tmp
+
+    !! string buffer instances
     type(string) :: strBuffer1, strBuffer2
 
     select case (tolower(case))
@@ -855,22 +855,22 @@ contains
     !> starting points, shape: [nPoints, nStrucs]
     real(dp), intent(in) :: initialGuess(:,:)
 
-    !> steepest descent optimizer
+    !! steepest descent optimizer
     type(TWrapSteepDesc), allocatable :: wrapSteepDesc(:)
 
-    !> conjugate gradients optimizer
+    !! conjugate gradients optimizer
     type(TWrapConjGrad), allocatable :: wrapConjGrad(:)
 
-    !> limited memory bfgs optimizer
+    !! limited memory bfgs optimizer
     type(TWrapLbfgs), allocatable :: wrapLbfgs(:)
 
-    !> fire optimizer
+    !! fire optimizer
     type(TWrapFire), allocatable :: wrapFire(:)
 
-    !> weights for steepest descent optimizer
+    !! weights for steepest descent optimizer
     real(dp), allocatable :: weights(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iStruc, nStrucs, nValues
 
     nValues = size(initialGuess, dim=1)
@@ -1012,23 +1012,23 @@ contains
     !> total number of external features in the dataset
     integer, intent(in) :: nTotExtFeatures
 
-    !> temporary storage for G-function parameters
+    !! temporary storage for G-function parameters
     character(len=:), allocatable :: type
     real(dp) :: rCut, kappa, rs, eta, lambda, xi
 
-    !> node containing the information
+    !! node containing the information
     type(fnode), pointer :: mappingnode, extnode, child, tmp, indChild
 
-    !> multiple nodes of same name
+    !! multiple nodes of same name
     type(fnodeList), pointer :: children
 
-    !> string buffer instance
+    !! string buffer instance
     type(string) :: strBuffer1, strBuffer2
 
-    !> functions emerging from an automatic generation scheme
+    !! functions emerging from an automatic generation scheme
     type(TGFunctions) :: autoFunctions, tmpFunctions
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iChild, iAutoBlock, nAutoBlocks, nRadial, nAngular, atomId
 
     call getChild(node, 'External', child=extnode, requested=.false.)
@@ -1209,13 +1209,13 @@ contains
     !> obtained number of radial and angular functions
     integer, intent(out) :: nRadial, nAngular
 
-    !> wrapper around multiple G-functions
+    !! wrapper around multiple G-functions
     type(TGFunctions) :: tmpGfunctions
 
-    !> combinations of atomic number pairs with replacement
+    !! combinations of atomic number pairs with replacement
     integer, allocatable :: comb(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iFunc, iAtNum, iComb, nSpecies, nFunctions
 
     ! count species-unresolved scheme
@@ -1379,13 +1379,13 @@ contains
   !> Prints date and time information to standard output.
   subroutine printDateAndTime()
 
-    !> Current date
+    !! Current date
     character(len=8) :: date
 
-    !> Current time
+    !! Current time
     character(len=10) :: time
 
-    !> Current time zone
+    !! Current time zone
     character(len=5) :: zone
 
     call date_and_time(date=date, time=time, zone=zone)

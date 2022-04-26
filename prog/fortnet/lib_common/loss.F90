@@ -51,7 +51,7 @@ module fnet_loss
       !> optional weighting of individual datapoints
       integer, intent(in), optional :: weights(:)
 
-      !> total loss of predictions, in comparison to targets
+      !! total loss of predictions, in comparison to targets
       real(dp) :: loss
 
     end function lossFunc
@@ -69,7 +69,7 @@ module fnet_loss
       !> target reference data
       real(dp), intent(in) :: targets(:,:)
 
-      !> loss gradients w.r.t predictions and targets
+      !! loss gradients w.r.t predictions and targets
       real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
 
     end function lossGradientFunc
@@ -90,7 +90,7 @@ module fnet_loss
       !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
       real(dp), intent(in) :: alpha
 
-      !> total regularization loss
+      !! total regularization loss
       real(dp) :: loss
 
     end function reguFunc
@@ -127,7 +127,7 @@ contains
     !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
     real(dp), intent(in) :: alpha
 
-    !> total regularization loss
+    !! total regularization loss
     real(dp) :: loss
 
     loss = 0.0_dp
@@ -147,7 +147,7 @@ contains
     !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
     real(dp), intent(in) :: alpha
 
-    !> total regularization loss
+    !! total regularization loss
     real(dp) :: loss
 
     loss = lambda / real(size(weights), dp) * sum(abs(weights))
@@ -167,7 +167,7 @@ contains
     !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
     real(dp), intent(in) :: alpha
 
-    !> total regularization loss
+    !! total regularization loss
     real(dp) :: loss
 
     loss = lambda / (2.0_dp * real(size(weights), dp)) * sum(weights**2)
@@ -187,7 +187,7 @@ contains
     !> elastic net weighting between lasso and ridge (0 = ridge, 1 = lasso)
     real(dp), intent(in) :: alpha
 
-    !> total regularization loss
+    !! total regularization loss
     real(dp) :: loss
 
     loss = lambda / real(size(weights), dp) * ((1 - alpha) / 2.0_dp * sum(weights**2)&
@@ -205,7 +205,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:)
 
-    !> deviation of predictions, in comparison to targets
+    !! deviation of predictions, in comparison to targets
     real(dp) :: dev(size(targets))
 
     dev(:) = predicts - targets
@@ -222,7 +222,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:,:)
 
-    !> loss gradients w.r.t predictions and targets
+    !! loss gradients w.r.t predictions and targets
     real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
 
     grads(:,:) = (predicts - targets) / abs(predicts - targets)
@@ -239,7 +239,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:,:)
 
-    !> loss gradients w.r.t predictions and targets
+    !! loss gradients w.r.t predictions and targets
     real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
 
     grads(:,:) = 100.0_dp * (predicts - targets) / (targets**2 * abs(predicts / targets - 1.0_dp))
@@ -256,7 +256,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:,:)
 
-    !> loss gradients w.r.t predictions and targets
+    !! loss gradients w.r.t predictions and targets
     real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
 
     grads(:,:) = 2.0_dp * (predicts - targets)
@@ -273,7 +273,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:,:)
 
-    !> loss gradients w.r.t predictions and targets
+    !! loss gradients w.r.t predictions and targets
     real(dp) :: grads(size(targets, dim=1), size(targets, dim=2))
 
     grads(:,:) = (predicts - targets) / (sqrt((predicts - targets)**2))
@@ -290,7 +290,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:)
 
-    !> summed mean absolute loss of predictions, in comparison to targets
+    !! summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
     loss = sum(abs(targets - predicts)) / real(size(predicts), dp)
@@ -307,7 +307,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:)
 
-    !> summed mean absolute percentage loss of predictions, in comparison to targets
+    !! summed mean absolute percentage loss of predictions, in comparison to targets
     real(dp) :: loss
 
     loss = 100.0_dp * sum(abs((targets - predicts) / targets)) / real(size(predicts), dp)
@@ -324,7 +324,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:)
 
-    !> summed mean squared loss of predictions, in comparison to targets
+    !! summed mean squared loss of predictions, in comparison to targets
     real(dp) :: loss
 
     loss = sum((targets - predicts)**2) / real(size(predicts), dp)
@@ -341,7 +341,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:)
 
-    !> summed mean squared logarithmic loss of predictions, in comparison to targets
+    !! summed mean squared logarithmic loss of predictions, in comparison to targets
     real(dp) :: loss
 
     loss = sum((log(targets + 1.0_dp) - log(predicts + 1.0_dp))**2) / real(size(predicts), dp)
@@ -358,7 +358,7 @@ contains
     !> target reference data
     real(dp), intent(in) :: targets(:)
 
-    !> summed root mean square loss of predictions, in comparison to targets
+    !! summed root mean square loss of predictions, in comparison to targets
     real(dp) :: loss
 
     loss = sqrt(sum((targets - predicts)**2) / real(size(predicts), dp))
@@ -384,19 +384,19 @@ contains
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> summed mean absolute loss of predictions, in comparison to targets
+    !! summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
-    !> temporary loss storage
+    !! temporary loss storage
     real(dp) :: tmpLoss
 
-    !> weighting of individual datapoints
+    !! weighting of individual datapoints
     integer, allocatable :: weighting(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom
     real(dp) :: nValues
 
@@ -455,19 +455,19 @@ contains
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> summed mean absolute loss of predictions, in comparison to targets
+    !! summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
-    !> temporary loss storage
+    !! temporary loss storage
     real(dp) :: tmpLoss
 
-    !> weighting of individual datapoints
+    !! weighting of individual datapoints
     integer, allocatable :: weighting(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom
     real(dp) :: nValues
 
@@ -526,19 +526,19 @@ contains
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> summed mean absolute loss of predictions, in comparison to targets
+    !! summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
-    !> temporary loss storage
+    !! temporary loss storage
     real(dp) :: tmpLoss
 
-    !> weighting of individual datapoints
+    !! weighting of individual datapoints
     integer, allocatable :: weighting(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom
     real(dp) :: nValues
 
@@ -597,19 +597,19 @@ contains
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> summed mean absolute loss of predictions, in comparison to targets
+    !! summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
-    !> temporary loss storage
+    !! temporary loss storage
     real(dp) :: tmpLoss
 
-    !> weighting of individual datapoints
+    !! weighting of individual datapoints
     integer, allocatable :: weighting(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom
     real(dp) :: nValues
 
@@ -668,19 +668,19 @@ contains
     !> optional weighting of individual datapoints
     integer, intent(in), optional :: weights(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> summed mean absolute loss of predictions, in comparison to targets
+    !! summed mean absolute loss of predictions, in comparison to targets
     real(dp) :: loss
 
-    !> temporary loss storage
+    !! temporary loss storage
     real(dp) :: tmpLoss
 
-    !> weighting of individual datapoints
+    !! weighting of individual datapoints
     integer, allocatable :: weighting(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iAtom
     real(dp) :: nValues
 
@@ -733,16 +733,16 @@ contains
     !> atomic target reference data
     type(TRealArray2D), intent(in) :: atomicTargets(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> absolute minium deviation between predictions and targets
+    !! absolute minium deviation between predictions and targets
     real(dp) :: err
 
-    !> temporary error storage
+    !! temporary error storage
     real(dp) :: globalTargetsErr, atomicTargetsErr, tmpErr
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iSys
 
     if (predicts%nGlobalTargets > 0) then
@@ -790,16 +790,16 @@ contains
     !> atomic target reference data
     type(TRealArray2D), intent(in) :: atomicTargets(:)
 
-    !> temporary real valued storage for summed up system-wide predictions
+    !! temporary real valued storage for summed up system-wide predictions
     real(dp), allocatable :: globalPredicts(:)
 
-    !> absolute maximum deviation between predictions and targets
+    !! absolute maximum deviation between predictions and targets
     real(dp) :: err
 
-    !> temporary error storage
+    !! temporary error storage
     real(dp) :: globalTargetsErr, atomicTargetsErr, tmpErr
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iSys
 
     if (predicts%nGlobalTargets > 0) then
