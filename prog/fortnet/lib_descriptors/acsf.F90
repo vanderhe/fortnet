@@ -124,6 +124,7 @@ module fnet_acsf
 
   contains
 
+    procedure :: getMaxCutoff => TAcsf_getMaxCutoff
     procedure :: getMeansAndVariances => TAcsf_getMeansAndVariances
     procedure :: applyZscore => TAcsf_applyZscore
     procedure :: applyZscorePrime => TAcsf_applyZscorePrime
@@ -407,6 +408,7 @@ contains
     !! auxiliary variable
     integer :: iGeo
 
+    if (allocated(this%vals)) deallocate(this%vals)
     allocate(this%vals(size(geos)))
 
     do iGeo = 1, size(geos)
@@ -432,6 +434,7 @@ contains
     !! auxiliary variable
     integer :: iSys
 
+    if (allocated(this%vals)) deallocate(this%vals)
     allocate(this%vals(size(geos)))
 
     do iSys = 1, size(geos)
@@ -485,6 +488,30 @@ contains
     this%zPrec(:, 2) = sqrt(this%zPrec(:, 2) / real(nTotAtoms, dp))
 
   end subroutine TAcsf_getMeansAndVariances
+
+
+  !> Returns the maximum G-function cutoff in ACSF structure.
+  pure function TAcsf_getMaxCutoff(this) result(maxCutoff)
+
+    !> representation of ACSF mappings
+    class(TAcsf), intent(in) :: this
+
+    !> maximum obtained ACSF cutoff in given instance
+    real(dp) :: maxCutoff
+
+    !! auxiliary variables
+    integer :: iFunc
+
+    maxCutoff = 0.0_dp
+
+    if (allocated(this%gFunctions%func)) then
+      ! search G-function instances
+      do iFunc = 1, size(this%gFunctions%func)
+        maxCutoff = max(maxCutoff, this%gFunctions%func(iFunc)%rCut)
+      end do
+    end if
+
+  end function TAcsf_getMaxCutoff
 
 
   !> Applies a z-score preconditioning to the ACSF features.

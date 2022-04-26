@@ -28,7 +28,7 @@ contains
     !> array to investigate
     integer, intent(in) :: array(:)
 
-    !> number of unique entries
+    !> unique integers of array
     integer, intent(out), allocatable :: unique(:)
 
     !! auxiliary variables

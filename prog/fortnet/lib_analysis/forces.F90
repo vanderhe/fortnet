@@ -314,8 +314,8 @@ contains
 
 
   !> Calculates forces based on the BPNN's Jacobian matrix and analytical ACSF derivatives.
-  function forceAnalysis_analytical(bpnn, features, jacobian, forcesAcsf, env, localAtToGlobalSp)&
-      & result(resForces)
+  function forceAnalysis_analytical(bpnn, features, jacobian, forcesAcsf, env, localAtToGlobalSp,&
+      & nExtFeaturesToIgnore) result(resForces)
 
     !> representation of a Behler-Parrinello neural network
     type(TBpnn), intent(in) :: bpnn
@@ -335,11 +335,11 @@ contains
     !> index mapping local atom --> global species index
     type(TIntArray1D), intent(in) :: localAtToGlobalSp(:)
 
-    !! temporary real valued storage for summed up system-wide predictions
-    real(dp), allocatable :: globalPredicts(:)
+    !> number of external atomic input features to neglect during force calculation
+    integer, intent(in), optional :: nExtFeaturesToIgnore
 
-    !! network predictions for rattled geometries with one perturbed atom
-    type(TPredicts) :: predicts, resPredicts
+    !! equals nExtFeaturesToIgnore if present, otherwise 0
+    integer :: nExtFeatures
 
     !! obtained atomic forces
     type(TForces) :: forces, resForces
@@ -349,6 +349,12 @@ contains
 
     !! auxiliary variables
     integer :: iSys, iAtom, iForceAtom, iAcsf, iCoord, iStart, iEnd
+
+    if (present(nExtFeaturesToIgnore)) then
+      nExtFeatures = nExtFeaturesToIgnore
+    else
+      nExtFeatures = 0
+    end if
 
   #:if WITH_MPI
     tLead = env%globalMpiComm%lead
@@ -360,14 +366,6 @@ contains
     iEnd = size(features)
   #:endif
 
-    ! prepare structure that stores the predicted hypersurface of rattled geometries
-    allocate(predicts%sys(size(features)))
-    do iSys = 1, size(features)
-      allocate(predicts%sys(iSys)%array(bpnn%dims(size(bpnn%dims)), 1))
-      predicts%sys(iSys)%array(:,:) = 0.0_dp
-    end do
-    resPredicts = predicts
-
     ! prepare structure that stores the atomic forces
     allocate(forces%geos(size(features)))
     do iSys = 1, size(features)
@@ -377,30 +375,12 @@ contains
     end do
     resForces = forces
 
-    ! calculate network predictions
-    do iSys = iStart, iEnd
-      globalPredicts = sum(bpnn%iPredict(features(iSys)%array,&
-          & localAtToGlobalSp(iSys)%array), dim=2)
-      predicts%sys(iSys)%array(:, 1) = globalPredicts
-    end do
-
-    ! sync network predictions
-  #:if WITH_MPI
-    do iSys = 1, size(features)
-      call mpifx_allreduce(env%globalMpiComm, predicts%sys(iSys)%array,&
-          & resPredicts%sys(iSys)%array, MPI_SUM)
-    end do
-    ! wait for all the predictions to finish
-    call mpifx_barrier(env%globalMpiComm)
-  #:else
-    resPredicts = predicts
-  #:endif
-
     ! calculate atomic forces
+    ! warning: lpAcsf solely covers ACSF's and neglects contributions due to external input features
     lpSys: do iSys = iStart, iEnd
       lpForceAtom: do iForceAtom = 1, size(features(iSys)%array, dim=2)
         lpAtom: do iAtom = 1, size(features(iSys)%array, dim=2)
-          lpAcsf: do iAcsf = 1, size(features(iSys)%array, dim=1)
+          lpAcsf: do iAcsf = 1, size(features(iSys)%array, dim=1) - nExtFeatures
             lpCoord: do iCoord = 1, 3
               forces%geos(iSys)%array(iCoord::3, iForceAtom)&
                   & = forces%geos(iSys)%array(iCoord::3, iForceAtom)&

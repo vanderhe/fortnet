@@ -53,6 +53,8 @@ module fnet_initprogram
   public :: TProgramVariables, TProgramVariables_init
   public :: TTraining_initOptimizer
   public :: TNetworkBlock, TTrainingBlock, TDataBlock, TOptionBlock, TAnalysisBlock
+  public :: printFortnetHeader, printDateAndTime, readFromNetstat
+  public :: copyrightYear, version
 
 
   !> Data type containing variables of the Network block

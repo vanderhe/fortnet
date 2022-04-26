@@ -90,6 +90,6 @@ add_subdirectory(prog)
 #
 # Testing
 #
-string(CONFIGURE "${TEST_RUNNER_TEMPLATE}" TEST_RUNNER)
-enable_testing()
-add_subdirectory(test)
+# string(CONFIGURE "${TEST_RUNNER_TEMPLATE}" TEST_RUNNER)
+# enable_testing()
+# add_subdirectory(test)

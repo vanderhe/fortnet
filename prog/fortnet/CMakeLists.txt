@@ -19,6 +19,7 @@ add_subdirectory(lib_dftbp)
 add_subdirectory(lib_extlibs)
 add_subdirectory(lib_fortnet)
 add_subdirectory(lib_hdf5fx)
+add_subdirectory(lib_interfacing)
 add_subdirectory(lib_io)
 add_subdirectory(lib_nn)
 add_subdirectory(lib_optimizers)
@@ -72,13 +73,17 @@ set(PKG_CONFIG_LIBS "${PKG_CONFIG_LIBS}" PARENT_SCOPE)
 set(ALL-SOURCES-F90)
 set(ALL-SOURCES-FPP)
 
-add_subdirectory(prg_fnet)
+# add_subdirectory(prg_fnet)
+add_subdirectory(prg_fnetdftbp)
 
 fnet_preprocess("${FYPP}" "${fypp_flags}" "F90" "f90" "${ALL-SOURCES-FPP}"
   all-sources-f90-preproc)
 
-add_executable(fnet ${ALL-SOURCES-F90} ${all-sources-f90-preproc})
+# add_executable(fnet ${ALL-SOURCES-F90} ${all-sources-f90-preproc})
+add_executable(fnetdftbp ${ALL-SOURCES-F90} ${all-sources-f90-preproc})
 
-target_link_libraries(fnet fortnet)
+# target_link_libraries(fnet fortnet)
+target_link_libraries(fnetdftbp fortnet)
 
-install(TARGETS fnet DESTINATION ${CMAKE_INSTALL_BINDIR})
+# install(TARGETS fnet DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS fnetdftbp DESTINATION ${CMAKE_INSTALL_BINDIR})
