@@ -198,7 +198,7 @@ contains
     !> optional atom identifier index
     integer, intent(in), optional :: atomId
 
-    !> error messages
+    !! error messages
     character(len=:), allocatable :: msg1, msg2
 
     msg1 = 'Superflous argument(s) for selected function type provided.'
@@ -291,25 +291,25 @@ contains
     !> optional atom identifier index
     integer, intent(in), optional :: atomId
 
-    !> stepsize for center parameter
+    !! stepsize for center parameter
     real(dp) :: rsStep
 
-    !> width parameter for G2 and G5 function
+    !! width parameter for G2 and G5 function
     real(dp) :: g2eta, g5eta
 
-    !> peak positions for G2 function
+    !! peak positions for G2 function
     real(dp), allocatable :: g2rs(:)
 
-    !> lambda parameters for G5 function
+    !! lambda parameters for G5 function
     real(dp), allocatable :: g5lambda(:)
 
-    !> xi parameters for G5 function
+    !! xi parameters for G5 function
     real(dp), allocatable :: g5xi(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     real(dp) :: xi
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj, ind, iRadial, iAngular, identifier
 
     if (present(atomId)) then
@@ -373,7 +373,7 @@ contains
     !> representation of ACSF functions to append
     type(TGFunctions), intent(in) :: functions
 
-    !> temporary storage
+    !! temporary storage
     type(TGFunctions) :: tmp
 
     if (.not. allocated(functions%func)) then
@@ -404,7 +404,7 @@ contains
     !> total number of ACSF mappings per atom
     integer, intent(in) :: nAcsfVals
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iGeo
 
     allocate(this%vals(size(geos)))
@@ -429,7 +429,7 @@ contains
     !> total number of ACSF mappings per atom
     integer, intent(in) :: nAcsfVals
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iSys
 
     allocate(this%vals(size(geos)))
@@ -451,7 +451,7 @@ contains
     !> weighting of each corresponding datapoint
     integer, intent(in) :: weights(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, iAtom, nTotAtoms
 
     if (allocated(this%zPrec)) then
@@ -493,7 +493,7 @@ contains
     !> representation of ACSF mappings
     class(TAcsf), intent(inout) :: this
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, iAcsf
 
     if (.not. allocated(this%zPrec)) then
@@ -518,7 +518,7 @@ contains
     !> representation of ACSF mappings
     class(TAcsf), intent(inout) :: this
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iGeo, iAcsf
 
     if (.not. allocated(this%zPrec)) then
@@ -561,19 +561,19 @@ contains
     !> storage container of means and variances to calculate z-score
     real(dp), intent(in), optional :: zPrec(:,:)
 
-    !> atom dependent scaling parameters for cutoff function
+    !! atom dependent scaling parameters for cutoff function
     type(TRealArray2D), allocatable :: extFeatures(:)
 
-    !> temporary storage of ACSF values of each node
+    !! temporary storage of ACSF values of each node
     type(TMultiAcsfVals) :: tmpVals
 
-    !> weighting of each corresponding datapoint
+    !! weighting of each corresponding datapoint
     integer, allocatable :: weighting(:)
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iStart, iEnd
 
     allocate(weighting(size(geos)))
@@ -658,16 +658,16 @@ contains
     !> optional atom dependent scaling parameters for cutoff function
     type(TRealArray2D), intent(in), optional :: extFeaturesInp(:)
 
-    !> atom dependent scaling parameters for cutoff function
+    !! atom dependent scaling parameters for cutoff function
     type(TRealArray2D), allocatable :: extFeatures(:)
 
-    !> temporary storage of ACSF derivatives of each node
+    !! temporary storage of ACSF derivatives of each node
     type(TMultiAcsfPrimeVals) :: tmpValsPrime
 
-    !> true, if current process is the lead
+    !! true, if current process is the lead
     logical :: tLead
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iSys, iStart, iEnd
 
     ! prevent for accessing an unallocated array
@@ -743,10 +743,10 @@ contains
     !> mask to determine which atoms to keep (does also contain iAtom)
     integer, intent(out), allocatable, optional :: tKeep(:)
 
-    !> temporary mask to determine which atoms to keep
+    !! temporary mask to determine which atoms to keep
     integer, allocatable :: tmp(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iAtom1, iAtom2, ind
 
     allocate(tmp(geo%nAtom))
@@ -812,19 +812,19 @@ contains
     !> atom dependent scaling parameters for cutoff function
     real(dp), intent(in) :: extFeatures(:,:)
 
-    !> geometries reduced to atoms of a single species
+    !! geometries reduced to atoms of a single species
     type(TGeometry) :: geo1, geo2
 
-    !> atomic prefactor of central atom
+    !! atomic prefactor of central atom
     real(dp) :: atomId
 
-    !> atomic prefactors of neighboring atoms
+    !! atomic prefactors of neighboring atoms
     real(dp), allocatable :: atomIds1(:), atomIds2(:)
 
-    !> neighbor coordinates and squared distances
+    !! neighbor coordinates and squared distances
     real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iAtom, iAcsf, iAtomOut1
 
     do iAtom = 1, geo%nAtom
@@ -885,22 +885,22 @@ contains
     !> atom dependent scaling parameters for cutoff function
     real(dp), intent(in), optional :: extFeatures(:,:)
 
-    !> geometries reduced to atoms of a single species
+    !! geometries reduced to atoms of a single species
     type(TGeometry) :: geo1, geo2
 
-    !> atomic prefactor of central atom
+    !! atomic prefactor of central atom
     real(dp) :: atomId
 
-    !> atomic prefactors of neighboring atoms
+    !! atomic prefactors of neighboring atoms
     real(dp), allocatable :: atomIds1(:), atomIds2(:)
 
-    !> neighbor coordinates and squared distances
+    !! neighbor coordinates and squared distances
     real(dp), allocatable :: neighDists1(:), neighDists2(:), neighCoords1(:,:), neighCoords2(:,:)
 
-    !> global indices of neighboring atoms in the reduced geometry
+    !! global indices of neighboring atoms in the reduced geometry
     integer, allocatable  :: atomIndices1(:), atomIndices2(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iAtom, iAcsf, iAtomOut1
 
     do iAtom = 1, geo%nAtom
@@ -966,9 +966,6 @@ contains
     !> index of iAtom after reduction of geo1
     integer, intent(out) :: iAtomOut1
 
-    ! !> atomic prefactors of central atom
-    ! real(dp), intent(out) :: atomId1, atomId2
-
     !> atomic prefactors of neighboring atoms
     real(dp), intent(out), allocatable :: atomIds1(:), atomIds2(:)
 
@@ -981,16 +978,16 @@ contains
     !> neighbour atom indices (dummy)
     integer,  intent(out), allocatable, optional :: atomIndices1_(:), atomIndices2_(:)
 
-    !> neighbor atom indices
+    !! neighbor atom indices
     integer,  allocatable :: atomIndices1(:), atomIndices2(:)
 
-    !> masks to determine which atoms to keep while reducing the geometry
+    !! masks to determine which atoms to keep while reducing the geometry
     integer, allocatable :: tKeep1(:), tKeep2(:)
 
-    !> true, if a species-resolved neighborlist is desired
+    !! true, if a species-resolved neighborlist is desired
     logical :: tSpeciesResolved
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iAtomOut2
 
     if (all(gFunction%atomicNumbers == 0)) then
@@ -1088,25 +1085,25 @@ contains
     !> neighbor atom indices of all iterations
     integer, intent(out), allocatable :: allAtomIndices(:)
 
-    !> instance of dynamic neighbour list
+    !! instance of dynamic neighbour list
     type(TDynNeighList), target :: neighList
 
-    !> pointer to dynamic neighbour list
+    !! pointer to dynamic neighbour list
     type(TDynNeighList), pointer :: pNeighList
 
-    !> instance of dynamic neighbour list iterator
+    !! instance of dynamic neighbour list iterator
     type(TNeighIterator) :: neighIter
 
-    !> obtained neighbor coordinates and distances
+    !! obtained neighbor coordinates and distances
     real(dp) :: neighDists(iterChunkSize), neighCoords(3, iterChunkSize)
 
-    !> obtained neighbor atom indices
+    !! obtained neighbor atom indices
     integer :: atomIndices(iterChunkSize)
 
-    !> temporary coordinate storage
+    !! temporary coordinate storage
     real(dp), allocatable :: tmpCoords(:,:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: nNeigh, nTotNeigh
 
     call TDynNeighList_init(neighList, rCut, geo%nAtom, geo%tPeriodic)
@@ -1148,10 +1145,10 @@ contains
     !> system geometry container
     type(TGeometry), intent(in) :: geo
 
-    !> Indices of atoms to calculate distance for
+    !> indices of atoms to calculate distance for
     integer, intent(in) :: iAt1, iAt2
 
-    !> Obtained distance betweeen the two atoms
+    !! obtained distance betweeen the two atoms
     real(dp) :: distance
 
     distance = norm2(geo%coords(:, iAt2) - geo%coords(:, iAt1))
@@ -1171,7 +1168,7 @@ contains
     !> distances of reference atom to first and second neighbor
     real(dp), intent(in) :: neighDist1, neighDist2
 
-    !> obtained angle betweeen the three atoms
+    !! obtained angle betweeen the three atoms
     real(dp) :: theta
 
     theta = acos(dot_product((neighCoords1 - atomCoords), (neighCoords2 - atomCoords))&
@@ -1196,7 +1193,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> resulting cutoff function value
+    !! resulting cutoff function value
     real(dp) :: res
 
     if (rr > rcut) then
@@ -1224,7 +1221,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> resulting cutoff function value
+    !! resulting cutoff function value
     real(dp) :: res
 
     res = 0.5_dp * atomId1 * atomId2 * (cos(pi * rr / rcut) + 1.0_dp)
@@ -1250,7 +1247,7 @@ contains
     !> derivative order
     integer, intent(in) :: deriv
 
-    !> resulting cutoff derivative value
+    !! resulting cutoff derivative value
     real(dp) :: res
 
     ! here we use the formula for the n-th derivative of cos(ax)
@@ -1275,7 +1272,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> corresponding activation function values
+    !! corresponding activation function values
     real(dp) :: res(size(rr))
 
     where (rr > rcut)
@@ -1302,7 +1299,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> corresponding symmetry function values
+    !! corresponding symmetry function values
     real(dp) :: g1
 
     if (size(rr) == 0) then
@@ -1335,7 +1332,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> corresponding symmetry function values
+    !! corresponding symmetry function values
     real(dp) :: g2
 
     if (size(rr) == 0) then
@@ -1365,7 +1362,7 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> corresponding symmetry function values
+    !! corresponding symmetry function values
     real(dp) :: g3
 
     if (size(rr) == 0) then
@@ -1408,13 +1405,13 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    ! distance between atom j of species 1 and atom k of species 2
+    !! distance between atom j of species 1 and atom k of species 2
     real(dp) :: distjk
 
-    !> corresponding symmetry function values
+    !! corresponding symmetry function values
     real(dp) :: g4
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: jj, kk
 
     g4 = 0.0_dp
@@ -1471,10 +1468,10 @@ contains
     !> cutoff radius
     real(dp), intent(in) :: rcut
 
-    !> corresponding symmetry function values
+    !! corresponding symmetry function values
     real(dp) :: g5
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: jj, kk
 
     g5 = 0.0_dp
@@ -1515,13 +1512,13 @@ contains
     !> atomic prefactors, neighbor coordinates and squared distances of second neighborlist
     real(dp), intent(in) :: atomIds2(:), neighDists2(:), neighCoords2(:,:)
 
-    !> xyz-component of G-function derivative for every neighboring atom
+    !! xyz-component of G-function derivative for every neighboring atom
     real(dp) :: gFuncGrad(3, size(neighDists1))
 
-    !> cutoff (derivative) values
+    !! cutoff (derivative) values
     real(dp) :: dfc_ik, dfc_jk, fc_ik, fc_jk
 
-    !> auxiliary variables
+    !! auxiliary variables
     real(dp) :: dist_jk, a_ijk, prefct_prod, T_ik(3, 3), uvec_jk(3), uvec_ik(3), tmpVec(3)
     real(dp), allocatable :: uvecs2(:,:), fc2(:), sqDists2(:)
     integer  :: jAtom, kAtom
@@ -1680,10 +1677,10 @@ contains
     !>
     real(dp), intent(in)  :: uvec(3), nrm
 
-    !>
+    !!
     real(dp) :: T_matr(3, 3)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer  :: ii, jj
 
     T_matr(:,:) = 0.0_dp
@@ -1712,7 +1709,7 @@ contains
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iFunc, dims0d
 
     call mpifx_bcast(comm, this%tZscore)
@@ -1768,19 +1765,19 @@ contains
     !> filename or path to write to
     character(len=*), intent(in) :: fname
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, mapping_id, func_id, precond_id
 
-    !> name of current G-function
+    !! name of current G-function
     character(len=:), allocatable :: funcname
 
-    !> number of symmetry mappings
+    !! number of symmetry mappings
     integer :: nFunctions
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer(size_t) :: dim
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iFunc, iErr, tmp, tExist
 
     ! open the hdf5 interface
@@ -1932,16 +1929,16 @@ contains
     !> number of radial and angular mappings
     integer, intent(out), optional :: nRadial, nAngular
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, mapping_id, func_id, precond_id
 
-    !> name of current G-function
+    !! name of current G-function
     character(len=:), allocatable :: funcname
 
-    !> temporary storage container
+    !! temporary storage container
     integer, allocatable :: acsfAtomicNumbers(:), tmpAtomicNumbers(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     character(len=100) :: tmpStr
     real(dp) :: tmpReal(1)
     real(dp), allocatable :: tmpRealArray1d(:)

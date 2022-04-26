@@ -134,7 +134,7 @@ contains
     !> mpi communicator with some additional information
     type(mpifx_comm), intent(in) :: comm
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iData, dims0d
     integer, allocatable :: dims1d(:)
 
@@ -356,13 +356,13 @@ contains
     !> true, if the dataset provides structural information
     logical, intent(out) :: tStructures
 
-    !> file identification
+    !! file identification
     integer(hid_t) :: file_id
 
-    !> temporary storage container
+    !! temporary storage container
     integer :: tmp(1)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iErr
 
     ! open the hdf5 interface
@@ -405,13 +405,13 @@ contains
     !> optional output for the number of atomic targets
     integer, intent(out), optional :: nAtomicTargets
 
-    !> file identification
+    !! file identification
     integer(hid_t) :: file_id
 
-    !> temporary storage container
+    !! temporary storage container
     integer :: tmp(1)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr
 
     ! open the hdf5 interface
@@ -465,13 +465,13 @@ contains
     !> optional number of features per atom, provided by the dataset
     integer, intent(out), optional :: nFeatures
 
-    !> file identification
+    !! file identification
     integer(hid_t) :: file_id
 
-    !> temporary storage container
+    !! temporary storage container
     integer :: tmp(1)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr
 
     ! open the hdf5 interface
@@ -507,10 +507,10 @@ contains
     !> representation of a dataset
     type(TDataset), intent(in) :: ref, comp
 
-    !> logicals to determine if species exist in reference setchildvalue
+    !! logicals to determine if species exist in reference setchildvalue
     logical, allocatable :: tFound(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iSp1, iSp2
 
     if (.not. (ref%tTargets .eqv. comp%tTargets)) then
@@ -634,13 +634,13 @@ contains
     !> representation of acsf mapping information
     type(TAcsf), intent(in) :: acsf
 
-    !> true, if the ACSF configuration is fully species-unresolved
+    !! true, if the ACSF configuration is fully species-unresolved
     logical :: tReduce
 
-    !> temporary storage container
+    !! temporary storage container
     integer, allocatable :: datasetAtomicNumbers(:), acsfAtomicNumbers(:), tmpAtomicNumbers(:)
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iFunc
 
     if (.not. dataset%tStructures) then
@@ -724,16 +724,16 @@ contains
     !> true, if the dataset is allowed to only hold a subset of BPNN species
     logical, intent(in), optional :: allowSpSubset
 
-    !> logicals to determine if species exist in reference setchildvalue
+    !! logicals to determine if species exist in reference setchildvalue
     logical, allocatable :: tFound(:)
 
-    !> if present, equals optional dummy argument, otherwise false
+    !! if present, equals optional dummy argument, otherwise false
     logical :: tAllowSpSubset
 
-    !> temporary storage container
+    !! temporary storage container
     integer, allocatable :: datasetAtomicNumbers(:), bpnnAtomicNumbers(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iAtNum1, iAtNum2
 
     if (present(allowSpSubset)) then
@@ -792,19 +792,19 @@ contains
     !> representation of a dataset
     type(TDataset), intent(out) :: dataset
 
-    !> file identification
+    !! file identification
     integer(hid_t) :: file_id, dataset_grp, training_grp, datapoint_grp, geometry_grp
 
-    !> temporary storage container
+    !! temporary storage container
     integer :: tmp(1)
 
-    !> determinant to calculate inverse lattice vectors
+    !! determinant to calculate inverse lattice vectors
     real(dp) :: det
 
-    !> name of current datapoint
+    !! name of current datapoint
     character(len=:), allocatable :: dname
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr, iDatapoint, tExist
 
     ! open the hdf5 interface
@@ -1027,7 +1027,7 @@ contains
     !> unique species name in order of local species indices
     character(mc), intent(out), allocatable :: speciesNames(:)
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, jj, kk
     integer :: tmp1(size(localAtToAtNum)), tmp2(size(localAtToLocalSp))
     integer, allocatable :: uniqueAtNum(:), uniqueLocalSp(:)

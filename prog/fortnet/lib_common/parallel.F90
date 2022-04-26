@@ -34,10 +34,10 @@ contains
     !> start and end index of current tile
     integer, intent(out) :: iStart, iEnd
 
-    !> size of splitted index regions
+    !! size of splitted index regions
     integer :: splitSize
 
-    !> number of systems that exceeds integer times nProcs
+    !! number of systems that exceeds integer times nProcs
     integer :: offset
 
     splitSize = nSystems / nProcs

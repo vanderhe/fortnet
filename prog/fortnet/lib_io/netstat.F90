@@ -40,10 +40,10 @@ contains
     !> filename of netstat file
     character(len=*), intent(in) :: fname
 
-    !> file and group identification
+    !! file and group identification
     integer(hid_t) :: file_id, netstat_id
 
-    !> auxiliary variable
+    !! auxiliary variable
     integer :: iErr
 
     ! open the hdf5 interface
@@ -76,10 +76,10 @@ contains
     !> true, if ACSF mapping features are present
     logical, intent(out) :: tExtFeatures
 
-    !> file and group identifier
+    !! file and group identifier
     integer(hid_t) :: file_id, netstat_id, external_id
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr, tExist, tmp(1)
 
     ! open the hdf5 interface
@@ -131,10 +131,10 @@ contains
     !> true, if ACSF mapping features are present
     logical, intent(out) :: tAcsf
 
-    !> file and group identifier
+    !! file and group identifier
     integer(hid_t) :: file_id, netstat_id, mapping_id
 
-    !> auxiliary variables
+    !! auxiliary variables
     character(len=100) :: tmpStr
     integer :: iErr, tExist
 
@@ -187,10 +187,10 @@ contains
     !> variables of the External block read from a netstat file
     type(TExternalBlock), intent(out) :: ext
 
-    !> file and group identifier
+    !! file and group identifier
     integer(hid_t) :: file_id, netstat_id, external_id
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: iErr, tExist, tmp(1)
 
     ! open the hdf5 interface
@@ -251,22 +251,22 @@ contains
     !> topology of the sub-nn's
     integer, intent(out), allocatable :: topology(:)
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id
 
-    !> atomic number of species
+    !! atomic number of species
     integer, allocatable :: atomicNumbers(:)
 
-    !> temporary network topology of current sub-nn
+    !! temporary network topology of current sub-nn
     integer, allocatable :: tmpTopology(:)
 
-    !> temporary type of activation functions of current sub-nn
+    !! temporary type of activation functions of current sub-nn
     character(len=:), allocatable :: tmpActivation
 
-    !> name of current subnetwork
+    !! name of current subnetwork
     character(len=:), allocatable :: netname
 
-    !> auxiliary variables
+    !! auxiliary variables
     character(len=100) :: tmp
     integer :: iErr, iNet
 
@@ -354,13 +354,13 @@ contains
     !> number of atomic targets of BPNN
     integer, intent(in) :: nAtomicTargets
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, bpnn_id, subnet_id, layer_id
 
-    !> name of current subnetwork and layer
+    !! name of current subnetwork and layer
     character(len=:), allocatable :: netname, layername
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer :: iErr, iNet, iLayer
 
@@ -448,10 +448,10 @@ contains
     !> data type containing variables of the External block
     type(TExternalBlock), intent(in) :: ext
 
-    !> various specifier flags
+    !! various specifier flags
     integer(hid_t) :: file_id, netstat_id, external_id
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dim
     integer :: iErr, tExist
 

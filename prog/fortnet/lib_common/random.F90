@@ -38,10 +38,10 @@ contains
     !> array that will be shuffled on exit
     integer, intent(inout) :: array(:)
 
-    !> temporarily stores a real-valued random number
+    !! temporarily stores a real-valued random number
     real(dp) :: rnd
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer :: ii, rndpos, tmp
 
     do ii = size(array), 2, -1
@@ -76,19 +76,19 @@ contains
     !> optional minimal value specification
     real(dp), intent(in), optional :: min
 
-    !> variance of normal distribution
+    !! variance of normal distribution
     real(dp) :: var
 
-    !> scaling of distribution (default: 1.0)
+    !! scaling of distribution (default: 1.0)
     real(dp) :: scale
 
-    !> minimal value specification
+    !! minimal value specification
     real(dp) :: minval
 
-    !> calculated boundary for random numbers to fulfill minimal value specification
+    !! calculated boundary for random numbers to fulfill minimal value specification
     real(dp) :: bound
 
-    !> luxury random numbers
+    !! luxury random numbers
     real(dp) :: rnd(size(array))
 
     if (present(gain)) then
@@ -139,19 +139,19 @@ contains
     !> optional minimal value specification
     real(dp), intent(in), optional :: min
 
-    !> variance of normal distribution
+    !! variance of normal distribution
     real(dp) :: var
 
-    !> scaling of distribution (default: 1.0)
+    !! scaling of distribution (default: 1.0)
     real(dp) :: scale
 
-    !> minimal value specification
+    !! minimal value specification
     real(dp) :: minval
 
-    !> calculated boundary for random numbers to fulfill minimal value specification
+    !! calculated boundary for random numbers to fulfill minimal value specification
     real(dp) :: bound
 
-    !> luxury random numbers
+    !! luxury random numbers
     real(dp) :: rnd(size(array, dim=1), size(array, dim=2))
 
     if (present(gain)) then

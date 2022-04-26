@@ -55,16 +55,16 @@ contains
     !> true, if writing out atomic forces is desired
     logical, intent(in) :: tForcesSupplied
 
-    !> file and group identification
+    !! file and group identification
     integer(hid_t) :: file_id, fnetout_id, output_id, datapoint_id
 
-    !> temporary storage container
+    !! temporary storage container
     real(dp), allocatable :: tmpOutput(:,:)
 
-    !> total number of training targets
+    !! total number of training targets
     integer :: nTargets
 
-    !> auxiliary variables
+    !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer :: iSys, iErr
 
