@@ -18,6 +18,7 @@
 
 #:set WITH_ASSERT = defined('WITH_ASSERT') or DEBUG > 0
 #:set WITH_MPI = defined('WITH_MPI')
+#:set WITH_SOCKETS = defined('WITH_SOCKETS')
 
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #! ASSERT and DEBUG related macros

@@ -15,9 +15,9 @@ module fnet_initprogram
   use dftbp_assert
   use dftbp_hsdutils, only : getChild, getChildren, setChild, getChildValue, setChildValue
   use dftbp_hsdutils, only : convRangeToInt, detailedError
-  use dftbp_hsdutils2, only : readHSDAsXML, setUnprocessed, warnUnprocessedNodes
+  use dftbp_hsdutils2, only : readHSDAsXML, setUnprocessed, warnUnprocessedNodes, getNodeName2
   use dftbp_charmanip, only : unquote, tolower, i2c
-  use dftbp_accuracy, only: dp
+  use dftbp_accuracy, only: dp, lc
   use dftbp_message, only : error, warning
   use dftbp_steepdesc, only : init
   use dftbp_conjgrad, only : init
@@ -26,7 +26,7 @@ module fnet_initprogram
   use dftbp_ranlux, only : TRanlux, init
   use dftbp_constants, only : AA__Bohr
   use dftbp_globalenv, only : stdOut
-  use dftbp_hsdparser, only : parseHSD, dumpHSD
+  use dftbp_hsdparser, only : parseHSD, dumpHSD, getNodeHSDName
 
   use fnet_fnetdata, only : inquireExtFeatures, inquireTargets, inquireStructures, readHdfDataset,&
       & TDataset, checkDatasetCompatibility
@@ -43,6 +43,10 @@ module fnet_initprogram
 #:if WITH_MPI
   use fnet_mpifx
   use fnet_fnetdata, only : syncDataset
+#:endif
+
+#:if WITH_SOCKETS
+  use fnet_ipisocket, only : IpiSocketCommInp, ipiSocketComm, IPI_PROTOCOLS
 #:endif
 
   implicit none
@@ -166,6 +170,32 @@ module fnet_initprogram
   end type TOptionBlock
 
 
+  !> Data type containing variables of the Driver block
+  type TDriverBlock
+
+    !> maximum number of geometry steps requested in input
+    integer :: maxRun
+
+    !> actual maximum number of geometry steps
+    integer :: nGeoSteps
+
+    !> true, if Fortnet operates via socket communication (as client)
+    logical :: tSocketDriven
+
+    !> true, if geometries send via i-PI protocol are expected to be periodic
+    logical :: tPeriodic
+
+    !> expected index mapping local atom --> atomic number for i-PI protocol
+    integer, allocatable :: atomicNumbers(:)
+
+  #:if WITH_SOCKETS
+    !> socket communication
+    type(ipiSocketCommInp), allocatable :: socketInput
+  #:endif
+
+  end type TDriverBlock
+
+
   !> Data type containing variables of the Analysis block
   type TAnalysisBlock
 
@@ -225,6 +255,9 @@ module fnet_initprogram
     !> data type containing variables of the Analysis block
     type(TAnalysisBlock) :: analysis
 
+    !> data type containing variables of the Driver block
+    type(TDriverBlock) :: driver
+
   contains
 
     procedure :: checkInputConsistency => TInput_checkInputConsistency
@@ -257,6 +290,17 @@ module fnet_initprogram
     !> luxury pseudorandom generator instance
     type(TRanlux) :: rndGen
 
+    !> socket communication details
+  #:if WITH_SOCKETS
+    type(ipiSocketComm), allocatable :: socket
+  #:endif
+
+  contains
+
+  #:if WITH_SOCKETS
+    procedure :: initSocket
+  #:endif
+
   end type TProgramVariables
 
 
@@ -288,7 +332,7 @@ contains
     type(TProgramVariables), intent(inout) :: this
 
     !! input tree node pointers
-    type(fnode), pointer :: root, hsdTree, tmp
+    type(fnode), pointer :: root, hsdTree, driverNode, child, tmp
 
     !! string buffer instance
     type(string) :: strBuffer
@@ -333,24 +377,53 @@ contains
     call getChild(root, 'Analysis', tmp, requested=.false.)
     call readAnalysisBlock(this%inp%analysis, tmp)
 
+    ! read driver block
+    call getChildValue(root, 'Driver', driverNode, '', child=child, allowEmptyValue=.true.)
+    call readDriverBlock(this%inp%driver, this%inp%analysis, driverNode, child)
+
+  #:if WITH_SOCKETS
+    if (this%inp%driver%tSocketDriven) then
+      this%inp%driver%socketInput%nAtom = size(this%inp%driver%atomicNumbers)
+      call this%initSocket(this%inp%driver%socketInput)
+    end if
+  #:endif
+
     ! define state of luxury random number generator
     call init(this%rndGen, luxlev=3, initSeed=this%inp%option%seed)
 
-    ! read data informations
-    call getChild(root, 'Data', tmp)
-    call readDataBlock(this%inp%data, tmp, this%inp%option%mode)
-    if (tLead) then
-      call readHdfDataset(this%inp%data%trainpath, this%trainDataset)
-      if (this%inp%data%tMonitorValid) then
-        call readHdfDataset(this%inp%data%validpath, this%validDataset)
-        call checkDatasetCompatibility(this%trainDataset, this%validDataset)
+    ! if Fortnet is driven by a server, no need for this
+    if (this%inp%driver%tSocketDriven) then
+
+      ! still required for initialization
+      call getChild(root, 'Data', tmp)
+      call readNetstatpathFromDataBlock(tmp, this%inp%option%mode, this%inp%data%netstatpath)
+
+    else
+
+      ! read data informations
+      call getChild(root, 'Data', tmp)
+      call readDataBlock(this%inp%data, tmp, this%inp%option%mode)
+      if (tLead) then
+        call readHdfDataset(this%inp%data%trainpath, this%trainDataset)
+        if (this%inp%data%tMonitorValid) then
+          call readHdfDataset(this%inp%data%validpath, this%validDataset)
+          call checkDatasetCompatibility(this%trainDataset, this%validDataset)
+        end if
       end if
+
+    #:if WITH_MPI
+      call syncDataset(this%trainDataset, this%env%globalMpiComm)
+      if (this%inp%data%tMonitorValid) then
+        call syncDataset(this%validDataset, this%env%globalMpiComm)
+      end if
+    #:endif
+
     end if
 
-  #:if WITH_MPI
-    call syncDataset(this%trainDataset, this%env%globalMpiComm)
-    if (this%inp%data%tMonitorValid) then
-      call syncDataset(this%validDataset, this%env%globalMpiComm)
+  #:if WITH_SOCKETS
+    if (this%inp%driver%tSocketDriven .and. (this%inp%option%mode == 'train'&
+        & .or. this%inp%option%mode == 'validate')) then
+      call error('Socket communication driven operation requires pure prediction mode.')
     end if
   #:endif
 
@@ -417,6 +490,35 @@ contains
   end subroutine TProgramVariables_init
 
 
+#:if WITH_SOCKETS
+  !> Initializes the socket communication.
+  subroutine initSocket(this, socketInput)
+
+    !> Class instance
+    class(TProgramVariables), intent(inout) :: this
+
+    !> Input data for the socket
+    type(ipiSocketCommInp), intent(inout) :: socketInput
+
+    !! true, if current process is the lead
+    logical :: tLead
+
+  #:if WITH_MPI
+    tLead = this%env%globalMpiComm%lead
+  #:else
+    tLead = .true.
+  #:endif
+
+    if (tLead) then
+      write(stdOut, "(A,1X,A)") "Initialising for socket communication to host",&
+          & trim(socketInput%host)
+      this%socket = IpiSocketComm(socketInput)
+    end if
+
+  end subroutine initSocket
+#:endif
+
+
   !> Calculates the number of targets per sub-network parameter.
   subroutine calcTargetsPerParam(dataset, nSubNnParams)
 
@@ -473,6 +575,136 @@ contains
     end do
 
   end function getNumberOfParameters
+
+
+  !> Read in driver properties (for now only relevant for socket communication).
+  subroutine readDriverBlock(driver, analysis, driverNode, parent)
+
+    !> representation of the Driver HSD input block
+    type(TDriverBlock), intent(out) :: driver
+
+    !> representation of user specified analysis options
+    type(TAnalysisBlock), intent(inout) :: analysis
+
+    !> Node to get the information from
+    type(fnode), pointer :: driverNode
+
+    !> Parent of node (for error messages)
+    type(fnode), pointer :: parent
+
+    type(fnode), pointer :: child, child2, child3, child4,  value1, field
+
+    type(string) :: buffer, buffer2, modifier
+
+    !! string buffer instance
+    type(string) :: strBuffer
+
+  #:if WITH_SOCKETS
+    character(len=lc) :: tmpString
+  #:endif
+
+    ! Driver block appearance (something similar to this)
+    !
+    ! Driver = Socket {
+    !   File = 'fortnet'
+    !   Protocol = i-PI {
+    !     NumberOfAtoms = 10
+    !     Periodic = Yes
+    !     AtomicNumbers = 1 2 2 1 2 1 1 1 1 1
+    !   }
+    !   MaxSteps = -1
+    !   Verbosity = 0
+    ! }
+
+    call getNodeName2(driverNode, buffer)
+    select case (char(buffer))
+
+    case ('')
+      continue
+
+    case ('none')
+      continue
+
+    case ('socket')
+      ! external socket control of the run (once initialised from input)
+
+    #:if WITH_SOCKETS
+      if (.not. analysis%tForces) then
+        call warning('Running via socket communication requires force analysis.' // NEW_LINE('A')&
+            & // '   Overwriting user input...')
+        analysis%tForces = .true.
+        analysis%forceMethod = 'analytical'
+      end if
+      allocate(driver%socketInput)
+      call getChild(driverNode, 'File', child=child2, requested=.false.)
+      call getChild(driverNode, 'Host', child=child3, requested=.false.)
+      if (associated(child2) .eqv. associated(child3)) then
+        call error('Either Host or File (but not both) must be set for socket communication.')
+      end if
+
+      ! file communication
+      if (associated(child2)) then
+        call getChildValue(child2, '', buffer2)
+        driver%socketInput%host = unquote(char(buffer2))
+        ! zero it to signal to use a unix file
+        driver%socketInput%port = 0
+      else
+        call getChildValue(child3, '', buffer2)
+        driver%socketInput%host = unquote(char(buffer2))
+        call getChildValue(driverNode, 'Port', driver%socketInput%port, child=field)
+        if (driver%socketInput%port <= 0) then
+          call detailedError(field, 'Invalid port number')
+        end if
+      end if
+
+      call getChildValue(driverNode, 'Protocol', value1, 'i-PI', child=child)
+      call getNodeName(value1, buffer)
+      select case(char(buffer))
+      case('i-pi')
+        driver%socketInput%protocol = IPI_PROTOCOLS%IPI_1
+        ! want a file path
+        if (driver%socketInput%port == 0) then
+          call getChildValue(driverNode, 'Prefix', buffer2, '/tmp/ipi_')
+          tmpString = unquote(char(buffer2))
+          driver%socketInput%host = trim(tmpString) // trim(driver%socketInput%host)
+        end if
+
+        ! read geometry information needed for initialization
+        call getChildValue(value1, 'Periodic', driver%tPeriodic)
+        call getChildValue(value1, 'AtomicNumbers', strBuffer, child=child4, multiple=.true.)
+        call convRangeToInt(char(strBuffer), value1, driver%atomicNumbers, 118)
+        call setChildValue(child4, '', driver%atomicNumbers, replace=.true.)
+
+      case default
+        call detailedError(child, "Invalid protocol '" // char(buffer) // "'")
+      end select
+      call getChildValue(driverNode, 'Verbosity', driver%socketInput%verbosity, 0)
+      call getChildValue(driverNode, 'MaxSteps', driver%maxRun, 200)
+
+      if (driver%maxRun == -1) then
+        driver%nGeoSteps = huge(1) - 1
+      else
+        driver%nGeoSteps = driver%maxRun
+      end if
+
+    #:else
+      call detailedError(driverNode, 'Program had been compiled without socket support.')
+    #:endif
+
+    case default
+
+      call getNodeHSDName(driverNode, buffer)
+      call detailedError(parent, "Invalid driver '" // char(buffer) // "'")
+
+    end select
+
+  #:if WITH_SOCKETS
+    driver%tSocketDriven = allocated(driver%socketInput)
+  #:else
+    driver%tSocketDriven = .false.
+  #:endif
+
+  end subroutine readDriverBlock
 
 
   !> Interprets the Options HSD block.
@@ -580,6 +812,36 @@ contains
   end subroutine readAnalysisBlock
 
 
+  !> Reads the path to the Fortnet configuration file from the Data block.
+  subroutine readNetstatpathFromDataBlock(node, mode, netstatpath)
+
+    !> node containig the information
+    type(fnode), pointer :: node
+
+    !> mode of current run (train, validate, predict)
+    character(len=*), intent(in) :: mode
+
+    !> path to netstat file defining the program state
+    character(len=:), intent(out), allocatable :: netstatpath
+
+    !! string buffer instances
+    type(string) :: strBuffer
+
+    !! true, if files exist
+    logical :: tExist
+
+    call getChildValue(node, 'NetstatFile', strBuffer, default='fortnet.hdf5')
+
+   ! netstat file must be present in validation or prediction mode
+    if ((mode == 'validate') .or. (mode == 'predict')) then
+      inquire(file=trim(unquote(char(strBuffer))), exist=tExist)
+      if (.not. tExist) call detailedError(node, 'Specified netstat file is not present.')
+    end if
+    netstatpath = trim(unquote(char(strBuffer)))
+
+  end subroutine readNetstatpathFromDataBlock
+
+
   !> Interprets the Data HSD block.
   subroutine readDataBlock(data, node, mode)
 
@@ -601,14 +863,7 @@ contains
     !! true, if dataset holds corresponding information
     logical :: tStructures, tGlobalTargets, tAtomicTargets, tExtFeatures
 
-    call getChildValue(node, 'NetstatFile', strBuffer, default='fortnet.hdf5')
-
-    ! netstat file must be present in validation or prediction mode
-    if ((mode == 'validate') .or. (mode == 'predict')) then
-      inquire(file=trim(unquote(char(strBuffer))), exist=tExist)
-      if (.not. tExist) call detailedError(node, 'Specified netstat file is not present.')
-    end if
-    data%netstatpath = trim(unquote(char(strBuffer)))
+    call readNetstatpathFromDataBlock(node, mode, data%netstatpath)
 
     call getChildValue(node, 'Dataset', strBuffer)
     inquire(file=trim(unquote(char(strBuffer))), exist=tExist)

@@ -58,9 +58,6 @@ contains
     !! file and group identification
     integer(hid_t) :: file_id, fnetout_id, output_id, datapoint_id
 
-    !! temporary storage container
-    real(dp), allocatable :: tmpOutput(:,:)
-
     !! total number of training targets
     integer :: nTargets
 

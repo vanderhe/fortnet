@@ -32,6 +32,9 @@ fnet_preprocess("${FYPP}" "${fypp_flags}" "F90" "f90" "${ALL-SOURCES-FPP}" all-s
 #
 add_library(fortnet ${ALL-SOURCES-F90} ${all-sources-f90-preproc})
 target_sources(fortnet PRIVATE $<TARGET_OBJECTS:xmlf90_objlib>)
+if(WITH_SOCKETS)
+  target_sources(fortnet PRIVATE $<TARGET_OBJECTS:fsockets_objlib>)
+endif()
 set(includedir ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 set_target_properties(fortnet PROPERTIES Fortran_MODULE_DIRECTORY ${includedir})
@@ -44,6 +47,11 @@ target_include_directories(fortnet PUBLIC
 #
 target_include_directories(fortnet PUBLIC
   $<BUILD_INTERFACE:$<TARGET_PROPERTY:xmlf90_objlib,INTERFACE_INCLUDE_DIRECTORIES>>)
+
+if(WITH_SOCKETS)
+  target_include_directories(fortnet PUBLIC
+    $<BUILD_INTERFACE:$<TARGET_PROPERTY:fsockets_objlib,INTERFACE_INCLUDE_DIRECTORIES>>)
+endif()
 
 if(WITH_MPI)
   target_link_libraries(fortnet PUBLIC MPI::MPI_Fortran)

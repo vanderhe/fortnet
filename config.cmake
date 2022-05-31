@@ -9,6 +9,8 @@
 
 option(WITH_MPI "Whether Fortnet should support MPI-parallelism" TRUE)
 
+option(WITH_SOCKETS "Whether socket communication should be allowed for" FALSE)
+
 
 #
 # Test environment settings
