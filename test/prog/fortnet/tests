@@ -180,6 +180,9 @@ restart/singlespecies/globalTargets/acsffeatures/noPrec
 restart/singlespecies/globalTargets/acsffeatures/speciesResolved
 restart/singlespecies/globalTargets/acsffeatures/speciesUnresolved
 
+sockets/H2O_ice                                                            #? WITH_SOCKETS
+sockets/H2O_cluster                                                        #? WITH_SOCKETS
+
 training/multispecies/atomicTargets/optimizer/conjgrads
 training/multispecies/atomicTargets/optimizer/fire
 training/multispecies/atomicTargets/optimizer/lbfgs

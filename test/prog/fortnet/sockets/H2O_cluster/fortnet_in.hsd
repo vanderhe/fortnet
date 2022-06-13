@@ -1,0 +1,28 @@
+Driver = Socket {
+  Protocol = i-PI {
+    Periodic = No
+    AtomicNumbers = 8 1 1
+  }
+  MaxSteps = -1
+  Verbosity = 0
+}
+
+Data {
+  NetstatFile = 'fortnet.hdf5'
+}
+
+Options {
+  ReadNetStats = Yes
+  Mode = 'predict'
+
+  RandomSeed = 123456
+  WriteIterationTrajectory = No
+}
+
+Analysis {
+  Forces = Analytical {}
+}
+
+# add details for the communication file to be used, this is set
+# externally by prerun.py in the created file.txt
+<<+ file.hsd
