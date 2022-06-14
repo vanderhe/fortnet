@@ -26,8 +26,10 @@ set(sources-fpp
   ${curdir}/linkedlistr1.F90
   ${curdir}/linkedlistr2.F90
   ${curdir}/linkedlists0.F90
+  ${curdir}/logger.F90
   ${curdir}/message.F90
   ${curdir}/mpifx.F90
+  ${curdir}/optarg.F90
   ${curdir}/ranlux.F90
   ${curdir}/simplealgebra.F90
   ${curdir}/sorting.F90

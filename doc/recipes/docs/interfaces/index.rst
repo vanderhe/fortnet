@@ -21,4 +21,5 @@ constructed network potentials.
 .. toctree::
    :maxdepth: 1
 
+   sockets/index.rst
    ase/index.rst

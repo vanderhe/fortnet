@@ -55,6 +55,10 @@ function (fnet_add_fypp_defines fyppflags)
     list(APPEND _fyppflags -DWITH_MPI)
   endif()
 
+  if(WITH_SOCKETS)
+    list(APPEND _fyppflags -DWITH_SOCKETS)
+  endif()
+
   set(${fyppflags} ${_fyppflags} PARENT_SCOPE)
 
 endfunction()

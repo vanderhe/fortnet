@@ -66,6 +66,10 @@ set(PYTHON_INTERPRETER "python3" CACHE STRING
 # Follow GNU conventions for installing directories
 include(GNUInstallDirs)
 
+if(WITH_SOCKETS)
+  add_subdirectory(external/fsockets EXCLUDE_FROM_ALL)
+endif()
+
 # Note: GIT_TAG hashes below must be updated with the utils/test/check_submodule_commits script!
 
 if(WITH_MPI)

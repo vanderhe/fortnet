@@ -1,6 +1,7 @@
 macro:
         DEBUG=0
         WITH_MPI=1
+	WITH_SOCKETS=0
         RELEASE=0.1
 preprocess: true
 src_dir:

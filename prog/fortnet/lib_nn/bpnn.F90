@@ -502,6 +502,8 @@ contains
     call mpifx_bcast(comm, this%nSpecies)
     call mpifx_bcast(comm, this%nBiases)
     call mpifx_bcast(comm, this%nWeights)
+    call mpifx_bcast(comm, this%nAtomicTargets)
+    call mpifx_bcast(comm, this%nGlobalTargets)
 
     if (comm%lead) then
       dims0d = size(this%atomicNumbers)

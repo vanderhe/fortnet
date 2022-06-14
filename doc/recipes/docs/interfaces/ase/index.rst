@@ -4,18 +4,19 @@
 Atomic Simulation Environment - ASE
 ###################################
 
-The Atomic Simulation Environment - ASE is a set of Python based tools and 
-modules for setting up, manipulating, running, visualizing and analyzing 
-atomistic simulations (cf. `ASE documentation 
-<https://wiki.fysik.dtu.dk/ase/>`_). 
+The Atomic Simulation Environment - ASE is a set of Python based tools and
+modules for setting up, manipulating, running, visualizing and analyzing
+atomistic simulations (cf. `ASE documentation
+<https://wiki.fysik.dtu.dk/ase/>`_).
 
-Currently, file-IO based communication between ASE and Fortnet is available.
-Further information can be found in the section linked below.
+Currently, file-IO and socket based communication between ASE and Fortnet is
+available. Further information can be found in the section linked below.
 
 .. toctree::
    :maxdepth: 1
 
    fileio/fileio.rst
+   sockets/sockets.rst
 
 Note: Before going through the following sections, please make sure that you
 have installed a working version of the `ASE` and `fortnet-python` package. If

@@ -15,6 +15,7 @@ program fortnet
   use dftbp_charmanip, only : toupper
   use dftbp_globalenv, only : initGlobalEnv, destructGlobalEnv, stdOut
   use dftbp_typegeometry, only : TGeometry
+  use dftbp_simplealgebra, only : determinant33
 
   use fnet_initprogram, only : TProgramVariables, TProgramVariables_init, TTraining_initOptimizer,&
       & TNetworkBlock, TDataBlock, TAnalysisBlock
@@ -35,6 +36,12 @@ program fortnet
 
 #:if WITH_MPI
   use fnet_mpifx
+#:endif
+
+#:if WITH_SOCKETS
+  use fnet_ipisocket, only : ipiSocketComm
+  use fnet_fnetdata, only : receiveDatasetFromSocket
+  use fnet_features, only : TFeatures_initForSocketComm, TFeatures_collectForSocketComm
 #:endif
 
   implicit none
@@ -67,6 +74,34 @@ program fortnet
   !> file name of generic Fortnet iterout.dat file
   character(len=*), parameter :: iteroutFile = 'iterout.dat'
 
+#:if WITH_SOCKETS
+
+  !> representation of ACSF mappings and derivatives
+  type(TAcsf) :: acsf, acsfPrime
+
+  !> current geometry iteration (for socket communication)
+  integer :: iGeoStep
+
+  !> true, if driver should be stopped
+  logical :: tStopDriver
+
+  !> obtained global prediction (i.e. total energy contribution)
+  real(dp) :: globalPrediction
+
+  !> obtained atomic forces, shape: [nAtom]
+  real(dp), allocatable :: atomicPredictions(:)
+
+  !> obtained atomic forces, shape: [3, nAtom]
+  real(dp), allocatable :: atomicForces(:,:)
+
+  !> cell stresses
+  real(dp) :: stress(3,3)
+
+  !> cell volume
+  real(dp) :: cellVol
+
+#:endif
+
   !> initialise global environment
   call initGlobalEnv()
 
@@ -80,42 +115,134 @@ program fortnet
   tLead = .true.
 #:endif
 
-  call handleInitialisation(prog, bpnn, trainAcsf)
+  if (prog%inp%driver%tSocketDriven) then
 
-  call printSubnnDetails(prog%inp%network, bpnn%nGlobalTargets, bpnn%nAtomicTargets)
-  call printMappingDetails(trainAcsf, prog%inp%features)
-  call printExternalFeatureDetails(prog%inp%features)
-  call printDatasetDetails(prog%trainDataset, prog%validDataset, prog%inp%data,&
-      & prog%inp%network%nSubNnParams)
-  call printTrainingDetails(prog%inp%option%mode, prog%inp%training%nTrainIt,&
-      & prog%inp%training%iOptimizer, prog%inp%training%lossType, prog%inp%training%threshold,&
-      & prog%inp%training%tShuffle, prog%inp%training%tRegularization, prog%inp%training%regu)
+  #:if WITH_SOCKETS
+    ! stress calculation not yet supported, pass zeros instead
+    stress(:,:) = 1.0_dp
 
-  if (prog%inp%features%tMappingFeatures) then
-    call calculateMappings(prog%inp%data, prog%inp%analysis, prog%trainDataset, prog%validDataset,&
-        & prog%env, trainAcsf, validAcsf, forcesAcsf, forcesGeos)
-  end if
+    ! initializes the BPNN and ACSF instance (only call once)
+    call handleInitialisationForSocketComm(prog, bpnn, acsf)
 
-  if (tLead .and. (.not. prog%inp%option%tReadNetStats)) then
+    call printSubnnDetails(prog%inp%network, bpnn%nGlobalTargets, bpnn%nAtomicTargets)
+    call printMappingDetails(acsf, prog%inp%features)
+
+    commStep: do iGeoStep = 0, prog%inp%driver%nGeoSteps
+      if (iGeoStep < prog%inp%driver%nGeoSteps) then
+        ! only receive geometry from socket, if there are still geometry iterations left
+        call receiveDatasetFromSocket(prog%env, prog%socket, prog%inp%driver%tPeriodic,&
+            & prog%inp%driver%atomicNumbers, bpnn%atomicNumbers, prog%trainDataset, tStopDriver)
+        if (tStopDriver) then
+          exit commStep
+        end if
+        if (prog%trainDataset%geos(1)%tPeriodic) then
+          cellVol = abs(determinant33(prog%trainDataset%geos(1)%latvecs))
+        else
+          cellVol = 0.0_dp
+        end if
+        ! check if the dataset provides structural information needed by the ACSF
+        call checkAcsfDatasetCompatibility(prog%trainDataset, acsf)
+        ! bypass target number test for prediction runs
+        call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers,&
+            & prog%trainDataset%nGlobalTargets, prog%trainDataset%nAtomicTargets,&
+            & allowSpSubset=.true.)
+        ! calculate ACSF mappings for the current geometry (call everytime the geometry changed)
+        call calculateMappingsForSocketComm(prog%env, prog%trainDataset%geos,&
+            &  prog%trainDataset%localAtToAtNum, acsf, acsfPrime)
+        call predictForSocketComm(prog, bpnn, acsf, acsfPrime, prog%trainDataset%geos(1),&
+            & globalPrediction, atomicPredictions, atomicForces)
+        call sendEnergyAndForces(prog%env, prog%socket, globalPrediction, atomicForces, stress,&
+            & cellVol)
+      end if
+    end do commStep
+
+    if (prog%inp%driver%tSocketDriven .and. tLead) then
+      call prog%socket%shutdown()
+    end if
+  #:else
+    call error('Internal error: code compiled without socket support')
+  #:endif
+
+  else
+
+    call handleInitialisation(prog, bpnn, trainAcsf)
+
+    call printSubnnDetails(prog%inp%network, bpnn%nGlobalTargets, bpnn%nAtomicTargets)
+    call printMappingDetails(trainAcsf, prog%inp%features)
+    call printExternalFeatureDetails(prog%inp%features)
+    call printDatasetDetails(prog%trainDataset, prog%validDataset, prog%inp%data,&
+        & prog%inp%network%nSubNnParams)
+    call printTrainingDetails(prog%inp%option%mode, prog%inp%training%nTrainIt,&
+        & prog%inp%training%iOptimizer, prog%inp%training%lossType, prog%inp%training%threshold,&
+        & prog%inp%training%tShuffle, prog%inp%training%tRegularization, prog%inp%training%regu)
+
     if (prog%inp%features%tMappingFeatures) then
-      call trainAcsf%toFile(prog%inp%data%netstatpath)
+      call calculateMappings(prog%inp%data, prog%inp%analysis, prog%trainDataset,&
+          & prog%validDataset, prog%env, trainAcsf, validAcsf, forcesAcsf, forcesGeos)
     end if
-    if (prog%inp%features%tExtFeatures) then
-      call writeExtFeaturesConfig(prog%inp%data%netstatpath, prog%inp%features%ext)
+
+    if (tLead .and. (.not. prog%inp%option%tReadNetStats)) then
+      if (prog%inp%features%tMappingFeatures) then
+        call trainAcsf%toFile(prog%inp%data%netstatpath)
+      end if
+      if (prog%inp%features%tExtFeatures) then
+        call writeExtFeaturesConfig(prog%inp%data%netstatpath, prog%inp%features%ext)
+      end if
     end if
-  end if
 
-  call runCore(prog, bpnn, trainAcsf, validAcsf, forcesAcsf, forcesGeos, predicts, forces)
+    call runCore(prog, bpnn, trainAcsf, validAcsf, forcesAcsf, forcesGeos, predicts, forces)
 
-  if (tLead .and. (prog%inp%option%mode == 'validate' .or. prog%inp%option%mode == 'predict')) then
-    call writeFnetout(fnetoutFile, prog%inp%option%mode, prog%trainDataset%globalTargets,&
-        & prog%trainDataset%atomicTargets, predicts, forces, prog%inp%analysis%tForces)
+    if (tLead .and. (prog%inp%option%mode == 'validate'&
+        & .or. prog%inp%option%mode == 'predict')) then
+      call writeFnetout(fnetoutFile, prog%inp%option%mode, prog%trainDataset%globalTargets,&
+          & prog%trainDataset%atomicTargets, predicts, forces, prog%inp%analysis%tForces)
+    end if
+
   end if
 
   call destructGlobalEnv()
 
 
 contains
+
+#:if WITH_SOCKETS
+  subroutine sendEnergyAndForces(env, socket, energy, forces, stress, cellVol)
+
+    !> Environment
+    type(TEnv), intent(in) :: env
+
+    !> Socket may be unallocated (as on follower processes)
+    type(ipiSocketComm), intent(inout), allocatable :: socket
+
+    !> total energy
+    real(dp), intent(in) :: energy
+
+    !> energy derivatives (-gradients)
+    real(dp), intent(in) :: forces(:,:)
+
+    !> stress tensor
+    real(dp), intent(in) :: stress(:,:)
+
+    !> cell volume
+    real(dp), intent(in) :: cellVol
+
+    !! true, if current process is the lead
+    logical :: tLead
+
+  #:if WITH_MPI
+    tLead = prog%env%globalMpiComm%lead
+  #:else
+    tLead = .true.
+  #:endif
+
+    if (tLead) then
+      ! stress was computed above in the force evaluation block or is 0 if aperiodic
+      call socket%send(energy, forces, stress * cellVol)
+    end if
+
+  end subroutine sendEnergyAndForces
+#:endif
+
 
   !> Initialises several derived types needed for running the core.
   subroutine handleInitialisation(prog, bpnn, trainAcsf)
@@ -271,6 +398,215 @@ contains
     write(stdout, '(A,/)') repeat('-', 80)
 
   end subroutine handleInitialisation
+
+
+#:if WITH_SOCKETS
+
+  !> Initialises several derived types needed for running the core, when acting as socket client.
+  subroutine handleInitialisationForSocketComm(prog, bpnn, acsf)
+
+    !> representation of program variables
+    type(TProgramVariables), intent(inout) :: prog
+
+    !> Behler-Parrinello-Neural-Network instance
+    type(TBpnn), intent(out) :: bpnn
+
+    !> representation of ACSF mappings
+    type(TAcsf), intent(out) :: acsf
+
+    !! true, if current process is the lead
+    logical :: tLead
+
+  #:if WITH_MPI
+    tLead = prog%env%globalMpiComm%lead
+  #:else
+    tLead = .true.
+  #:endif
+
+    write(stdOut, '(/A,/)') 'Initialisation:'
+    write(stdOut, '(A)') 'running in prediction mode'
+    write(stdOut, '(A,1X,A)') 'socket communication to host',&
+        & trim(prog%inp%driver%socketInput%host)
+
+    if (tLead) then
+      prog%inp%features%nFeatures = 0
+      call inquireExtFeatures(prog%inp%data%netstatpath, prog%inp%features%tExtFeatures)
+      if (prog%inp%features%tExtFeatures) then
+        call error('Socket operation does not support additional external input features.')
+      end if
+      call inquireAcsf(prog%inp%data%netstatpath, prog%inp%features%tMappingFeatures)
+      if (prog%inp%features%tMappingFeatures) then
+        call acsf%fromFile(prog%inp%data%netstatpath,&
+            & tReduce=prog%inp%features%mapping%tReduce,&
+            & tStandardize=prog%inp%features%mapping%tStandardize,&
+            & nRadial=prog%inp%features%mapping%nRadial,&
+            & nAngular=prog%inp%features%mapping%nAngular)
+        if (prog%inp%features%mapping%nRadial + prog%inp%features%mapping%nAngular < 1) then
+          call error('Parsed netstat file does not contain ACSF inputs. Aborting.')
+        end if
+        prog%inp%features%nFeatures = prog%inp%features%nFeatures&
+            & + size(acsf%gFunctions%func)
+      end if
+      call bpnn%fromFile(prog%inp%data%netstatpath)
+    end if
+  #:if WITH_MPI
+    call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%nFeatures)
+    call mpifx_bcast(prog%env%globalMpiComm, prog%inp%features%tMappingFeatures)
+    if (prog%inp%features%tMappingFeatures) then
+      call acsf%syncConfig(prog%env%globalMpiComm)
+    end if
+    call bpnn%sync(prog%env%globalMpiComm)
+  #:endif
+
+    write(stdout, '(A,/)') repeat('-', 80)
+
+  end subroutine handleInitialisationForSocketComm
+
+
+  !> Carries out the calculation of structural mappings, if desired.
+  subroutine calculateMappingsForSocketComm(env, geos, localAtToAtNum, acsf, acsfPrime)
+
+    !> if compiled with mpi enabled, contains mpi communicator
+    type(TEnv), intent(in) :: env
+
+    !> geometry to calculate ACSF for
+    type(TGeometry), intent(in) :: geos(:)
+
+    !> index mapping local atom --> atomic number
+    type(TIntArray1D), intent(in) :: localAtToAtNum(:)
+
+    !> representation of acsf mapping information
+    type(TAcsf), intent(inout) :: acsf, acsfPrime
+
+    write(stdOut, '(A)', advance='no') 'Calculating ACSF...'
+
+    ! copy ACSF configurations in advance of any calculation
+    acsfPrime = acsf
+
+    call acsf%calculate(geos, env, localAtToAtNum)
+    call acsfPrime%calculatePrime(geos, env, localAtToAtNum)
+
+    write(stdout, '(A)') 'done'
+
+  end subroutine calculateMappingsForSocketComm
+
+
+  !> Runs Fortnet's core routines, depending on the obtained configuration.
+  subroutine predictForSocketComm(prog, bpnn, acsf, acsfPrime, geo, globalPrediction,&
+      & atomicPredictions, atomicForces)
+
+    !> representation of program variables
+    type(TProgramVariables), intent(inout) :: prog
+
+    !> Behler-Parrinello-Neural-Network instance
+    type(TBpnn), intent(inout) :: bpnn
+
+    !> representation of acsf mapping information
+    type(TAcsf), intent(inout) :: acsf, acsfPrime
+
+    !> geometry to calculate
+    type(TGeometry), intent(in) :: geo
+
+    !> obtained global prediction (i.e. total energy contribution)
+    real(dp), intent(out) :: globalPrediction
+
+    !> obtained atomic forces, shape: [nAtom]
+    real(dp), intent(out), allocatable :: atomicPredictions(:)
+
+    !> obtained atomic forces, shape: [3, nAtom]
+    real(dp), intent(out), allocatable :: atomicForces(:,:)
+
+    !! obtained atomic forces
+    type(TForces) :: forces
+
+    !! contains Jacobians of a single systems
+    type(TJacobians) :: jacobian
+
+    !! index mapping local atom --> global species index
+    type(TIntArray1D), allocatable :: localAtToGlobalSp(:)
+
+    !! additional external, atomic features of the dataset
+    real(dp), allocatable :: extFeatures(:,:)
+
+    !! true, if current process is the lead
+    logical :: tLead
+
+    !! number of datapoints
+    integer :: nDatapoints
+
+    !! number of ACSF mappings
+    integer :: nAcsf
+
+    !! number of additional external atomic input features
+    integer :: nExtFeatures
+
+    !! total number of atomic input features
+    integer :: nFeatures
+
+    !! number of unique elements in geometry
+    integer :: nElements
+
+  #:if WITH_MPI
+    tLead = prog%env%globalMpiComm%lead
+  #:else
+    tLead = .true.
+  #:endif
+
+    ! we only want to calculate a single structure
+    nDatapoints = 1
+
+    ! additional external input features not supported in this case
+    nExtFeatures = 0
+
+    if (bpnn%nAtomicTargets /= 0 .or. bpnn%nGlobalTargets /= 1) then
+      call error('Socket driven operation only working for exactly one global target.')
+    end if
+
+    ! count total number of features
+    nAcsf = size(acsf%gFunctions%func)
+    nFeatures = nAcsf + nExtFeatures
+
+    ! since there is only one geometry, no difference between local/global species indexing
+    allocate(localAtToGlobalSp(1))
+    localAtToGlobalSp(1)%array = geo%species
+
+    call TFeatures_initForSocketComm(prog%features, acsf, geo)
+
+    if (tLead) then
+      call TFeatures_collectForSocketComm(prog%features, acsf)
+      if (bpnn%dims(1) /= nFeatures) then
+        call error('Mismatch in number of features and BPNN input nodes.')
+      end if
+    end if
+
+  #:if WITH_MPI
+    call prog%features%sync(prog%env%globalMpiComm)
+  #:endif
+
+    if (allocated(acsf%vals%vals)) deallocate(acsf%vals%vals)
+    if (allocated(acsfPrime%vals%vals)) deallocate(acsfPrime%vals%vals)
+
+    write(stdOut, '(A)', advance='no') 'Feeding networks...'
+    atomicPredictions = reshape(bpnn%iPredict(prog%features%trainFeatures(1)%array, geo%species),&
+        & [geo%nAtom])
+    write(stdOut, '(A)') 'done'
+    globalPrediction = sum(atomicPredictions)
+
+    write(stdOut, '(A)', advance='no') 'Calculating Jacobian...'
+    allocate(jacobian%sys(nDatapoints))
+    jacobian%sys(1) = bpnn%iJacobian(prog%features%trainFeatures(1)%array, geo%species)
+    write(stdOut, '(A)') 'done'
+    write(stdOut, '(A)', advance='no') 'Calculating forces...'
+    forces = forceAnalysis(bpnn, prog%features%trainFeatures, jacobian, acsfPrime, prog%env,&
+        & localAtToGlobalSp)
+    write(stdOut, '(A,/)') 'done'
+    atomicForces = forces%geos(1)%array
+
+    write(stdout, '(A,/)') repeat('-', 80)
+
+  end subroutine predictForSocketComm
+
+#:endif
 
 
   !> Prints some useful details regarding the sub-networks of a BPNN.

@@ -13,6 +13,10 @@ module fnet_features
   use dftbp_accuracy, only: dp
   use dftbp_message, only : error
 
+#:if WITH_SOCKETS
+  use dftbp_typegeometry, only : TGeometry
+#:endif
+
   use fnet_acsf, only : TAcsf, TGFunctions
   use fnet_fnetdata, only : TDataset
   use fnet_nestedtypes, only : TRealArray2D
@@ -27,6 +31,10 @@ module fnet_features
 
   public :: TMappingBlock, TExternalBlock, TFeaturesBlock
   public :: TFeatures, TFeatures_init, TFeatures_collect
+
+#:if WITH_SOCKETS
+  public :: TFeatures_initForSocketComm, TFeatures_collectForSocketComm
+#:endif
 
 
   !> Data type containing variables of the Mapping block.
@@ -301,6 +309,62 @@ contains
     call mpifx_bcast(comm, this%indices)
 
   end subroutine TExternalBlock_syncConfig
+#:endif
+
+
+#:if WITH_SOCKETS
+  !> Initialises a feature instance.
+  subroutine TFeatures_initForSocketComm(features, acsf, geo)
+
+    !> collected features
+    type(TFeatures), intent(inout) :: features
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(in) :: acsf
+
+    !> geometry instance
+    type(TGeometry), intent(in) :: geo
+
+    !! total number of input features
+    integer :: nFeatures
+
+    ! potentially dangerous, assumes that acsf are present/allocated
+    nFeatures = size(acsf%gFunctions%func)
+
+    if (nFeatures == 0) then
+      call error('No features present to collect. Aborting.')
+    end if
+
+    ! we only want to calculate a single structure
+    if (allocated(features%trainFeatures)) deallocate(features%trainFeatures)
+    allocate(features%trainFeatures(1))
+    allocate(features%trainFeatures(1)%array(nFeatures, geo%nAtom))
+    features%trainFeatures(1)%array(:,:) = 0.0_dp
+
+  end subroutine TFeatures_initForSocketComm
+
+
+  !> Collects features from ACSF calculations and external sources.
+  subroutine TFeatures_collectForSocketComm(features, acsf)
+
+    !> collected features of data and mapping block
+    type(TFeatures), intent(inout) :: features
+
+    !> representation of acsf mapping informations
+    type(TAcsf), intent(in) :: acsf
+
+    !! number of ACSF mappings
+    integer :: nAcsf
+
+    nAcsf = size(acsf%gFunctions%func)
+
+    if (nAcsf > 0) then
+      features%trainFeatures(1)%array = acsf%vals%vals(1)%array
+    else
+      call error('No features present to collect. Aborting.')
+    end if
+
+  end subroutine TFeatures_collectForSocketComm
 #:endif
 
 end module fnet_features

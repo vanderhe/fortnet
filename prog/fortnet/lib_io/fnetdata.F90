@@ -24,12 +24,17 @@ module fnet_fnetdata
   use dftbp_globalenv, only : synchronizeAll
 
   use fnet_acsf, only : TAcsf
+  use fnet_nestedtypes, only : TEnv
   use fnet_nestedtypes, only : TIntArray1D, TRealArray1D, TRealArray2D
   use fnet_hdf5fx, only : h5ltfx_read_dataset_int_f, h5ltfx_read_dataset_double_f
   use fnet_intmanip, only : getUniqueInt, getNumberOfUniqueInt
 
 #:if WITH_MPI
   use fnet_mpifx
+#:endif
+
+#:if WITH_SOCKETS
+  use fnet_ipisocket, only : IpiSocketComm
 #:endif
 
   implicit none
@@ -40,6 +45,10 @@ module fnet_fnetdata
   public :: readHdfDataset, checkDatasetCompatibility, checkBpnnDatasetCompatibility
   public :: checkAcsfDatasetCompatibility, checkExtFeaturesDatasetCompatibility
   public :: inquireStructures, inquireTargets, inquireExtFeatures
+
+#:if WITH_SOCKETS
+  public :: receiveDatasetFromSocket
+#:endif
 
 #:if WITH_MPI
   public :: syncDataset
@@ -123,6 +132,189 @@ module fnet_fnetdata
 
 
 contains
+
+#:if WITH_SOCKETS
+
+  !> Receives a geometry via socket communication.
+  subroutine receiveGeometryFromSocket(env, socket, tPeriodic, coord0, latVecs, tStopDriver)
+
+    !> contains mpi communicator, if compiled with mpi enabled
+    type(TEnv), intent(in) :: env
+
+    !> socket communication object
+    type(IpiSocketComm), intent(in), allocatable :: socket
+
+    !> is the system periodic
+    logical, intent(in) :: tPeriodic
+
+    !> coordinates of atoms
+    real(dp), intent(inout) :: coord0(:,:)
+
+    !> lattice vectors for the unit cell (not referenced if not periodic)
+    real(dp), intent(inout) :: latVecs(:,:)
+
+    !> stop the geometry driver if true
+    logical, intent(out) :: tStopDriver
+
+    !! temporary lattice vectors if periodic
+    real(dp) :: tmpLatVecs(3,3)
+
+    !! true, if current process is the lead
+    logical :: tLead
+
+  #:if WITH_MPI
+    tLead = env%globalMpiComm%lead
+  #:else
+    tLead = .true.
+  #:endif
+
+    @:ASSERT(tLead .eqv. allocated(socket))
+
+    if (tLead) then
+      call socket%receive(coord0, tmpLatVecs, tStopDriver)
+    end if
+
+    if (tPeriodic .and. .not. tStopDriver) then
+      latVecs(:,:) = tmpLatVecs
+    end if
+
+  #:if WITH_MPI
+    ! update all nodes with the received information
+    call mpifx_bcast(env%globalMpiComm, coord0)
+    call mpifx_bcast(env%globalMpiComm, latVecs)
+    call mpifx_bcast(env%globalMpiComm, tStopDriver)
+  #:endif
+
+  end subroutine receiveGeometryFromSocket
+
+
+  !> Assembles a Fortnet compatible dataset from socket communication.
+  subroutine receiveDatasetFromSocket(env, socket, tPeriodic, atNumInput, atNumBpnn, dataset,&
+      & tStopDriver)
+
+    !> contains mpi communicator, if compiled with mpi enabled
+    type(TEnv), intent(in) :: env
+
+    !> socket communication object
+    type(IpiSocketComm), intent(in), allocatable :: socket
+
+    !> is the system periodic
+    logical, intent(in) :: tPeriodic
+
+    !> index mapping local atom --> atomic number (user input)
+    integer, intent(in) :: atNumInput(:)
+
+    !> index mapping local atom --> atomic number (sub-networks of BPNN)
+    integer, intent(in) :: atNumBpnn(:)
+
+    !> resulting dataset, holding a single geometry
+    type(TDataset), intent(out) :: dataset
+
+    !> stop the geometry driver if true
+    logical, intent(out) :: tStopDriver
+
+    !! coordinates of atoms
+    real(dp), allocatable :: coord0(:,:)
+
+    !! lattice vectors for the unit cell (not referenced if not periodic)
+    real(dp), allocatable :: latVecs(:,:)
+
+    !! unique atomic numbers
+    integer, allocatable :: atomicNumbersUnique(:)
+
+    !! determinant to calculate inverse lattice vectors
+    real(dp) :: det
+
+    !! true, if atomic number was found in unique array
+    logical :: tFound
+
+    !! auxiliary variables
+    integer :: ii, jj, kk, iSp
+
+    allocate(coord0(3, size(atNumInput)))
+    allocate(latVecs(3, 3))
+
+    ! via socket communication we are only dealing with a single structure
+    dataset%nDatapoints = 1
+
+    call receiveGeometryFromSocket(env, socket, tPeriodic, coord0, latVecs, tStopDriver)
+
+    ! exit if stop is requested
+    if (tStopDriver) return
+
+    allocate(dataset%geos(dataset%nDatapoints))
+
+    dataset%geos(1)%tPeriodic = tPeriodic
+    dataset%geos(1)%tHelical = .false.
+    dataset%geos(1)%tFracCoord = .false.
+    call getNumberOfUniqueInt(atNumInput, dataset%geos(1)%nSpecies)
+    allocate(dataset%geos(1)%species(size(coord0, dim=2)))
+
+    ! establish mapping local atom index --> local species index
+    outer: do ii = 1, size(atNumInput)
+      do jj = 1, size(atNumBpnn)
+        if (atNumInput(ii) == atNumBpnn(jj)) then
+          dataset%geos(1)%species(ii) = jj
+          cycle outer
+        end if
+        if (jj == size(atNumBpnn)) then
+          call error('BPNN does not contain sub-network of atomic number ' // i2c(atNumInput(ii))&
+              & // '.')
+        end if
+      end do
+    end do outer
+
+    dataset%geos(1)%coords = coord0
+    dataset%geos(1)%nAtom = size(dataset%geos(1)%coords, dim=2)
+    if (dataset%geos(1)%tPeriodic) then
+      dataset%geos(1)%latvecs = latVecs
+      dataset%geos(1)%origin = [0.0_dp, 0.0_dp, 0.0_dp]
+      if (dataset%geos(1)%tFracCoord) then
+        dataset%geos(1)%coords(:,:) = matmul(dataset%geos(1)%latVecs, dataset%geos(1)%coords)
+        dataset%geos(1)%origin(:) = matmul(dataset%geos(1)%latVecs, dataset%geos(1)%origin)
+      end if
+      allocate(dataset%geos(1)%recVecs2p(3, 3))
+      det = determinant33(dataset%geos(1)%latVecs)
+      if (abs(det) < 1e-12_dp) then
+        call error('Linear dependent lattice vectors obtained.')
+      end if
+      call invert33(dataset%geos(1)%recVecs2p, dataset%geos(1)%latVecs, det)
+      dataset%geos(1)%recVecs2p(:,:) = reshape(dataset%geos(1)%recVecs2p, [3, 3], order=[2, 1])
+    end if
+    call normalize(dataset%geos(1))
+
+    allocate(dataset%localAtToGlobalSp(dataset%nDatapoints))
+    dataset%localAtToGlobalSp(1)%array = dataset%geos(1)%species
+    allocate(dataset%localAtToAtNum(dataset%nDatapoints))
+    dataset%localAtToAtNum(1)%array = atNumInput
+
+    dataset%nTotalAtoms = size(coord0, dim=2)
+    dataset%tTargets = .false.
+    dataset%tGlobalTargets = .false.
+    dataset%tAtomicTargets = .false.
+    dataset%nGlobalTargets = 0
+    dataset%nAtomicTargets = 0
+    dataset%nTargets = 0
+    dataset%atomicNumbers = atNumBpnn
+    dataset%nSpecies = size(dataset%atomicNumbers)
+    dataset%nTargetsPerParam = 0
+    allocate(dataset%globalTargets(dataset%nDatapoints))
+    allocate(dataset%globalTargets(1)%array(0))
+    allocate(dataset%atomicTargets(dataset%nDatapoints))
+    allocate(dataset%atomicTargets(1)%array(0, 0))
+    allocate(dataset%weights(dataset%nDatapoints))
+    dataset%weights(1) = 1
+    allocate(dataset%atomicWeights(dataset%nDatapoints))
+    allocate(dataset%atomicWeights(1)%array(dataset%geos(1)%nAtom))
+    dataset%atomicWeights(1)%array(:) = 1.0_dp
+    dataset%tStructures = .true.
+    dataset%tExtFeatures = .false.
+    dataset%nExtFeatures = 0
+
+  end subroutine receiveDatasetFromSocket
+
+#:endif
+
 
 #:if WITH_MPI
   !> Synchronizes a dataset between the MPI nodes.

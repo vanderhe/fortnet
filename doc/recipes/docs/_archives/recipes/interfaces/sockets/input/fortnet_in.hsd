@@ -1,0 +1,23 @@
+Driver = Socket {
+  File = 'fortnet'
+  Protocol = i-PI {
+    # Non-periodic water molecule (H2O)
+    Periodic = No
+    AtomicNumbers = 8 1 1
+  }
+  MaxSteps = 1000
+  Verbosity = 0
+}
+
+Data {
+  NetstatFile = 'fortnet.hdf5'
+}
+
+Options {
+  ReadNetStats = Yes
+  Mode = 'predict'
+}
+
+Analysis {
+  Forces = Analytical {}
+}
