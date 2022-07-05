@@ -305,7 +305,7 @@ module fnet_initprogram
 
 
   !> program version
-  character(len=*), parameter :: version = '0.6'
+  character(len=*), parameter :: version = '0.7'
 
   !> copyright year
   integer, parameter :: copyrightYear = 2022
