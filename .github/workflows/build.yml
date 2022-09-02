@@ -137,9 +137,9 @@ jobs:
     - name: Install HDF5
       if: contains(matrix.os, 'ubuntu')
       run: |
-        wget https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.13/hdf5-1.13.0/src/CMake-hdf5-1.13.0.tar.gz
-        tar xfz CMake-hdf5-1.13.0.tar.gz
-        cd CMake-hdf5-1.13.0/hdf5-1.13.0/
+        wget https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.13/hdf5-1.13.2/src/CMake-hdf5-1.13.2.tar.gz
+        tar xfz CMake-hdf5-1.13.2.tar.gz
+        cd CMake-hdf5-1.13.2/hdf5-1.13.2/
         CC=gcc CXX=icpc FC=ifort F9X=ifort ./configure --prefix=${PWD}/hdf5 --enable-fortran --with-default-api-version=v110 --enable-shared
         make -j -l2
         make install

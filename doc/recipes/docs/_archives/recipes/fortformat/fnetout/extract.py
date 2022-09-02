@@ -17,19 +17,40 @@ def main():
     fnetout = Fnetout('fnetout.hdf5')
 
     mode = fnetout.mode
-    print('Running mode: ', mode)
+    print('Running mode:\n', mode)
 
     ndatapoints = fnetout.ndatapoints
-    print('Number of datapoints in training: ', ndatapoints)
+    print('Number of datapoints in dataset:\n', ndatapoints)
 
-    targettype = fnetout.targettype
-    print('Type of targets: ', targettype)
+    nglobaltargets = fnetout.nglobaltargets
+    print('Number of system-wide targets (e.g. total energies):\n',
+          nglobaltargets)
 
-    predictions = fnetout.predictions
-    print("Fortnet's predictions: ", predictions)
+    natomictargets = fnetout.natomictargets
+    print('Number of atomic targets (e.g. atomic forces):\n',
+          natomictargets)
 
-    targets = fnetout.targets
-    print('Targets while trained: ', targets)
+    globaltargets = fnetout.globaltargets
+    print('System-wide targets:\n', globaltargets)
+
+    atomictargets = fnetout.atomictargets
+    print('Atomic targets: ', atomictargets)
+
+    tforces = fnetout.tforces
+    print('Whether atomic forces are present:\n', tforces)
+
+    forces = fnetout.forces
+    print('Atomic forces:\n', forces)
+
+    atomicpredictions = fnetout.atomicpredictions
+    print("Fortnet's predictions of atomic targets:\n", atomicpredictions)
+
+    globalpredictions = fnetout.globalpredictions
+    print("Fortnet's predictions of system-wide targets:\n", globalpredictions)
+
+    globalpredictions_atomic = fnetout.globalpredictions_atomic
+    print("Fortnet's atom-resolved predictions of system-wide targets:\n",
+          globalpredictions_atomic)
 
 
 if __name__ == '__main__':

@@ -20,12 +20,14 @@ Extracting Properties
 To fetch information from an ``fnetout.hdf5`` output file, the ``Fnetout`` class
 provides several properties that may be extracted, including the mode of the
 Fortnet run that produced the output file (predict or validate), the number of
-datapoints the network was trained on, the type of training targets (atomic or
-global), the predictions of the network potential as well as corresponding
-targets if provided (only for validation mode).
+datapoints the network was trained on, the number of system-wide targets (e.g.
+total energies) the network was trained on, the number of atomic targets (e.g.
+atomic forces) the network was trained on, atomic force predictions (if
+applicable) and (atom-resolved) system-wide and atomic predictions of the
+network potential, as well as corresponding targets if provided (only for
+validation mode).
 
-The following Python script shows how to extract the aforementioned information
-based on the :math:`E`-:math:`V` scan example of a primitive silicon unitcell:
+The following Python script shows how to extract the aforementioned information:
 
 .. code-block:: python
 
@@ -45,19 +47,40 @@ based on the :math:`E`-:math:`V` scan example of a primitive silicon unitcell:
       fnetout = Fnetout('fnetout.hdf5')
 
       mode = fnetout.mode
-      print('Running mode: ', mode)
+      print('Running mode:\n', mode)
 
       ndatapoints = fnetout.ndatapoints
-      print('Number of datapoints in training: ', ndatapoints)
+      print('Number of datapoints in dataset:\n', ndatapoints)
 
-      targettype = fnetout.targettype
-      print('Type of targets: ', targettype)
+      nglobaltargets = fnetout.nglobaltargets
+      print('Number of system-wide targets (e.g. total energies):\n',
+	    nglobaltargets)
 
-      predictions = fnetout.predictions
-      print("Fortnet's predictions: ", predictions)
+      natomictargets = fnetout.natomictargets
+      print('Number of atomic targets (e.g. atomic forces):\n',
+	    natomictargets)
 
-      targets = fnetout.targets
-      print('Targets while trained: ', targets)
+      globaltargets = fnetout.globaltargets
+      print('System-wide targets:\n', globaltargets)
+
+      atomictargets = fnetout.atomictargets
+      print('Atomic targets: ', atomictargets)
+
+      tforces = fnetout.tforces
+      print('Whether atomic forces are present:\n', tforces)
+
+      forces = fnetout.forces
+      print('Atomic forces:\n', forces)
+
+      atomicpredictions = fnetout.atomicpredictions
+      print("Fortnet's predictions of atomic targets:\n", atomicpredictions)
+
+      globalpredictions = fnetout.globalpredictions
+      print("Fortnet's predictions of system-wide targets:\n", globalpredictions)
+
+      globalpredictions_atomic = fnetout.globalpredictions_atomic
+      print("Fortnet's atom-resolved predictions of system-wide targets:\n",
+	    globalpredictions_atomic)
 
   if __name__ == '__main__':
       main()
