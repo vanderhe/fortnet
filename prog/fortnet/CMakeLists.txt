@@ -71,6 +71,10 @@ target_include_directories(fortnet PUBLIC ${OTHER_INCLUDE_DIRS})
 #
 # Installation
 #
+if(BUILD_SHARED_LIBS)
+  install(TARGETS fortnet DESTINATION "${CMAKE_INSTALL_LIBDIR}" EXPORT fortnet-targets)
+endif()
+
 list(APPEND PKG_CONFIG_LIBS fortnet)
 set(PKG_CONFIG_LIBS "${PKG_CONFIG_LIBS}" PARENT_SCOPE)
 

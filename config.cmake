@@ -9,7 +9,13 @@
 
 option(WITH_MPI "Whether Fortnet should support MPI-parallelism" TRUE)
 
-option(WITH_SOCKETS "Whether socket communication should be allowed for" FALSE)
+option(WITH_SOCKETS "Whether socket communication should be allowed for" TRUE)
+
+option(BUILD_SHARED_LIBS "Whether the libraries built should be shared" FALSE)
+# Turn this on, if the Fortnet library (and other compiled libraries) should be shared libraries and
+# dynamically linked to their applications. This results in smaller applications, but the libraries
+# must be present at run-time (and the correct LD_LIBRARY_PATH environment variable must be set, so
+# that they can be found by the operating system).
 
 
 #

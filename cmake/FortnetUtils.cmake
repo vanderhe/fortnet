@@ -59,6 +59,10 @@ function (fnet_add_fypp_defines fyppflags)
     list(APPEND _fyppflags -DWITH_SOCKETS)
   endif()
 
+  if(BUILD_SHARED_LIBS)
+    list(APPEND _fyppflags -DBUILD_SHARED_LIBS)
+  endif()
+
   set(${fyppflags} ${_fyppflags} PARENT_SCOPE)
 
 endfunction()
@@ -190,6 +194,25 @@ function(fnet_library_linking_flags libraries linkflags)
     endif()
   endforeach()
   set(${linkflags} "${_linkflags}" PARENT_SCOPE)
+endfunction()
+
+
+# Checks the build configuration on consistency and stops in case of inconsistencies
+function (fnet_ensure_config_consistency)
+
+  # Check minimal compiler versions
+  set(fortran_minimal_versions "GNU;8.3" "Intel;20.2")
+  fnet_check_minimal_compiler_version("Fortran" "${fortran_minimal_versions}")
+
+  set(pkgconfig_languages C Fortran)
+  list(FIND pkgconfig_languages "${PKGCONFIG_LANGUAGE}" pos)
+  if(pos EQUAL -1)
+    string(REPLACE ";" "\", \"" pkgconfig_languages_str "${pkgconfig_languages}")
+    set(pkgconfig_languages_str "\"${pkgconfig_languages_str}\"")
+    message(FATAL_ERROR
+      "Invalid language \"${PKGCONFIG_LANGUAGE}\" for PKGCONFIG_LANGUAGE (possible choices: ${pkgconfig_languages_str})")
+  endif()
+
 endfunction()
 
 
@@ -443,3 +466,25 @@ macro(fnet_config_hybrid_dependency package target config_methods findpkgopts su
   unset(_config_lower)
 
 endmacro()
+
+
+# Checks whether the current compiler fullfills minimal version requirements.
+#
+#
+# Arguments:
+#   lang [in]: Language for which the compiler should be checked (e.g. Fortran, C, CXX)
+#   compiler_versions [in]: List with alternating compiler ids and minimal version numbers, e.g.
+#       "Intel;19.0;GNU;9.0". If the compiler is amoung the listed ones and its version number is
+#       less than the specified one, a fatal error message will be issued. Otherwise the function
+#       returns silently.
+#
+function (fnet_check_minimal_compiler_version lang compiler_versions)
+  while(compiler_versions)
+    list(POP_FRONT compiler_versions compiler version)
+    if("${CMAKE_${lang}_COMPILER_ID}" STREQUAL "${compiler}"
+        AND CMAKE_${lang}_COMPILER_VERSION VERSION_LESS "${version}")
+      message(FATAL_ERROR "${compiler} ${lang} compiler is too old "
+          "(found \"${CMAKE_${lang}_COMPILER_VERSION}\", required >= \"${version}\")")
+    endif()
+  endwhile()
+endfunction()

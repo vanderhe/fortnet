@@ -1,0 +1,27 @@
+@PACKAGE_INIT@
+
+# Global Fortnet config options
+set(Fortnet_WITH_MPI @WITH_MPI@)
+set(Fortnet_WITH_SOCKETS @WITH_SOCKETS@)
+
+include(CMakeFindDependencyMacro)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/Modules)
+
+if(NOT TARGET Fortnet::Fortnet)
+
+  if(NOT TARGET BLAS::BLAS)
+    find_dependency(CustomBlas)
+  endif()
+
+  if(NOT TARGET LAPACK::LAPACK)
+    find_dependency(CustomLapack)
+  endif()
+
+  if(Fortnet_WITH_MPI AND NOT TARGET MpiFx::MpiFx)
+    find_dependency(MpiFx)
+  endif()
+
+  include("${CMAKE_CURRENT_LIST_DIR}/fortnet-targets.cmake")
+
+endif()

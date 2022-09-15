@@ -1,0 +1,9 @@
+Name: Fortnet
+Description: Library interface to Fortnet, a software package for training Behler-Parrinello neural networks
+Version: @PROJECT_VERSION@
+URL: https://github.com/vanderhe/fortnet
+
+Requires: @PKGCONFIG_REQUIRES@
+Libs: @PKGCONFIG_LIBS@
+Libs.private: @PKGCONFIG_LIBS_PRIVATE@
+Cflags: @PKGCONFIG_C_FLAGS@
