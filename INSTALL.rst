@@ -16,7 +16,7 @@ In order to compile Fortnet, you need the following software components:
 
 * C compiler
 
-* LAPACK/BLAS libraries (or compatible equivalents)
+* BLAS library (or compatible equivalents)
 
 * Compatible serial HDF5 with Fortran API and High-Level routines
   (version 1.10.x or newer)
@@ -121,18 +121,6 @@ In order to build Fortnet carry out the following steps:
 
     -DWITH_MPI=0
 
-  In order to use the MKL-library with the GNU-compiler, you would have to
-  override the ``LAPACK_LIBRARY`` variable with the CMake command line argument
-  ``-D``::
-
-    -DLAPACK_LIBRARY="mkl_gf_lp64;mkl_gnu_thread;mkl_core"
-
-  When needed, you can specify the complete path to a library or pass linker
-  options as defined variables, e.g.::
-
-    -DLAPACK_LIBRARY="/opt/openblas/libopenblas.a"
-    -DLAPACK_LIBRARY="-Wl,--start-group -lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -Wl,--end-group"
-
   By default CMake searches for the external libraries in the paths specified in
   the ``CMAKE_PREFIX_PATH`` environment variable. **Make sure that your
   CMAKE_PREFIX_PATH environment variable is set up correctly and contains
@@ -143,7 +131,7 @@ In order to build Fortnet carry out the following steps:
   Some of the external library finders also offer special ``_LIBRARY_DIR`` CMake
   variables for setting search paths, e.g. ::
 
-    -DLAPACK_LIBRARY_DIR=/opt/custom-openblas
+    -DBLAS_LIBRARY_DIR=/opt/custom-openblas
 
   Setting those variables is not normally necessary, if the right search path is
   already present in the ``CMAKE_PREFIX_PATH`` environment variable.
