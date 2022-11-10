@@ -305,7 +305,7 @@ module fnet_initprogram
 
 
   !> program version
-  character(len=*), parameter :: version = '0.7'
+  character(len=*), parameter :: version = '0.7.2'
 
   !> copyright year
   integer, parameter :: copyrightYear = 2022
@@ -1622,7 +1622,7 @@ contains
     write(stdOut, '(3A)') vBar, repeat(hBar, headerWidth - 2), vBar
 
     write(stdOut, '(5A)') vBar, '  Fortnet - A BPNN Implementation, Version ', trim(release),&
-        & repeat(' ', 32), vBar
+        & repeat(' ', 30), vBar
     write(stdOut, '(3A)') vBar, repeat(' ', headerWidth - 2), vBar
     write(stdOut, '(2A,I0,3A)') vBar, '  Copyright (C) 2020 - ', year,&
         & '  T. W. van der Heide', repeat(' ', 30), vBar

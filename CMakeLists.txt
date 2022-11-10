@@ -7,7 +7,7 @@ include(FortnetUtils)
 fnet_ensure_out_of_source_build()
 fnet_load_build_settings()
 
-set(FORTNET_VERSION "0.7")
+set(FORTNET_VERSION "0.7.2")
 
 project(fortnet VERSION ${FORTNET_VERSION} LANGUAGES Fortran C)
 
