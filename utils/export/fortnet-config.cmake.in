@@ -14,10 +14,6 @@ if(NOT TARGET Fortnet::Fortnet)
     find_dependency(CustomBlas)
   endif()
 
-  if(NOT TARGET LAPACK::LAPACK)
-    find_dependency(CustomLapack)
-  endif()
-
   if(Fortnet_WITH_MPI AND NOT TARGET MpiFx::MpiFx)
     find_dependency(MpiFx)
   endif()

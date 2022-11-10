@@ -33,13 +33,3 @@ set(Fortran_FLAGS_RELWITHDEBINFO "${Fortran_FLAGS_RELWITHDEBINFO}"
 
 set(Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG}"
   CACHE STRING "Fortran compiler flags for Debug build")
-
-
-#
-# External libraries
-#
-
-# LAPACK and BLAS
-#set(LAPACK_LIBRARY "lapack;blas" CACHE STRING "LAPACK and BLAS libraries to link")
-#set(LAPACK_LIBRARY_DIR "" CACHE STRING
-#  "Directories where LAPACK and BLAS libraries can be found")

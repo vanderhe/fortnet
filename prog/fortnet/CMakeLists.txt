@@ -58,7 +58,7 @@ if(WITH_MPI)
   target_link_libraries(fortnet PUBLIC MpiFx::MpiFx)
 endif()
 
-target_link_libraries(fortnet PUBLIC LAPACK::LAPACK)
+target_link_libraries(fortnet PUBLIC BLAS::BLAS)
 
 # cmake 3.19.x and 3.20.x feature broken targets :(
 # target_link_libraries(fortnet PUBLIC hdf5::hdf5_hl_fortran hdf5::hdf5_fortran)
