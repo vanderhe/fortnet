@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "When publishing results obtained with Fortnet, please cite it as below."
+authors:
+- family-names: "van der Heide"
+  given-names: "Tammo"
+  orcid: "https://orcid.org/0000-0002-0304-192X"
+- family-names: "Bačić"
+  given-names: "Vladimir"
+title: "Fortnet, a software package for training Behler-Parrinello neural networks"
+version: 0.7.2
+doi: 10.5281/zenodo.7310245
+date-released: 2021-04-09
+url: "https://github.com/vanderhe/fortnet"
+preferred-citation:
+  type: article
+  authors:
+  - family-names: "van der Heide"
+    given-names: "Tammo"
+    orcid: "https://orcid.org/0000-0002-0304-192X"
+  - family-names: "Kullgren"
+    given-names: "Jolla"
+    orcid: "https://orcid.org/0000-0003-3570-0050"
+  - family-names: "Broqvist"
+    given-names: "Peter"
+    orcid: "https://orcid.org/0000-0002-9842-4332"
+  - family-names: "Bačić"
+    given-names: "Vladimir"
+  - family-names: "Frauenheim"
+    given-names: "Thomas"
+    orcid: "https://orcid.org/0000-0002-3073-0616"
+  - family-names: "Aradi"
+    given-names: "Bálint"
+    orcid: "https://orcid.org/0000-0001-7182-841X"
+  doi: 10.1016/j.cpc.2022.108580
+  journal: "Computer Physics Communications"
+  title: "Fortnet, a software package for training Behler-Parrinello neural networks"
+  month: 11
+  year: 2022
