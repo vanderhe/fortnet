@@ -74,6 +74,17 @@ Consult following resources for documentation:
   <https://fortnet.readthedocs.io/>`_
 
 
+Citing
+======
+
+When publishing results obtained with Fortnet, please cite the following
+article:
+
+* `Fortnet, a software package for training Behler-Parrinello neural
+  networks; Computer Physics Communications (2022)
+  <https://doi.org/10.1016/j.cpc.2022.108580>`_
+
+
 Contributing
 ============
 
@@ -106,8 +117,8 @@ included `LICENSE <LICENSE>`_ file for the detailed licensing conditions.
 .. |latest version| image:: https://img.shields.io/github/v/release/vanderhe/fortnet
     :target: https://github.com/vanderhe/fortnet/releases/latest
 
-.. |doi| image:: https://zenodo.org/badge/356394988.svg
-   :target: https://zenodo.org/badge/latestdoi/356394988
+.. |doi| image:: https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2022.108580-blue
+   :target: https://doi.org/10.1016/j.cpc.2022.108580
 
 .. |docs status| image:: https://readthedocs.org/projects/fortnet/badge/?version=latest
     :alt: Documentation Status
