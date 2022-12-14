@@ -63,6 +63,53 @@ If the tests were successful, install the package via::
 For further details see the `detailed building instructions <INSTALL.rst>`_.
 
 
+Obtaining via Conda
+-------------------
+
+An alternative way of obtaining Fortnet is to install it via the conda package
+management framework using `Miniconda
+<https://docs.conda.io/en/latest/miniconda.html>`_ or `Anaconda
+<https://www.anaconda.com/products/individual>`_. Make sure to add/enable the
+``conda-forge`` channel in order to be able to access Fortnet::
+
+  conda config --add channels conda-forge
+
+We recommend to set up a dedicated conda environment and to use the
+`mamba installer <https://mamba.readthedocs.io/>`_::
+
+  conda create --name fortnet
+  conda activate fortnet
+  conda install mamba
+
+There are several build variants available, choose the one suiting your needs.
+For example, by issuing ::
+
+  mamba install 'fortnet=*=nompi_*'
+
+or ::
+
+  mamba install 'fortnet=*=mpi_mpich_*'
+
+or ::
+
+  mamba install 'fortnet=*=mpi_openmpi_*'
+
+to get the last stable release of Fortnet with, respectively, serial build or
+with MPI-parallelized build using either the MPICH or the OpenMPI framework.
+
+Depending on whether you decided for a serial or parallel version, you may
+issue ::
+
+  fnet
+
+or ::
+
+  mpirun -np ${NPROCS} fnet
+
+to start Fortnet. ${NPROCS} is to be substituted by the number of MPI tasks (in
+general number of CPU cores) available.
+
+
 Documentation
 =============
 
