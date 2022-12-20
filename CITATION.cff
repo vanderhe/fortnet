@@ -32,7 +32,9 @@ preferred-citation:
     given-names: "Bálint"
     orcid: "https://orcid.org/0000-0001-7182-841X"
   doi: 10.1016/j.cpc.2022.108580
+  url: "https://www.sciencedirect.com/science/article/pii/S0010465522002995"
   journal: "Computer Physics Communications"
   title: "Fortnet, a software package for training Behler-Parrinello neural networks"
-  month: 11
   year: 2022
+  volume: 284
+  pages: 108580
