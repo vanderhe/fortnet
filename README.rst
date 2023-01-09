@@ -175,5 +175,5 @@ included `LICENSE <LICENSE>`_ file for the detailed licensing conditions.
 .. |issues| image:: https://img.shields.io/github/issues/vanderhe/fortnet.svg
     :target: https://github.com/vanderhe/fortnet/issues/
 
-.. |build status| image:: https://img.shields.io/github/workflow/status/vanderhe/fortnet/Build%20and%20Test
+.. |build status| image:: https://img.shields.io/github/actions/workflow/status/vanderhe/fortnet/build.yml
     :target: https://github.com/vanderhe/fortnet/actions/
