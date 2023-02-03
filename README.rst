@@ -128,7 +128,7 @@ When publishing results obtained with Fortnet, please cite the following
 article:
 
 * `Fortnet, a software package for training Behler-Parrinello neural
-  networks; Computer Physics Communications (2022)
+  networks; Computer Physics Communications 284, 108580 (2023)
   <https://doi.org/10.1016/j.cpc.2022.108580>`_
 
 
