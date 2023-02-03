@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !  FORTNET: A Behler-Parrinello-Neural-Network Implementation                                      !
-!  Copyright (C) 2020 - 2022  T. W. van der Heide                                                  !
+!  Copyright (C) 2020 - 2023  T. W. van der Heide                                                  !
 !                                                                                                  !
 !  See the LICENSE file for terms of usage and distribution.                                       !
 !--------------------------------------------------------------------------------------------------!
@@ -308,7 +308,7 @@ module fnet_initprogram
   character(len=*), parameter :: version = '0.7.2'
 
   !> copyright year
-  integer, parameter :: copyrightYear = 2022
+  integer, parameter :: copyrightYear = 2023
 
   !> root node name of the input tree
   character(len=*), parameter :: rootTag = 'fortnet'
