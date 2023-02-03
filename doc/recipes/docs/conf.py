@@ -25,7 +25,7 @@
 # -- Project information -----------------------------------------------------
 
 project = "Fortnet Recipes"
-copyright = "2022, T. W. van der Heide"
+copyright = "2023, T. W. van der Heide"
 author = "T. W. van der Heide"
 
 # -- General configuration ---------------------------------------------------
