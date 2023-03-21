@@ -7,7 +7,7 @@ authors:
 - family-names: "Bačić"
   given-names: "Vladimir"
 title: "Fortnet, a software package for training Behler-Parrinello neural networks"
-version: 0.7.2
+version: 0.7.3
 doi: 10.5281/zenodo.7310245
 date-released: 2021-04-09
 url: "https://github.com/vanderhe/fortnet"
