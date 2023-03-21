@@ -818,13 +818,22 @@ contains
 
 
   !> Checks the compatibility of a dataset with an external features configuration.
-  subroutine checkAcsfDatasetCompatibility(dataset, acsf)
+  subroutine checkAcsfDatasetCompatibility(dataset, acsf, allowSpSubset)
 
     !> representation of a dataset
     type(TDataset), intent(in) :: dataset
 
     !> representation of acsf mapping information
     type(TAcsf), intent(in) :: acsf
+
+    !> true, if the dataset is allowed to only hold a subset of BPNN species
+    logical, intent(in), optional :: allowSpSubset
+
+    !! logicals to determine if species exist in reference setchildvalue
+    logical, allocatable :: tFound(:)
+
+    !! if present, equals optional dummy argument, otherwise false
+    logical :: tAllowSpSubset
 
     !! true, if the ACSF configuration is fully species-unresolved
     logical :: tReduce
@@ -833,7 +842,13 @@ contains
     integer, allocatable :: datasetAtomicNumbers(:), acsfAtomicNumbers(:), tmpAtomicNumbers(:)
 
     !! auxiliary variable
-    integer :: iFunc
+    integer :: iFunc, iAtNum1, iAtNum2
+
+    if (present(allowSpSubset)) then
+      tAllowSpSubset = allowSpSubset
+    else
+      tAllowSpSubset = .false.
+    end if
 
     if (.not. dataset%tStructures) then
       call error('Error while parsing ACSF from netstat file. The dataset does not provide '&
@@ -859,16 +874,35 @@ contains
       tReduce = .false.
     end if
 
+    ! compare atomic numbers
     if (.not. tReduce) then
-      ! compare their sorted equivalents
-      datasetAtomicNumbers = dataset%atomicNumbers
-      call heap_sort(datasetAtomicNumbers)
-      call heap_sort(acsfAtomicNumbers)
-      if (.not. all(shape(datasetAtomicNumbers) == shape(acsfAtomicNumbers))) then
-        call error('Incompatibility in atomic number shape of dataset and ACSF.')
-      end if
-      if (.not. all(datasetAtomicNumbers == acsfAtomicNumbers)) then
-        call error('Incompatibility in atomic numbers of dataset and ACSF.')
+      if (tAllowSpSubset) then
+        allocate(tFound(size(dataset%atomicNumbers)))
+        tFound(:) = .false.
+        outer: do iAtNum1 = 1, size(dataset%atomicNumbers)
+          ! check if current species name is in reference dataset
+          inner: do iAtNum2 = 1, size(acsfAtomicNumbers)
+            if (acsfAtomicNumbers(iAtNum2) == dataset%atomicNumbers(iAtNum1)) then
+              tFound(iAtNum1) = .true.
+              exit inner
+            end if
+          end do inner
+        end do outer
+        ! evaluate results of atomic numbers
+        if (any(.not. tFound)) then
+          call error('Incompatibility in atomic numbers of dataset and BPNN.')
+        end if
+      else
+        ! directly compare their full, sorted equivalents
+        datasetAtomicNumbers = dataset%atomicNumbers
+        call heap_sort(datasetAtomicNumbers)
+        call heap_sort(acsfAtomicNumbers)
+        if (.not. all(shape(datasetAtomicNumbers) == shape(acsfAtomicNumbers))) then
+          call error('Incompatibility in atomic number shape of dataset and ACSF.')
+        end if
+        if (.not. all(datasetAtomicNumbers == acsfAtomicNumbers)) then
+          call error('Incompatibility in atomic numbers of dataset and ACSF.')
+        end if
       end if
     end if
 

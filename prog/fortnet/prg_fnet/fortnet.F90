@@ -141,7 +141,7 @@ program fortnet
           cellVol = 0.0_dp
         end if
         ! check if the dataset provides structural information needed by the ACSF
-        call checkAcsfDatasetCompatibility(prog%trainDataset, acsf)
+        call checkAcsfDatasetCompatibility(prog%trainDataset, acsf, allowSpSubset=.true.)
         ! bypass target number test for prediction runs
         call checkBpnnDatasetCompatibility(prog%trainDataset, bpnn%atomicNumbers,&
             & prog%trainDataset%nGlobalTargets, prog%trainDataset%nAtomicTargets,&
@@ -363,7 +363,7 @@ contains
           prog%inp%features%nFeatures = prog%inp%features%nFeatures&
               & + size(trainAcsf%gFunctions%func)
           ! check if the dataset provides structural information needed by the ACSF
-          call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf)
+          call checkAcsfDatasetCompatibility(prog%trainDataset, trainAcsf, allowSpSubset=.true.)
         end if
         call bpnn%fromFile(prog%inp%data%netstatpath)
         if (prog%inp%option%mode == 'validate') then
