@@ -17,9 +17,9 @@ reference files with the output of the current version of the program.
 
 
 import os
+import shutil
 import subprocess
 import argparse
-from distutils.dir_util import copy_tree
 from argparse import RawTextHelpFormatter
 import testwithworkdir as twd
 from testwithworkdir import TestWithWorkDirError
@@ -45,8 +45,8 @@ def main(cmdlineargs=None):
 
     args = parse_cmdline_args(cmdlineargs)
 
-    copy_tree(os.path.join(args.templateroot, args.test),
-              os.path.join(args.workdir, args.test))
+    shutil.copytree(os.path.join(args.templateroot, args.test),
+                    os.path.join(args.workdir, args.test), dirs_exist_ok=True)
 
     cmd = args.prerun + ' ' + args.program
     cwd = os.path.join(args.workdir, args.test)
