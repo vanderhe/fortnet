@@ -10,13 +10,12 @@ build:
     python: "latest"
 
 sphinx:
-   configuration: doc/recipes/docs/conf.py
+  configuration: doc/recipes/docs/conf.py
 
 formats:
-   - epub
-   - pdf
+  - epub
+  - pdf
 
 python:
-   version: 3.7
-   install:
-   - requirements: doc/recipes/requirements.txt
+  install:
+  - requirements: doc/recipes/requirements.txt
