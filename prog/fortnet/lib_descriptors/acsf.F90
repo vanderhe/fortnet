@@ -11,7 +11,6 @@
 module fnet_acsf
 
   use h5lt
-  use hdf5
 
   use dftbp_accuracy, only : dp
   use dftbp_message, only : error
@@ -1780,9 +1779,6 @@ contains
     !! auxiliary variables
     integer :: iFunc, iErr, tmp, tExist
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDWR_F, file_id, iErr)
 
@@ -1905,9 +1901,6 @@ contains
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine TAcsf_toFile
 
 
@@ -1943,9 +1936,6 @@ contains
     real(dp) :: tmpReal(1)
     real(dp), allocatable :: tmpRealArray1d(:)
     integer :: iFunc, iErr, tExist, tmpInt(1)
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
@@ -2117,9 +2107,6 @@ contains
 
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
     nRadial = 0
     nAngular = 0

@@ -11,7 +11,6 @@
 module fnet_fnetout
 
   use h5lt
-  use hdf5
 
   use dftbp_message, only : error
   use dftbp_accuracy, only: dp
@@ -74,9 +73,6 @@ contains
     if ((mode == 'validate') .and. (nTargets == 0)) then
       call error('Validation mode only valid in combination with target data.')
     end if
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! create the fnetout file
     call h5fcreate_f(fname, H5F_ACC_TRUNC_F, file_id, iErr)
@@ -158,9 +154,6 @@ contains
 
     ! close the fnetout file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine writeFnetout
 

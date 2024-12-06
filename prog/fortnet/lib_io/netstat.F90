@@ -11,7 +11,6 @@
 module fnet_netstat
 
   use h5lt
-  use hdf5
 
   use dftbp_message, only : error
   use dftbp_charmanip, only : i2c, tolower
@@ -46,9 +45,6 @@ contains
     !! auxiliary variable
     integer :: iErr
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! create the netstat file
     call h5fcreate_f(fname, H5F_ACC_TRUNC_F, file_id, iErr)
 
@@ -60,9 +56,6 @@ contains
 
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine createNetstat
 
@@ -81,9 +74,6 @@ contains
 
     !! auxiliary variables
     integer :: iErr, tExist, tmp(1)
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
@@ -116,9 +106,6 @@ contains
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine inquireExtFeatures
 
 
@@ -137,9 +124,6 @@ contains
     !! auxiliary variables
     character(len=100) :: tmpStr
     integer :: iErr, tExist
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
@@ -172,9 +156,6 @@ contains
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine inquireAcsf
 
 
@@ -192,9 +173,6 @@ contains
 
     !! auxiliary variables
     integer :: iErr, tExist, tmp(1)
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
@@ -229,9 +207,6 @@ contains
 
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine readExtFeaturesConfig
 
@@ -272,9 +247,6 @@ contains
 
     ! currently only the BPNN topology is supported
     type = 'bpnn'
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
@@ -333,9 +305,6 @@ contains
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine readSubnetArchitecture
 
 
@@ -363,9 +332,6 @@ contains
     !! auxiliary variables
     integer(hsize_t) :: dims(1)
     integer :: iErr, iNet, iLayer
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDWR_F, file_id, iErr)
@@ -433,9 +399,6 @@ contains
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine writeBpnnHeader
 
 
@@ -454,9 +417,6 @@ contains
     !! auxiliary variables
     integer(hsize_t) :: dim
     integer :: iErr, tExist
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDWR_F, file_id, iErr)
@@ -489,9 +449,6 @@ contains
 
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine writeExtFeaturesConfig
 

@@ -594,7 +594,7 @@ contains
 
     type(fnode), pointer :: child, child2, child3, child4,  value1, field
 
-    type(string) :: buffer, buffer2, modifier
+    type(string) :: buffer, buffer2
 
     !! string buffer instance
     type(string) :: strBuffer
