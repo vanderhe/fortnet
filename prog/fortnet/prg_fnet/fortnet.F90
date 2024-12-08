@@ -10,6 +10,8 @@
 !> Defines the general behavior of Fortnet.
 program fortnet
 
+  use hdf5
+
   use dftbp_accuracy, only : dp
   use dftbp_message, only : error
   use dftbp_charmanip, only : toupper
@@ -74,6 +76,9 @@ program fortnet
   !> file name of generic Fortnet iterout.dat file
   character(len=*), parameter :: iteroutFile = 'iterout.dat'
 
+  !> error status
+  integer :: iErr
+
 #:if WITH_SOCKETS
 
   !> representation of ACSF mappings and derivatives
@@ -102,10 +107,13 @@ program fortnet
 
 #:endif
 
-  !> initialise global environment
+  ! initialise global environment
   call initGlobalEnv()
 
-  !> initialise program variables
+  ! open the hdf5 interface
+  call h5open_f(iErr)
+
+  ! initialise program variables
   call TEnv_init(prog%env)
   call TProgramVariables_init(prog)
 
@@ -200,6 +208,9 @@ program fortnet
 
   end if
 
+  ! close the hdf5 interface
+  call h5close_f(iErr)
+
   call destructGlobalEnv()
 
 
@@ -261,9 +272,6 @@ contains
 
     !! true, if current process is the lead
     logical :: tLead
-
-    !! true, if an ACSF configuration is found in the netstat file
-    logical :: tAcsf
 
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead
@@ -525,9 +533,6 @@ contains
     !! index mapping local atom --> global species index
     type(TIntArray1D), allocatable :: localAtToGlobalSp(:)
 
-    !! additional external, atomic features of the dataset
-    real(dp), allocatable :: extFeatures(:,:)
-
     !! true, if current process is the lead
     logical :: tLead
 
@@ -542,9 +547,6 @@ contains
 
     !! total number of atomic input features
     integer :: nFeatures
-
-    !! number of unique elements in geometry
-    integer :: nElements
 
   #:if WITH_MPI
     tLead = prog%env%globalMpiComm%lead

@@ -11,7 +11,6 @@
 module fnet_fnetdata
 
   use h5lt
-  use hdf5
 
   use dftbp_assert
   use dftbp_accuracy, only: dp, mc
@@ -557,9 +556,6 @@ contains
     !! auxiliary variable
     integer :: iErr
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! open the dataset file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
@@ -572,9 +568,6 @@ contains
 
     ! close the dataset file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine inquireStructures
 
@@ -606,9 +599,6 @@ contains
     !! auxiliary variables
     integer :: iErr
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! open the dataset file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
@@ -639,9 +629,6 @@ contains
     ! close the dataset file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine inquireTargets
 
 
@@ -666,9 +653,6 @@ contains
     !! auxiliary variables
     integer :: iErr
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! open the dataset file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
@@ -686,9 +670,6 @@ contains
 
     ! close the dataset file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine inquireExtFeatures
 
@@ -1033,9 +1014,6 @@ contains
     !! auxiliary variables
     integer :: iErr, iDatapoint, tExist
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! open the dataset file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
 
@@ -1231,9 +1209,6 @@ contains
 
     ! close the dataset file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
     ! perform some basic consistency checks
     call dataset%checkConsistency()

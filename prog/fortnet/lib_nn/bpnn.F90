@@ -11,7 +11,6 @@
 module fnet_bpnn
 
   use h5lt
-  use hdf5
 
   use dftbp_message, only : error
   use dftbp_globalenv, only : stdOut
@@ -1077,9 +1076,6 @@ contains
     !! auxiliary variables
     integer :: iErr, iNet, iLayer, tExist
 
-    ! open the hdf5 interface
-    call h5open_f(iErr)
-
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDWR_F, file_id, iErr)
 
@@ -1138,9 +1134,6 @@ contains
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
 
-    ! close the hdf5 interface
-    call h5close_f(iErr)
-
   end subroutine TBpnn_toFile
 
 
@@ -1180,9 +1173,6 @@ contains
 
     !! auxiliary variables
     integer :: iErr, iNet, iLayer
-
-    ! open the hdf5 interface
-    call h5open_f(iErr)
 
     ! open the netstat file
     call h5fopen_f(fname, H5F_ACC_RDONLY_F, file_id, iErr)
@@ -1294,9 +1284,6 @@ contains
 
     ! close the netstat file
     call h5fclose_f(file_id, iErr)
-
-    ! close the hdf5 interface
-    call h5close_f(iErr)
 
   end subroutine TBpnn_fromFile
 
